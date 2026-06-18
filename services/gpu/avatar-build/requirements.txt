@@ -1,0 +1,9 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+numpy>=1.26
+opencv-python-headless>=4.10
+torch>=2.4
+insightface>=0.7.3
+onnxruntime-gpu>=1.18
+ffmpeg-python>=0.2

@@ -1,0 +1,57 @@
+node_modules/
+dist/
+build/
+.wrangler/
+.dev.vars
+.env
+.env.local
+*.log
+.DS_Store
+coverage/
+
+# Python / GPU services
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.model_cache/
+.eval_out/
+
+# --- Hardening: secrets, build output, tool state (standalone repo) ---
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+build/
+**/build/
+
+# Cloudflare / Miniflare / Wrangler state (may contain secrets in KV blobs)
+.wrangler/
+**/.wrangler/
+.mf/
+**/.mf/
+
+# Vite caches
+.vite/
+**/.vite/
+
+# Secrets / env (keep .env.example template tracked)
+.env
+.env.*
+*.env
+pod.env
+**/pod.env
+api_keys
+*.pem
+*.token
+*.key
+.dev.vars
+!.env.example
+
+# Misc
+*.log
+.DS_Store

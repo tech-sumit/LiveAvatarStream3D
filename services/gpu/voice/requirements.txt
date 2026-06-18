@@ -1,0 +1,10 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+numpy>=1.26
+torch>=2.4
+torchaudio>=2.4
+soundfile>=0.12
+# TTS engines are installed per-engine at build time; defaults:
+#   fish-speech (Apache), CosyVoice 2, XTTS-v2 (coqui-tts), Chatterbox
+coqui-tts>=0.24
