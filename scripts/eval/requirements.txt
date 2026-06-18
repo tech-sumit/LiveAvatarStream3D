@@ -1,0 +1,8 @@
+numpy>=1.26
+torch>=2.4
+torchvision>=0.19
+opencv-python-headless>=4.10
+scipy>=1.13
+insightface>=0.7.3
+onnxruntime-gpu>=1.18
+# syncnet_python and FVD feature extractors are vendored under metrics/_vendor.

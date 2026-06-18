@@ -1,0 +1,67 @@
+name = "las-control-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# No auth layer yet — access is gated by VPN / port-forward for demos.
+
+[vars]
+GPU_PROVIDER = "runpod"
+GPU_PROVIDER_BASE_URL = "https://<pod-id>-8080.proxy.runpod.net"
+DIRECTOR_LLM_PROVIDER = "openrouter"
+DIRECTOR_LLM_MODEL = "anthropic/claude-opus-4.8"
+# Cloudflare Realtime SFU (Calls) app id + TURN key id — non-secret resource ids.
+CF_REALTIME_APP_ID = "cb5a16b8ca895b69e37cf990b7fcee90"
+CF_TURN_KEY_ID = "fc13e873fef9310a7e8119c6af5d9355"
+
+# Secrets (set via `wrangler secret put`):
+#   INTERNAL_SERVICE_TOKEN, GPU_PROVIDER_TOKEN, ANTHROPIC_API_KEY,
+#   CF_REALTIME_APP_SECRET (SFU app secret), CF_TURN_KEY_API_TOKEN (TURN key API token)
+
+[[d1_databases]]
+binding = "DB"
+database_name = "las_db"
+database_id = "d7727c23-335e-413c-98cd-347272b8b61c"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "las-assets"
+
+[[r2_buckets]]
+binding = "AVATARS"
+bucket_name = "las-avatars"
+
+[[r2_buckets]]
+binding = "VOICES"
+bucket_name = "las-voices"
+
+[[r2_buckets]]
+binding = "OUTPUTS"
+bucket_name = "las-outputs"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "3ed28be482bf4946958e51218f7f428d"
+
+[[queues.producers]]
+binding = "JOBS"
+queue = "las-jobs"
+
+[[queues.consumers]]
+queue = "las-jobs"
+max_batch_size = 1
+max_concurrency = 4
+max_retries = 2
+
+[[durable_objects.bindings]]
+name = "JOB_DO"
+class_name = "JobDO"
+
+[[durable_objects.bindings]]
+name = "SESSION_DO"
+class_name = "SessionDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["JobDO", "SessionDO"]

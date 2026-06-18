@@ -1,0 +1,21 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+numpy>=1.26
+torch>=2.4
+aiortc>=1.9
+av>=12.3
+faster-whisper>=1.0
+# VAD endpointing for streaming STT (stt.py imports webrtcvad lazily).
+webrtcvad>=2.0.10
+httpx>=0.27
+anthropic>=0.34
+# Streaming TTS runs in-process: cloned-voice XTTS-v2 via coqui-tts.
+coqui-tts>=0.27
+soundfile>=0.12
+opencv-python-headless>=4.9
+# Realtime lip-sync (MuseTalk) runs OUT-of-process in its own venv
+# (MUSETALK_PYTHON) because it pins diffusers/transformers/numpy/mmpose versions
+# that conflict with this interpreter. See deploy/setup_musetalk.sh +
+# deploy/requirements.pod-musetalk.txt + POD_SETUP.md. musetalk_worker.py is the
+# bridge; nothing MuseTalk-specific is imported here.
