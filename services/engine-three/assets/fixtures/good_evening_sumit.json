@@ -1,0 +1,13 @@
+{
+  "language": "en",
+  "segments": [
+    {
+      "seq": 0,
+      "text": "Good evening Sumit.",
+      "emotion": "warm",
+      "gesture": "wave",
+      "posture": "neutral",
+      "camera": { "shot": "medium_close", "move": "static", "target": "face" }
+    }
+  ]
+}

@@ -8,7 +8,8 @@ export type GpuService =
   | 'voice'
   | 'avatar-video'
   | 'finishing'
-  | 'realtime';
+  | 'realtime'
+  | 'engine-three';
 
 /** SFU connection info the control plane hands to the GPU worker. The GPU
  *  drives the SFU itself via the control-plane /rt/* routes; it only needs

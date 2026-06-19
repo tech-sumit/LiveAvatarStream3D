@@ -201,4 +201,34 @@ if [[ "${SETUP_MUSETALK:-0}" == "1" ]]; then
 fi
 
 log "done. System interpreter + EchoMimicV3 venv ready."
+
+# -----------------------------------------------------------------------------
+# 8) engine-three (Node 20 + Three.js render node)
+# -----------------------------------------------------------------------------
+ENGINE_THREE_DIR="${REPO_ROOT}/services/engine-three"
+if command -v node >/dev/null 2>&1; then
+    log "building engine-three (Node $(node -v))"
+else
+    log "installing Node.js 20"
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs xvfb build-essential pkg-config libxi-dev libx11-dev libxext-dev libgl1-mesa-dev libglew-dev libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+fi
+
+if [[ -f "${REPO_ROOT}/package.json" ]]; then
+    log "npm ci + build @las/protocol and @las/engine-three"
+    apt-get install -y xvfb build-essential pkg-config libxi-dev libx11-dev libxext-dev libgl1-mesa-dev libglew-dev libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev 2>/dev/null || true
+    (cd "${REPO_ROOT}" && npm ci --workspace @las/protocol --workspace @las/engine-three 2>/dev/null || \
+        cd "${REPO_ROOT}" && npm install --workspace @las/protocol --workspace @las/engine-three)
+    # headless-gl must compile; fail loudly if missing
+    if ! node -e "require('gl')(64,64)" 2>/dev/null; then
+        (cd "${REPO_ROOT}/services/engine-three" && npm install gl@8.0.2)
+    fi
+    node -e "require('gl')(64,64); console.log('gl ok')" \
+        || die "engine-three headless WebGL (gl) failed to build — check build-essential / mesa dev packages"
+    (cd "${REPO_ROOT}" && npm run build --workspace @las/protocol)
+    (cd "${REPO_ROOT}" && npm run build --workspace @las/engine-three)
+else
+    warn "repo root package.json missing; skip engine-three npm build"
+fi
+
 log "next: set pod.env, run seed_weights.sh (weights), setup_musetalk.sh (realtime), then start.sh"

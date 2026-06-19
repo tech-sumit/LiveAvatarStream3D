@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Script } from './dsl.js';
 import { AvatarTier } from './avatar.js';
 import { Resolution } from './manifest.js';
+import { SceneDocument } from './scene.js';
 
 /** Kinds of GPU work the orchestrator can dispatch. */
 export const JobKind = z.enum([
@@ -9,8 +10,8 @@ export const JobKind = z.enum([
   'avatar_build',
   'voice_clone',
   'offline_render',
-  // 3D-engine cinematic path: TTS -> performance manifest -> UE5 Movie Render
-  // Queue on an RTX/L40S node. See docs/specs/2026-06-18-3d-engine-poc.md.
+  // 3D-engine cinematic path: TTS -> performance manifest -> Three.js render
+  // node on RTX/L40S. See docs/specs/2026-06-19-threejs-engine-poc.md.
   'engine_render',
 ]);
 export type JobKind = z.infer<typeof JobKind>;
@@ -42,13 +43,13 @@ export type OfflineRenderSpec = z.infer<typeof OfflineRenderSpec>;
 
 /**
  * Payload for a 3D-engine cinematic render. Mirrors OfflineRenderSpec but
- * targets the UE5 + MetaHuman + ACE Audio2Face path: the orchestrator runs TTS,
- * compiles a PerformanceManifest, and dispatches it to a UE render node. The
+ * targets the Three.js + glTF avatar + ACE Audio2Face path: the orchestrator runs
+ * TTS, compiles a PerformanceManifest, and dispatches it to the render node. The
  * `script` may carry per-beat `camera` cues (see dsl.ts CameraCue).
  */
 export const EngineRenderSpec = z.object({
-  /** MetaHuman blueprint/asset id to drive (engine-side identity). */
-  metahumanId: z.string(),
+  /** Avatar asset id (maps to assets/avatars/<id>.glb on the render node). */
+  avatarId: z.string(),
   voiceId: z.string(),
   script: Script,
   stage: z
@@ -58,8 +59,10 @@ export const EngineRenderSpec = z.object({
     })
     .default({}),
   resolution: Resolution.default({}),
-  /** Cinematic frame rate for Movie Render Queue. */
+  /** Cinematic frame rate for the Three.js render. */
   fps: z.number().int().min(24).max(60).default(24),
+  /** Full editor scene graph — when set, the render node uses WYSIWYG camera + layout. */
+  scene: SceneDocument.optional(),
 });
 export type EngineRenderSpec = z.infer<typeof EngineRenderSpec>;
 

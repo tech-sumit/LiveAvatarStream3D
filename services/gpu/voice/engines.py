@@ -64,7 +64,7 @@ class FishS2Engine:
     falls back to XTTS for environments without it.
     """
 
-    sample_rate = 44100
+    sample_rate = 24000  # matches XTTS fallback used when Fish S2 endpoint is absent
 
     def __init__(self) -> None:
         self._fallback = XttsEngine()

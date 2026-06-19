@@ -24,9 +24,19 @@ voices.post('/api/voices', async (c) => {
   const id = newId('vo');
   const r2Prefix = `${body.userId}/${id}`;
   await c.env.DB.prepare(
-    'INSERT INTO voices (id, user_id, label, status, engine, r2_prefix, language, created_at) VALUES (?,?,?,?,?,?,?,?)',
+    'INSERT INTO voices (id, user_id, label, status, engine, r2_prefix, language, sample_key, created_at) VALUES (?,?,?,?,?,?,?,?,?)',
   )
-    .bind(id, body.userId, body.label ?? 'Untitled voice', 'cloning', body.engine, r2Prefix, body.language, now())
+    .bind(
+      id,
+      body.userId,
+      body.label ?? 'Untitled voice',
+      'cloning',
+      body.engine,
+      r2Prefix,
+      body.language,
+      body.sampleKey,
+      now(),
+    )
     .run();
 
   // Clone on the GPU plane via the durable job queue (not a request waitUntil,
@@ -46,4 +56,41 @@ voices.post('/api/voices', async (c) => {
   const row = await c.env.DB.prepare('SELECT * FROM voices WHERE id = ?').bind(id).first();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return c.json(rowToVoice(row as any));
+});
+
+/** Re-enqueue a failed or stuck voice clone (requires sample_key on the row). */
+voices.post('/api/voices/:id/retry', async (c) => {
+  const id = c.req.param('id');
+  const userId = c.req.query('userId') ?? 'demo-user';
+  const row = await c.env.DB.prepare('SELECT * FROM voices WHERE id = ? AND user_id = ?')
+    .bind(id, userId)
+    .first();
+  if (!row) return c.json({ error: 'voice not found' }, 404);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const v = row as any;
+  if (!v.sample_key) {
+    return c.json({ error: 'no sample on file — upload a new sample in Clone new' }, 400);
+  }
+  if (v.status === 'ready') {
+    return c.json({ error: 'voice is already ready' }, 400);
+  }
+
+  await c.env.DB.prepare('UPDATE voices SET status = ?, error = NULL WHERE id = ?')
+    .bind('cloning', id)
+    .run();
+
+  const spec = {
+    voiceId: id,
+    userId: v.user_id,
+    sampleKey: v.sample_key,
+    engine: v.engine,
+    language: v.language,
+    outPrefix: v.r2_prefix,
+  };
+  await c.env.JOBS.send({ jobId: id, kind: 'voice_clone', userId: v.user_id, spec } satisfies QueueMessage);
+
+  const updated = await c.env.DB.prepare('SELECT * FROM voices WHERE id = ?').bind(id).first();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return c.json(rowToVoice(updated as any));
 });

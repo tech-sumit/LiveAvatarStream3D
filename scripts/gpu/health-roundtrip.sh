@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # health-roundtrip.sh — verify the GPU plane is reachable, two ways:
 #
-#   1) DIRECT: GET ${GPU_PROVIDER_BASE_URL}/avatar-build/health straight at the
-#      pod gateway (proves the pod + nginx + avatar-build are up).
+#   1) DIRECT: GET ${GPU_PROVIDER_BASE_URL}/avatar-build/health and
+#      ${GPU_PROVIDER_BASE_URL}/engine-three/health straight at the pod gateway
+#      (proves the pod + nginx + core services are up).
 #   2) WORKER: POST /api/_health/gpu on the deployed control-api, then poll the
 #      job until it succeeds (proves the *deployed Worker* can reach the pod and
 #      write a round-trip marker into R2 OUTPUTS — the Phase 0 round-trip proof).
@@ -40,14 +41,22 @@ MODE="${1:-both}"
 
 check_direct() {
   : "${GPU_PROVIDER_BASE_URL:?GPU_PROVIDER_BASE_URL is required for the direct check}"
-  local url="${GPU_PROVIDER_BASE_URL%/}/avatar-build/health"
-  log "DIRECT  GET ${url}"
   local auth=()
   [[ -n "${GPU_PROVIDER_TOKEN:-}" ]] && auth=(-H "Authorization: Bearer ${GPU_PROVIDER_TOKEN}")
+
+  local url="${GPU_PROVIDER_BASE_URL%/}/avatar-build/health"
+  log "DIRECT  GET ${url}"
   local code
   code="$(curl -sS -o /tmp/las-health-direct.txt -w '%{http_code}' -m 30 "${auth[@]+"${auth[@]}"}" "${url}")"
-  log "DIRECT  -> HTTP ${code}; body: $(cat /tmp/las-health-direct.txt)"
-  [[ "${code}" == "200" ]] || die "pod gateway health check failed (HTTP ${code})"
+  log "DIRECT  avatar-build -> HTTP ${code}; body: $(cat /tmp/las-health-direct.txt)"
+  [[ "${code}" == "200" ]] || die "pod gateway avatar-build health failed (HTTP ${code})"
+
+  url="${GPU_PROVIDER_BASE_URL%/}/engine-three/health"
+  log "DIRECT  GET ${url}"
+  code="$(curl -sS -o /tmp/las-health-engine-three.txt -w '%{http_code}' -m 30 "${auth[@]+"${auth[@]}"}" "${url}")"
+  log "DIRECT  engine-three -> HTTP ${code}; body: $(cat /tmp/las-health-engine-three.txt)"
+  [[ "${code}" == "200" ]] || die "pod gateway engine-three health failed (HTTP ${code})"
+
   log "DIRECT  OK"
 }
 
