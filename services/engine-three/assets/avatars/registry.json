@@ -1,0 +1,18 @@
+{
+  "ada": {
+    "glb": "ada.glb",
+    "forwardAxis": "+Z",
+    "eyeHeightM": 1.63,
+    "morphMap": "arkit_default",
+    "lipSync": "arkit_morphs",
+    "source": "VALID Black_M_1_Casual (realistic human, c-frame/valid-avatars-glb)"
+  },
+  "lee_perry_smith": {
+    "glb": "LeePerrySmith/LeePerrySmith.glb",
+    "forwardAxis": "+Z",
+    "eyeHeightM": 1.4,
+    "morphMap": "arkit_default",
+    "lipSync": "decal_viseme",
+    "source": "Three.js webgl_decals Lee Perry-Smith bust scan"
+  }
+}

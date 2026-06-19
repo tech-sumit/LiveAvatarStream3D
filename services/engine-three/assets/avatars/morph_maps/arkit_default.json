@@ -1,0 +1,70 @@
+{
+  "jawOpen": { "jawOpen": 1.0 },
+  "emotions": {
+    "neutral": {},
+    "joy": {
+      "mouthSmileLeft": 0.6,
+      "mouthSmileRight": 0.6,
+      "cheekSquintLeft": 0.25,
+      "cheekSquintRight": 0.25
+    },
+    "sadness": {
+      "mouthFrownLeft": 0.5,
+      "mouthFrownRight": 0.5,
+      "browInnerUp": 0.4
+    },
+    "amazement": {
+      "browInnerUp": 0.7,
+      "eyeWideLeft": 0.5,
+      "eyeWideRight": 0.5,
+      "jawOpen": 0.15
+    },
+    "fear": {
+      "browInnerUp": 0.5,
+      "eyeWideLeft": 0.4,
+      "eyeWideRight": 0.4
+    },
+    "cheekiness": {
+      "mouthSmileLeft": 0.4,
+      "mouthSmileRight": 0.35,
+      "mouthLeft": 0.2
+    },
+    "anger": {
+      "browDownLeft": 0.6,
+      "browDownRight": 0.6,
+      "mouthPressLeft": 0.3,
+      "mouthPressRight": 0.3
+    },
+    "disgust": {
+      "noseSneerLeft": 0.5,
+      "noseSneerRight": 0.5,
+      "mouthUpperUpLeft": 0.3
+    },
+    "grief": {
+      "mouthFrownLeft": 0.7,
+      "mouthFrownRight": 0.7,
+      "browInnerUp": 0.5
+    },
+    "pain": {
+      "browDownLeft": 0.4,
+      "browDownRight": 0.4,
+      "eyeSquintLeft": 0.5,
+      "eyeSquintRight": 0.5
+    },
+    "outofbreath": {
+      "jawOpen": 0.35,
+      "mouthOpen": 0.2
+    }
+  },
+  "visemes": {
+    "A": { "jawOpen": 0.7, "mouthOpen": 0.3 },
+    "B": { "mouthClose": 0.8 },
+    "C": { "jawOpen": 0.4, "mouthFunnel": 0.5 },
+    "D": { "jawOpen": 0.25, "mouthSmileLeft": 0.2 },
+    "E": { "jawOpen": 0.35, "mouthSmileLeft": 0.15 },
+    "F": { "mouthClose": 0.6, "mouthUpperUpLeft": 0.3 },
+    "G": { "jawOpen": 0.45, "mouthFunnel": 0.4 },
+    "H": { "jawOpen": 0.2 },
+    "X": { "jawOpen": 0.05 }
+  }
+}

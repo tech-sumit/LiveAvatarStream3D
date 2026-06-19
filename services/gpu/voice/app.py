@@ -40,6 +40,7 @@ class TtsBody(BaseModel):
     engine: str = "fish_s2"
     script: dict
     outPrefix: str
+    withTimings: bool = False
 
 
 @app.get("/health")
@@ -82,7 +83,20 @@ def tts(body: TtsBody) -> dict:
             timings_key,
             "application/json",
         )
-    return {"audioKey": audio_key, "timingsKey": timings_key, "sampleRate": sr}
+    total_s = timings[-1].end_s if timings else 0.0
+    try:
+        import soundfile as sf
+
+        total_s = float(sf.info(out_wav).duration)
+    except Exception:
+        pass
+    result: dict = {"audioKey": audio_key, "timingsKey": timings_key, "sampleRate": sr}
+    if body.withTimings:
+        result["durationS"] = total_s
+        result["segments"] = [
+            {"durationS": max(0.0, t.end_s - t.start_s)} for t in timings
+        ]
+    return result
 
 
 class SmokeBody(BaseModel):

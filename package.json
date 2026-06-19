@@ -7,7 +7,9 @@
   "workspaces": [
     "packages/*",
     "services/control-api",
-    "apps/web"
+    "services/engine-three",
+    "apps/web",
+    "apps/scene-editor"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
@@ -16,6 +18,7 @@
     "format": "prettier --write .",
     "test": "npm run test --workspaces --if-present",
     "dev:web": "npm run dev --workspace apps/web",
+    "dev:editor": "npm run dev --workspace apps/scene-editor",
     "dev:api": "npm run dev --workspace services/control-api",
     "protocol:schema": "npm run schema --workspace @las/protocol"
   },

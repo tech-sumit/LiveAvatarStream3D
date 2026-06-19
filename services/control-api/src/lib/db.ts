@@ -42,6 +42,8 @@ interface VoiceRow {
   r2_prefix: string;
   language: string;
   created_at: number;
+  sample_key: string | null;
+  error: string | null;
 }
 
 export function rowToVoice(r: VoiceRow): VoiceProfile {
@@ -54,6 +56,7 @@ export function rowToVoice(r: VoiceRow): VoiceProfile {
     r2Prefix: r.r2_prefix,
     language: r.language,
     createdAt: r.created_at,
+    error: r.error ?? undefined,
   };
 }
 

@@ -1,0 +1,28 @@
+{
+  "language": "en",
+  "segments": [
+    {
+      "seq": 0,
+      "text": "Hello there.",
+      "emotion": "warm",
+      "gesture": "wave",
+      "posture": "leaning_in",
+      "pause_ms_after": 500,
+      "camera": { "shot": "medium_close", "move": "dolly_in", "target": "face" }
+    },
+    {
+      "seq": 1,
+      "text": "Let me explain.",
+      "emotion": "confident",
+      "gesture": "explain",
+      "posture": "upright"
+    },
+    {
+      "seq": 2,
+      "text": "Got it?",
+      "emotion": "happy",
+      "gesture": "nod",
+      "posture": "neutral"
+    }
+  ]
+}

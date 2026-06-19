@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "jobId": "poc_local",
+  "language": "en",
+  "fps": 24,
+  "resolution": { "width": 1920, "height": 1080 },
+  "durationS": 5.0,
+  "stage": {
+    "level": "studio",
+    "lighting": "three_point_warm",
+    "avatarId": "ada"
+  },
+  "audio": {
+    "r2Key": "fixtures/silence.wav",
+    "durationS": 5.0,
+    "sampleRate": 48000
+  },
+  "beats": [
+    {
+      "seq": 0,
+      "startS": 0,
+      "endS": 1.0,
+      "audioOffsetS": 0,
+      "durationS": 1.0,
+      "text": "Hello there.",
+      "emphasis": [],
+      "face": { "emotion": "warm", "a2fEmotion": "joy", "intensity": 0.35 },
+      "body": {
+        "gesture": "wave",
+        "posture": "leaning_in",
+        "montageId": "M_Explain",
+        "lean": 0.7,
+        "yawDeg": 0
+      }
+    },
+    {
+      "seq": 1,
+      "startS": 1.5,
+      "endS": 3.5,
+      "audioOffsetS": 1.5,
+      "durationS": 2.0,
+      "text": "Let me explain.",
+      "emphasis": [],
+      "face": { "emotion": "confident", "a2fEmotion": "cheekiness", "intensity": 0.45 },
+      "body": {
+        "gesture": "explain",
+        "posture": "upright",
+        "montageId": "M_Explain",
+        "lean": -0.2,
+        "yawDeg": 0
+      }
+    },
+    {
+      "seq": 2,
+      "startS": 3.5,
+      "endS": 5.0,
+      "audioOffsetS": 3.5,
+      "durationS": 1.5,
+      "text": "Got it?",
+      "emphasis": [],
+      "face": { "emotion": "happy", "a2fEmotion": "joy", "intensity": 0.7 },
+      "body": {
+        "gesture": "nod",
+        "posture": "neutral",
+        "montageId": "M_Nod",
+        "lean": 0,
+        "yawDeg": 0
+      }
+    }
+  ],
+  "camera": [
+    {
+      "seq": 0,
+      "startS": 0,
+      "durationS": 1.5,
+      "shot": "medium_close",
+      "move": "dolly_in",
+      "target": "face",
+      "easing": "ease_in_out",
+      "intensity": 0.5
+    },
+    {
+      "seq": 1,
+      "startS": 1.5,
+      "durationS": 2.0,
+      "shot": "medium_close",
+      "move": "dolly_in",
+      "target": "face",
+      "easing": "ease_in_out",
+      "intensity": 0.5
+    },
+    {
+      "seq": 2,
+      "startS": 3.5,
+      "durationS": 1.5,
+      "shot": "medium_close",
+      "move": "dolly_in",
+      "target": "face",
+      "easing": "ease_in_out",
+      "intensity": 0.5
+    }
+  ]
+}

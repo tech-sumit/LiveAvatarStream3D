@@ -10,9 +10,9 @@ import {
 } from './manifest.js';
 
 const stage: StageSpec = {
-  level: 'L_Stage',
+  level: 'studio',
   lighting: 'three_point_warm',
-  metahumanId: 'MH_Ada',
+  avatarId: 'ada',
 };
 const audio: AudioRef = { r2Key: 'work/job1/audio.wav', durationS: 6.5, sampleRate: 48000 };
 

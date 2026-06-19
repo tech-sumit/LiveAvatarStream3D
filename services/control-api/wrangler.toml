@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 GPU_PROVIDER = "runpod"
-GPU_PROVIDER_BASE_URL = "https://g0gt2p9v7kmkyy-8080.proxy.runpod.net"
+GPU_PROVIDER_BASE_URL = "https://s5jwghwjkwo96q-8080.proxy.runpod.net"
 DIRECTOR_LLM_PROVIDER = "openrouter"
 DIRECTOR_LLM_MODEL = "anthropic/claude-opus-4.8"
 # Cloudflare Realtime SFU (Calls) app id + TURN key id — non-secret resource ids.

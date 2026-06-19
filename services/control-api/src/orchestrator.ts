@@ -137,6 +137,7 @@ function estimateTimings(spec: EngineRenderSpec): BeatAudioTiming[] {
 interface TtsTimedResult {
   audioKey: string;
   durationS?: number;
+  sampleRate?: number;
   /** Per-segment spoken durations, in segment order (voice service extension). */
   segments?: { durationS: number }[];
 }
@@ -144,7 +145,7 @@ interface TtsTimedResult {
 /**
  * 3D-engine cinematic render. Reuses our TTS, compiles a PerformanceManifest
  * from the director DSL + audio timing, persists it to R2, then dispatches it
- * to a UE5 render node (Movie Render Queue on an RTX/L40S box). The UE node owns
+ * to a Three.js render node on an RTX/L40S box. The render node owns
  * the terminal transition via the progress webhook, so this stops at 'rendering'
  * — exactly like runOfflineRender hands finishing the terminal state. When no
  * render node is configured, the manifest is still compiled + persisted and the
@@ -180,11 +181,12 @@ async function runEngineRender(env: Env, jobId: string, userId: string, spec: En
   const manifest = compileManifest({
     jobId,
     script: spec.script,
-    stage: { level: spec.stage.level, lighting: spec.stage.lighting, metahumanId: spec.metahumanId },
-    audio: { r2Key: tts.audioKey, durationS: tts.durationS ?? totalS, sampleRate: 48000 },
+    stage: { level: spec.stage.level, lighting: spec.stage.lighting, avatarId: spec.avatarId },
+    audio: { r2Key: tts.audioKey, durationS: tts.durationS ?? totalS, sampleRate: tts.sampleRate ?? 24000 },
     timings,
     fps: spec.fps,
     resolution: spec.resolution,
+    scene: spec.scene,
   });
 
   const manifestKey = `${outPrefix}/manifest.json`;
@@ -192,32 +194,18 @@ async function runEngineRender(env: Env, jobId: string, userId: string, spec: En
     httpMetadata: { contentType: 'application/json' },
   });
 
-  // 3) Dispatch to the UE render node, if one is wired up. Fire-and-forget: the
-  // node renders 4K via MRQ then reports terminal status over the progress
-  // webhook. Stub when unconfigured so the manifest pipeline is exercisable.
   const outputKey = `${jobId}.mp4`;
   await setStatus(env, jobId, 'rendering', {
     progress: 0.5,
-    message: 'Dispatching to UE render node',
+    message: 'Dispatching to Three.js render node',
     outputKey: undefined,
   });
-  if (env.UE_RENDER_NODE_URL) {
-    await fetchWithRetry(
-      `${env.UE_RENDER_NODE_URL.replace(/\/$/, '')}/render`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${env.UE_RENDER_NODE_TOKEN ?? ''}`,
-          'x-internal-token': env.INTERNAL_SERVICE_TOKEN,
-        },
-        body: JSON.stringify({ jobId, manifestKey, outputKey }),
-      },
-      COLD_START_RETRY,
-    );
-  } else {
-    console.log(`engine_render ${jobId}: no UE_RENDER_NODE_URL; manifest at ${manifestKey} (dispatch skipped)`);
-  }
+  await provider.call(
+    'engine-three',
+    '/render',
+    { jobId, manifestKey, outputKey },
+    COLD_START_RETRY,
+  );
 }
 
 interface AvatarBuildSpec {
@@ -298,10 +286,15 @@ async function runVoiceClone(env: Env, spec: VoiceCloneSpec): Promise<void> {
       },
       COLD_START_RETRY,
     );
-    await env.DB.prepare('UPDATE voices SET status = ? WHERE id = ?').bind('ready', spec.voiceId).run();
+    await env.DB.prepare('UPDATE voices SET status = ?, error = NULL WHERE id = ?')
+      .bind('ready', spec.voiceId)
+      .run();
   } catch (e) {
-    await env.DB.prepare('UPDATE voices SET status = ? WHERE id = ?').bind('failed', spec.voiceId).run();
-    console.error('voice clone failed', spec.voiceId, e);
+    const msg = e instanceof Error ? e.message : String(e);
+    await env.DB.prepare('UPDATE voices SET status = ?, error = ? WHERE id = ?')
+      .bind('failed', msg, spec.voiceId)
+      .run();
+    console.error('voice clone failed', spec.voiceId, msg);
   }
 }
 

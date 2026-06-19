@@ -22,6 +22,11 @@ diverged, **this document wins** — see [Plan-vs-implementation drift](#plan-vs
 - Two ready-to-run validators ship here: `services/gpu/deploy/validate_offline.py`
   (offline 1080p e2e) and `scripts/gpu/health-roundtrip.sh` (gateway + Worker
   round-trip). See [How to verify](#how-to-verify).
+- **3D engine path (Jun 2026):** ✅ **VALIDATED on live H100 (Jun 19, 2026):**
+  `engine_render` → `services/engine-three` produced a real **1920×1080 mp4** in R2
+  (`validate_engine_render.py` PASS). Pod `s5jwghwjkwo96q`, gateway
+  `https://s5jwghwjkwo96q-8080.proxy.runpod.net`. Requires Xvfb + headless `gl`.
+  Spec: `docs/specs/2026-06-19-threejs-engine-poc.md`.
 
 ## Phase status
 
@@ -45,7 +50,7 @@ flowchart TD
 | 1 | Weights seed (`deploy/seed_weights.sh`, `WEIGHTS.md`) | **Done (code)** | Populates `/workspace` volume; must run once on the pod. |
 | 2 | Provision pod + volume (`scripts/gpu/spawn-pod.sh`) | **Validated (live, Jun 18)** | Idempotent RunPod REST provisioner; H100 pod brought up and ran the offline e2e. |
 | 2 | Pod bring-up (`deploy/install_deps.sh`, `POD_SETUP.md`) | **Validated (live, Jun 18)** | Reproducible interpreter/venv layout. **Resume note:** container disk is wiped + env not re-injected on resume, so `install_deps.sh` must re-run — see `POD_SETUP.md` → *Resuming a stopped pod*. |
-| 3 | Wire Worker (`wrangler.toml` `GPU_PROVIDER_BASE_URL`) | **Validated (live, Jun 18)** | Deployed Worker reached the pod gateway; round-trip green. |
+| 3 | Wire Worker (`wrangler.toml` `GPU_PROVIDER_BASE_URL`) | **Validated (live, Jun 18–19)** | Round-trip green; pod reprovisioned Jun 19 (`s5jwghwjkwo96q`). |
 | 3 | Offline e2e (`deploy/validate_offline.py`) | **Validated (live, Jun 18)** | Produced a real 1920×1080 "Urwashi" mp4 in R2. |
 | 4 | Cloudflare SFU realtime (`realtime.ts`) | **Code present, gated** | App id/TURN key id in `wrangler.toml`; **needs `CF_REALTIME_APP_SECRET` + `CF_TURN_KEY_API_TOKEN`**. |
 | 4 | MuseTalk realtime (`realtime/`, `deploy/setup_musetalk.sh`) | **Done (code)** | Validate with `realtime/validate_musetalk.py` on the pod. |
@@ -170,7 +175,7 @@ Run the cheap checks first (no GPU), then the live ones (need a pod + secrets).
 ```bash
 # 0) In-repo sanity (no GPU): TS typecheck + Python compiles.
 npm run typecheck
-python3 -m py_compile services/gpu/deploy/validate_offline.py
+python3 -m py_compile services/gpu/deploy/validate_offline.py services/gpu/deploy/validate_engine_render.py
 
 # 1) Health round-trip — pod gateway AND deployed Worker.
 #    Needs GPU_PROVIDER_BASE_URL (+ optional GPU_PROVIDER_TOKEN) and CONTROL_API_URL.
@@ -188,6 +193,15 @@ CONTROL_API_URL=https://las-control-api.<acct>.workers.dev \
 #    voice exist (use the ids printed by validate_offline.py):
 #    cd services/gpu/realtime && PYTHONPATH=../common python3 validate_musetalk.py \
 #      --avatar-prefix demo-user/<av_id> --voice-prefix demo-user/<vo_id> --out /workspace/mt.mp4
+
+# 4) 3D engine_render e2e (Three.js on H100 pod) — needs live pod + engine-three
+#    built via install_deps.sh §8 and Worker deployed with engine_render path.
+CONTROL_API_URL=https://las-control-api.<acct>.workers.dev \
+  python3 services/gpu/deploy/validate_engine_render.py \
+    --video demo_video.mp4 --out /tmp/engine_poc.mp4
+
+# Pod resume after stop (RunPod wipes container disk — see POD_SETUP.md):
+#   ./scripts/gpu/resume-pod.sh --print
 ```
 
 ### Remaining manual steps to reach 100% (require live infra / secrets)
@@ -209,7 +223,29 @@ CONTROL_API_URL=https://las-control-api.<acct>.workers.dev \
 4. `./scripts/gpu/health-roundtrip.sh` → expect `PASS`.
 5. `python3 services/gpu/deploy/validate_offline.py --api <worker-url>` → expect
    `PASS: real 1920x1080 offline render of 'Urwashi' produced`.
-6. (Realtime) run `validate_musetalk.py` on the pod, then a live browser session.
+6. **3D engine path:** resume pod (`./scripts/gpu/resume-pod.sh`), confirm
+   `engine-three/health` via `health-roundtrip.sh --direct`, then run
+   `validate_engine_render.py` → expect `PASS` with ≥1280×720 mp4.
+7. (Realtime) run `validate_musetalk.py` on the pod, then a live browser session.
+
+## Scene editor initiative (Jun 19, 2026)
+
+Web-based 3D scene editor (Unity/Blender-like) for authoring performances before
+H100 render. Architecture: `docs/scene-editor-architecture.md`.
+
+| Item | Status |
+|---|---|
+| `SceneDocument` schema (`@las/protocol`) | **Done** |
+| `apps/scene-editor` MVP (viewport, graph, inspector, dialog) | **Scaffold** |
+| Client Three.js layout preview | **Done** |
+| Save scene (localStorage) | **Done** |
+| Record → `POST /api/engine-jobs` | **Wired** |
+| R2 scene CRUD (`/api/scenes`) | **TODO Phase 1** |
+| H100 authoritative preview (`engine-three POST /preview`) | **TODO Phase 1** |
+| MJPEG / WebRTC live viewport from pod | **TODO Phase 2** |
+| Live speech bridge (MuseTalk + SFU) | **TODO Phase 3** |
+
+Run locally: `npm run dev:editor` (port 5174). Requires control-api for record/live.
 
 ## Plan-vs-implementation drift
 
@@ -229,4 +265,6 @@ The implementation intentionally diverged from the original plan; trust this fil
 - **Two extra Python interpreters on the pod** (EchoMimicV3 venv + MuseTalk venv)
   because of irreconcilable `transformers`/`diffusers`/`torch` pins — see
   `POD_SETUP.md`. Services shell into them via `ECHOMIMIC_PYTHON` / `MUSETALK_PYTHON`.
-```
+- **3D render is co-located on the H100 pod** (`engine-three` on `:8090`, nginx
+  `/engine-three/`). Requires Node 20, native `gl`, and **Xvfb** (`DISPLAY=:99` in
+  supervisord). Built by `install_deps.sh` §8.

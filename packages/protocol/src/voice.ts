@@ -22,6 +22,8 @@ export const VoiceProfile = z.object({
   r2Prefix: z.string(),
   language: z.string().default('en'),
   createdAt: z.number().int(),
+  /** Set when status is failed — GPU clone error message. */
+  error: z.string().optional(),
 });
 export type VoiceProfile = z.infer<typeof VoiceProfile>;
 

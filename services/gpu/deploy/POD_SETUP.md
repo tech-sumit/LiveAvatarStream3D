@@ -238,6 +238,27 @@ falls back to ffmpeg `minterpolate` so the clip still hits the requested fps.
 No extra manual step — noted here because it diverges from the original
 `8001-8006` contiguous block mentioned in older comments.
 
+## 6. engine-three (3D cinematic render)
+
+Three.js headless render node co-located on the H100 pod:
+
+| Item | Value |
+|---|---|
+| Process | `node dist/index.js` via supervisord `[program:engine-three]` |
+| Port | `127.0.0.1:8090` |
+| Gateway | `http://localhost:8080/engine-three/health` |
+| Assets | `/opt/las/services/engine-three/assets/` (avatar glTF, fixtures) |
+| Env | `RENDER_PROFILE=dev` (1080p POC), `LIPSYNC_MODE=envelope\|viseme`, `MONTAGE_MODE=procedural` |
+
+Built by `install_deps.sh` §8 (Node 20 + `npm run build` for `@las/engine-three`).
+
+Validate:
+
+```bash
+curl -s localhost:8080/engine-three/health
+python3 services/gpu/deploy/validate_engine_render.py --api "$CONTROL_API_URL" --video demo_video.mp4
+```
+
 ## Reproducing on a fresh pod
 
 ```mermaid

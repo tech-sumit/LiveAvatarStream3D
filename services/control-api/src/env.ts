@@ -28,9 +28,4 @@ export interface Env {
   CF_TURN_KEY_ID: string;
   CF_TURN_KEY_API_TOKEN: string;
   R2_PUBLIC_BASE?: string;
-  // 3D-engine render node (UE5 + MetaHuman + ACE on an RTX/L40S box). Optional:
-  // when unset, engine_render compiles + persists the manifest then no-ops the
-  // dispatch (so the pipeline is exercisable without a render box wired up yet).
-  UE_RENDER_NODE_URL?: string;
-  UE_RENDER_NODE_TOKEN?: string;
 }

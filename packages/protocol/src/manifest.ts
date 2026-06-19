@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SceneDocument } from './scene.js';
 import {
   CameraCue,
   CameraEasing,
@@ -13,8 +14,7 @@ import {
 
 /**
  * The **performance manifest** is the data contract between our control plane
- * and the game engine (Unreal Engine 5 + MetaHuman + NVIDIA ACE
- * Audio2Face-3D). It is the 3D-engine analogue of the GPU pipeline's render
+ * and the Three.js render node (glTF avatar + lip-sync face drive). It is the 3D-engine analogue of the GPU pipeline's render
  * call: a fully-resolved, engine-agnostic timeline produced by compiling an
  * LLM-director DSL `Script` together with the synthesized TTS audio.
  *
@@ -195,14 +195,14 @@ export const CameraShotKeyframe = z.object({
 });
 export type CameraShotKeyframe = z.infer<typeof CameraShotKeyframe>;
 
-/** Stage / lighting / subject the engine should load before sequencing. */
+/** Stage / lighting / subject the render node loads before sequencing. */
 export const StageSpec = z.object({
-  /** UE Level (map) to open. */
-  level: z.string().default('L_Stage'),
-  /** Named lighting rig preset baked into the level. */
+  /** Stage preset id (e.g. studio). */
+  level: z.string().default('studio'),
+  /** Named lighting rig preset. */
   lighting: z.string().default('three_point_warm'),
-  /** MetaHuman blueprint/asset id to spawn and drive. */
-  metahumanId: z.string(),
+  /** Avatar asset id (glTF basename under engine-three/assets/avatars/). */
+  avatarId: z.string(),
 });
 export type StageSpec = z.infer<typeof StageSpec>;
 
@@ -219,6 +219,8 @@ export const PerformanceManifest = z.object({
   audio: AudioRef,
   beats: z.array(ManifestBeat).min(1),
   camera: z.array(CameraShotKeyframe).min(1),
+  /** When present, engine-three uses this scene graph instead of procedural camera shots. */
+  scene: SceneDocument.optional(),
 });
 export type PerformanceManifest = z.infer<typeof PerformanceManifest>;
 
@@ -241,6 +243,8 @@ export interface CompileManifestInput {
   timings: BeatAudioTiming[];
   fps?: number;
   resolution?: Resolution;
+  /** Editor scene snapshot for WYSIWYG render (passed through to the manifest). */
+  scene?: SceneDocument;
 }
 
 const DEFAULT_CAMERA: CameraCue = {
@@ -323,5 +327,6 @@ export function compileManifest(input: CompileManifestInput): PerformanceManifes
     audio,
     beats,
     camera,
+    scene: input.scene,
   });
 }
