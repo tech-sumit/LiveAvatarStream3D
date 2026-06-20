@@ -39,6 +39,7 @@ export class Stage {
   private gate = { left: 0, top: 0, w: 1, h: 1 }; // capture region in canvas px (top-left)
   private clock = new THREE.Clock();
   private updaters: ((dt: number, t: number) => void)[] = [];
+  private directorActive = false; // timeline owns the camera (OrbitControls paused)
 
   constructor(container: HTMLElement) {
     this.el = container;
@@ -130,6 +131,23 @@ export class Stage {
     return this.camera.position.clone();
   }
 
+  /** Timeline director takes/releases the camera (OrbitControls paused while on). */
+  setDirector(on: boolean): void {
+    this.directorActive = on;
+    if (!on) this.controls.update();
+  }
+
+  /** Directly place the camera (used by the timeline director each frame). */
+  setCameraPose(pos: THREE.Vector3, target: THREE.Vector3, fov?: number): void {
+    this.camera.position.copy(pos);
+    this.controls.target.copy(target);
+    this.camera.lookAt(target);
+    if (fov && Math.abs(fov - this.camera.fov) > 0.01) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
   captureStream(fps = 30): MediaStream {
     return this.outputCanvas.captureStream(fps);
   }
@@ -138,7 +156,7 @@ export class Stage {
     const dt = Math.min(this.clock.getDelta(), 0.05);
     const t = this.clock.elapsedTime;
     for (const fn of this.updaters) fn(dt, t);
-    this.controls.update();
+    if (!this.directorActive) this.controls.update(); // director drives the camera directly
 
     const W = this.el.clientWidth || window.innerWidth;
     const H = this.el.clientHeight || window.innerHeight;

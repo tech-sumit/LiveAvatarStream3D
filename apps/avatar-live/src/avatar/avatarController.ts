@@ -107,6 +107,12 @@ export class AvatarController {
     this.group.position.set(x, y, z);
   }
 
+  // Director turn: smoothly rotate the avatar about Y (e.g. toward the screen).
+  private turnTarget = 0;
+  setTurn(angleRad: number): void {
+    this.turnTarget = angleRad;
+  }
+
   /**
    * Load an external glTF/GLB. Uses facial blendshapes if present (full visemes),
    * else falls back to a jaw bone (open/close only), else reports that the model
@@ -340,6 +346,10 @@ export class AvatarController {
 
     this.rig.apply(this.current);
     this.applyGaze(dt); // eyeLook morphs layered on top (no zeroing)
+
+    // Smoothly approach the director turn angle (Y rotation of the whole avatar).
+    const cur = this.group.rotation.y;
+    this.group.rotation.y = cur + (this.turnTarget - cur) * (1 - Math.exp(-dt / 0.35));
   }
 
   private updateBlink(dt: number): void {
