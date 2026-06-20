@@ -1,0 +1,8 @@
+{
+  "label": "Anchor 2 (avaturn variant)",
+  "description": "Avaturn base recolored in Blender (dark hair, navy top, deeper skin) — same rig + ARKit shapes",
+  "model": "model.glb",
+  "shot": "medium",
+  "bodyAnim": true,
+  "lipsync": { "gain": 1.0, "jaw": 1.0, "wide": 1.0, "round": 1.0, "smoothing": 0.2 }
+}
