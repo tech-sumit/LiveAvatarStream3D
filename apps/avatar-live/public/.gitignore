@@ -1,12 +1,8 @@
 # generated avatar index
 avatars.json
-# fetched / large avatar models — restored by scripts/fetch-avatars.sh (config.json is committed)
+# large avatar model binaries — restored via scripts/fetch-avatars.sh + make-variants.sh
 avaturn-model/model.glb
 avaturn-model/animation.glb
 avaturn-model/*.hdr
-avatarsdk-model/model.glb
-mpfb-model/model.glb
-vroid-model/model.glb
-brunette-t-model/model.glb
 avaturn-anchor2-model/model.glb
 avaturn-anchor3-model/model.glb
