@@ -19,6 +19,9 @@ export const CATALOG: Record<string, CueDef> = {
   'cam.close': { track: 'camera', label: 'Close-up', color: '#5b8cff', defaultDuration: 1.5 },
   'cam.screen': { track: 'camera', label: 'Two-shot + screen', color: '#5b8cff', defaultDuration: 1.8 },
   'cam.orbit': { track: 'camera', label: 'Slow orbit', color: '#5b8cff', defaultDuration: 4.0 },
+  // Authored framings: a captured static view, or a recorded free move.
+  'cam.custom': { track: 'camera', label: 'Custom view', color: '#7c5bff', defaultDuration: 1.5 },
+  'cam.path': { track: 'camera', label: 'Recorded move', color: '#ff8c42', defaultDuration: 3.0 },
 
   // ── Avatar motion (fires once at the cue start) ─────────────────────────────
   'motion.turnScreen': { track: 'motion', label: 'Turn to screen', color: '#3ad29f', defaultDuration: 1.0 },
@@ -33,6 +36,14 @@ export interface CameraPose {
   pos: THREE.Vector3;
   target: THREE.Vector3;
   fov: number;
+}
+
+import type { PoseTuple } from './types.js';
+export function poseToTuple(p: { pos: THREE.Vector3; target: THREE.Vector3; fov: number }): PoseTuple {
+  return [p.pos.x, p.pos.y, p.pos.z, p.target.x, p.target.y, p.target.z, p.fov];
+}
+export function tupleToPose(t: PoseTuple): CameraPose {
+  return { pos: new THREE.Vector3(t[0], t[1], t[2]), target: new THREE.Vector3(t[3], t[4], t[5]), fov: t[6] };
 }
 
 // Resolve a camera preset to a concrete pose around the anchor head (hc) sized by

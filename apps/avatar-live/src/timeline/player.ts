@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { Stage } from '../scene/stage.js';
 import type { AvatarController } from '../avatar/avatarController.js';
-import { applyMotion, poseFor, type CameraPose } from './catalog.js';
-import type { Timeline } from './types.js';
+import { applyMotion, poseFor, tupleToPose, type CameraPose } from './catalog.js';
+import type { Cue, Timeline } from './types.js';
 
 // Plays a Timeline against a clock: eases the camera between camera-cue framings
 // and fires motion cues once at their start. Used both for live preview and,
@@ -66,13 +66,26 @@ export class TimelinePlayer {
       else break;
     }
     const active = cam[idx];
-    const to = poseFor(active.type, hc, hh);
-    const from = idx > 0 ? poseFor(cam[idx - 1].type, hc, hh) : to;
-    const p = active.duration > 0 ? clamp01((t - active.start) / active.duration) : 1;
-    const e = easeInOut(p);
 
+    // Recorded free move: replay the captured path exactly (no from-easing).
+    if (active.path && active.path.length) {
+      const pose = samplePath(active.path, t - active.start);
+      this.stage.setCameraPose(pose.pos, pose.target, pose.fov);
+      return;
+    }
+
+    const to = this.resolvePose(active, hc, hh);
+    const from = idx > 0 ? this.resolvePose(cam[idx - 1], hc, hh) : to;
+    const e = easeInOut(active.duration > 0 ? clamp01((t - active.start) / active.duration) : 1);
     const pose = lerpPose(from, to, e);
     this.stage.setCameraPose(pose.pos, pose.target, pose.fov);
+  }
+
+  // A cue's end framing: recorded path's last key, a captured pose, or a preset.
+  private resolvePose(cue: Cue, hc: THREE.Vector3, hh: number): CameraPose {
+    if (cue.path && cue.path.length) return tupleToPose(cue.path[cue.path.length - 1].p);
+    if (cue.pose) return tupleToPose(cue.pose);
+    return poseFor(cue.type, hc, hh);
   }
 
   private fireMotion(t: number): void {
@@ -89,6 +102,21 @@ export class TimelinePlayer {
 
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+// Interpolate a recorded camera path at local time t (seconds).
+function samplePath(path: { t: number; p: number[] }[], t: number): CameraPose {
+  if (t <= path[0].t) return tupleToPose(path[0].p as never);
+  const last = path[path.length - 1];
+  if (t >= last.t) return tupleToPose(last.p as never);
+  let i = 0;
+  while (i < path.length - 1 && path[i + 1].t <= t) i++;
+  const a = path[i];
+  const b = path[Math.min(i + 1, path.length - 1)];
+  const span = b.t - a.t;
+  const f = span > 1e-5 ? (t - a.t) / span : 0;
+  const p: number[] = [];
+  for (let k = 0; k < 7; k++) p[k] = a.p[k] + (b.p[k] - a.p[k]) * f;
+  return tupleToPose(p as never);
 }
 function easeInOut(p: number): number {
   return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;

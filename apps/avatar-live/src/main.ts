@@ -13,7 +13,8 @@ import { Recorder } from './capture/recorder.js';
 import { resolveGesture, selectTalkClip, type Gesture } from './avatar/gestures.js';
 import { TimelinePlayer } from './timeline/player.js';
 import { TimelineUI } from './timeline/ui.js';
-import { cueId, type Timeline } from './timeline/types.js';
+import { poseToTuple } from './timeline/catalog.js';
+import { cueId, type PoseTuple, type Timeline } from './timeline/types.js';
 import type { EmotionName } from './avatar/emotion.js';
 import type { TtsSource } from './tts/types.js';
 
@@ -204,6 +205,8 @@ player.setClipPlayer((name) => {
 player.load(timeline);
 let timelineUI: TimelineUI | null = null;
 let previewStart: number | null = null;
+let playheadT = 0; // current timeline time (preview/seek) — where new cues are added
+let camRec: { start: number; buf: { t: number; p: PoseTuple }[]; last: number; at: number } | null = null;
 
 const ttsOpts = () => ({
   voiceId: voiceSel.value || undefined,
@@ -212,12 +215,22 @@ const ttsOpts = () => ({
 });
 
 stage.onFrame((dt) => {
+  // Camera-path recording: sample the live camera ~30fps while the user navigates.
+  if (camRec) {
+    const rt = performance.now() / 1000 - camRec.start;
+    if (rt - camRec.last >= 1 / 30) {
+      camRec.last = rt;
+      camRec.buf.push({ t: rt, p: poseToTuple(stage.getCameraPose()) });
+    }
+  }
+
   // Timeline preview (no audio): play the camera/motion choreography.
   if (previewStart != null) {
     const t = performance.now() / 1000 - previewStart;
     if (t >= timeline.duration) {
       stopPreview();
     } else {
+      playheadT = t;
       player.update(t);
       timelineUI?.setPlayhead(t);
       avatar.setSilent();
@@ -720,12 +733,15 @@ const timelineEl = $<HTMLDivElement>('timeline');
 const timelineToggle = $<HTMLButtonElement>('timelineToggle');
 timelineToggle.addEventListener('click', () => {
   const open = timelineEl.classList.toggle('open');
+  stageEl.classList.toggle('tl-open', open); // lift the OUTPUT preview above the panel
   if (open && !timelineUI) {
     timelineUI = new TimelineUI(timelineEl, timeline, {
       onChange: () => player.load(timeline),
       onPreview: togglePreview,
       onStop: stopPreview,
       onSeek: seekPreview,
+      onCapturePose: captureCameraCue,
+      onRecordPath: toggleCameraRecord,
     });
   }
   timelineToggle.classList.toggle('primary', open);
@@ -752,7 +768,65 @@ function togglePreview(): void {
 function seekPreview(t: number): void {
   if (previewStart == null) startPreview();
   previewStart = performance.now() / 1000 - t;
+  playheadT = t;
 }
+
+// Capture the current (orbit/arrow-navigated) view as a Custom-view camera cue.
+function captureCameraCue(): void {
+  timeline.cues.push({
+    id: cueId(),
+    track: 'camera',
+    type: 'cam.custom',
+    start: Math.round(playheadT * 10) / 10,
+    duration: 1.5,
+    pose: poseToTuple(stage.getCameraPose()),
+  });
+  player.load(timeline);
+  timelineUI?.refresh();
+  log(`captured camera view as a cue @ ${playheadT.toFixed(1)}s.`);
+}
+
+// Record a free camera move (orbit + arrow keys) → a replayable cam.path cue.
+function toggleCameraRecord(): void {
+  if (camRec) {
+    const buf = camRec.buf;
+    const at = camRec.at;
+    const dur = buf.length ? buf[buf.length - 1].t : 0;
+    camRec = null;
+    timelineUI?.setRecording(false);
+    if (buf.length > 1) {
+      timeline.cues.push({ id: cueId(), track: 'camera', type: 'cam.path', start: at, duration: dur, path: buf });
+      player.load(timeline);
+      timelineUI?.refresh();
+      log(`recorded camera move (${dur.toFixed(1)}s) @ ${at.toFixed(1)}s.`);
+    } else {
+      log('camera recording too short.');
+    }
+  } else {
+    stopPreview();
+    camRec = { start: performance.now() / 1000, buf: [], last: -1, at: Math.round(playheadT * 10) / 10 };
+    timelineUI?.setRecording(true);
+    log('recording camera — orbit / scroll / arrow keys to move, then Stop rec.');
+  }
+}
+
+// Arrow-key camera navigation (when the director isn't driving the camera).
+window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+  if (previewStart != null || render) return; // director owns the camera
+  const s = e.shiftKey ? 0.25 : 0.08;
+  switch (e.key) {
+    case 'ArrowLeft': stage.nudgeCamera(-s, 0, 0); break;
+    case 'ArrowRight': stage.nudgeCamera(s, 0, 0); break;
+    case 'ArrowUp': stage.nudgeCamera(0, 0, s); break; // dolly in
+    case 'ArrowDown': stage.nudgeCamera(0, 0, -s); break; // dolly out
+    case 'PageUp': stage.nudgeCamera(0, s, 0); break; // pedestal up
+    case 'PageDown': stage.nudgeCamera(0, -s, 0); break;
+    default:
+      return;
+  }
+  e.preventDefault();
+});
 
 log(`ready · avatar: ${avatar.description}`);
 
