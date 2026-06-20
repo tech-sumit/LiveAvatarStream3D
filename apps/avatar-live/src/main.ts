@@ -110,8 +110,9 @@ function audioCtx(): AudioContext {
   return sharedCtx;
 }
 
-// Shared loader for the default avatar, file uploads, and URL loads.
-async function loadAvatar(url: string, label: string): Promise<boolean> {
+// Shared loader for the default avatar, file uploads, and URL loads. bodyAnim:
+// true/false forces body animation on/off; undefined → humanoid auto-detect.
+async function loadAvatar(url: string, label: string, bodyAnim?: boolean): Promise<boolean> {
   log(`loading ${label}…`);
   try {
     const res = await avatar.loadGltf(url);
@@ -125,7 +126,7 @@ async function loadAvatar(url: string, label: string): Promise<boolean> {
     statusEl.textContent = avatar.description;
     log(`loaded ${label} — ${res.detail}`);
     if (res.mode === 'jawbone') log('note: jaw-bone lipsync is open/close only (no visemes/expression).');
-    await setupBodyAnimation();
+    await setupBodyAnimation(bodyAnim ?? avatar.isReadyPlayerMe);
     return true;
   } catch (err) {
     log(`failed to load ${label}: ${String(err)}`);
@@ -136,9 +137,9 @@ async function loadAvatar(url: string, label: string): Promise<boolean> {
 // Body/gesture animation (Ready Player Me avatars only — RPM animation library
 // is licensed for use with RPM avatars). Clips are fetched locally, not bundled.
 // Per-segment gestures are mapped to clips via GESTURE_CLIPS (see onSegmentStart).
-async function setupBodyAnimation(): Promise<void> {
-  if (!avatar.isReadyPlayerMe) {
-    log('body animation: skipped (needs a Ready Player Me avatar).');
+async function setupBodyAnimation(enabled: boolean): Promise<void> {
+  if (!enabled) {
+    log('body animation: off for this avatar.');
     return;
   }
   const got = await avatar.loadAnimations([
@@ -167,6 +168,7 @@ interface AvatarConfig {
   description?: string;
   model: string; // filename inside the folder
   shot?: Shot;
+  bodyAnim?: boolean; // force body animation on/off (undefined → humanoid auto-detect)
   lipsync: { gain: number; jaw: number; wide: number; round: number; smoothing: number };
 }
 const DEFAULT_LIP = { gain: 1, jaw: 1, wide: 1, round: 1, smoothing: 0.2 };
@@ -199,6 +201,7 @@ async function discoverAvatars(): Promise<void> {
         description: c.description,
         model: c.model || 'model.glb',
         shot: c.shot,
+        bodyAnim: c.bodyAnim,
         lipsync: { ...DEFAULT_LIP, ...(c.lipsync || {}) },
       };
       avatarConfigs.set(id, cfg);
@@ -229,7 +232,7 @@ async function loadAvatarById(id: string): Promise<boolean> {
   if (!cfg) return false;
   const prevShot = shotSel.value;
   if (cfg.shot) shotSel.value = cfg.shot; // so loadAvatar frames with the right shot
-  const ok = await loadAvatar(`/${id}/${cfg.model}`, cfg.label);
+  const ok = await loadAvatar(`/${id}/${cfg.model}`, cfg.label, cfg.bodyAnim);
   if (ok) {
     currentAvatarId = id;
     adHocUrl = null;
