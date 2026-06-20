@@ -1,7 +1,5 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { createStudio, type Studio } from './studio.js';
 
 export type Shot = 'close' | 'medium' | 'wide';
 
@@ -9,6 +7,13 @@ export interface CaptureFormat {
   name: string;
   w: number;
   h: number;
+}
+
+export interface StageLights {
+  key: THREE.DirectionalLight;
+  fill: THREE.DirectionalLight;
+  rim: THREE.DirectionalLight;
+  ambient: THREE.HemisphereLight;
 }
 
 // Unity-style camera + capture. There is ONE virtual camera (orbit/zoom/pan to
@@ -25,13 +30,9 @@ export class Stage {
 
   private outputRenderer: THREE.WebGLRenderer;
   private outputCanvas: HTMLCanvasElement;
-  private keyLight!: THREE.DirectionalLight;
-  private fillLight!: THREE.DirectionalLight;
-  private rimLight!: THREE.DirectionalLight;
-  private hemiLight!: THREE.HemisphereLight;
-  private studio!: Studio;
   private capture: CaptureFormat = { name: '16:9 · 720p', w: 1280, h: 720 };
   private hideInOutput: THREE.Object3D[] = [];
+  readonly lights = {} as StageLights;
 
   private el: HTMLElement;
   private gateEl: HTMLElement | null;
@@ -67,14 +68,8 @@ export class Stage {
     this.outputRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.getElementById('pipFrame')?.appendChild(this.outputCanvas);
 
-    this.scene.background = new THREE.Color(0x0a0e16);
-    this.scene.fog = new THREE.Fog(0x0a0e16, 12, 30);
-
-    // Image-based lighting: soft, realistic ambient + reflections on skin/hair/
-    // materials (the single biggest realism lever beyond direct lights). Neutral
-    // RoomEnvironment, no external asset.
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.background = new THREE.Color(0x12161f);
+    this.scene.fog = new THREE.Fog(0x12161f, 6, 14);
 
     this.camera = new THREE.PerspectiveCamera(35, this.capture.w / this.capture.h, 0.1, 100);
     this.camera.position.set(0, 1.5, 2);
@@ -87,8 +82,7 @@ export class Stage {
     this.controls.maxDistance = 8;
 
     this.setupLights();
-    this.studio = createStudio();
-    this.scene.add(this.studio.group);
+    this.setupBackdrop();
     this.setCaptureFormat(this.capture);
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -171,50 +165,51 @@ export class Stage {
   }
 
   private setupLights(): void {
-    this.keyLight = new THREE.DirectionalLight(0xfff1e0, 1.6);
-    this.keyLight.position.set(1.8, 2.6, 2.4);
-    this.keyLight.castShadow = true;
-    this.keyLight.shadow.mapSize.set(2048, 2048);
-    this.keyLight.shadow.camera.near = 0.5;
-    this.keyLight.shadow.camera.far = 20;
-    this.keyLight.shadow.bias = -0.0004;
-    this.scene.add(this.keyLight);
+    this.lights.key = new THREE.DirectionalLight(0xfff1e0, 1.6);
+    this.lights.key.position.set(1.8, 2.6, 2.4);
+    this.lights.key.castShadow = true;
+    this.lights.key.shadow.mapSize.set(2048, 2048);
+    this.lights.key.shadow.camera.near = 0.5;
+    this.lights.key.shadow.camera.far = 20;
+    this.lights.key.shadow.bias = -0.0004;
+    this.scene.add(this.lights.key);
 
-    this.fillLight = new THREE.DirectionalLight(0xdfe6ff, 0.35);
-    this.fillLight.position.set(-2.4, 1.2, 1.6);
-    this.scene.add(this.fillLight);
+    this.lights.fill = new THREE.DirectionalLight(0xdfe6ff, 0.35);
+    this.lights.fill.position.set(-2.4, 1.2, 1.6);
+    this.scene.add(this.lights.fill);
 
-    this.rimLight = new THREE.DirectionalLight(0xcfe0ff, 0.6);
-    this.rimLight.position.set(-1, 2.4, -2.6);
-    this.scene.add(this.rimLight);
+    this.lights.rim = new THREE.DirectionalLight(0xcfe0ff, 0.6);
+    this.lights.rim.position.set(-1, 2.4, -2.6);
+    this.scene.add(this.lights.rim);
 
-    this.hemiLight = new THREE.HemisphereLight(0xbcc8e6, 0x20242e, 0.45);
-    this.scene.add(this.hemiLight);
+    this.lights.ambient = new THREE.HemisphereLight(0xbcc8e6, 0x20242e, 0.45);
+    this.scene.add(this.lights.ambient);
   }
 
-  // ── Lighting + studio controls (driven by the sidebar) ─────────────────────
-  setLightIntensity(which: 'key' | 'fill' | 'rim' | 'ambient', v: number): void {
-    const light = { key: this.keyLight, fill: this.fillLight, rim: this.rimLight, ambient: this.hemiLight }[which];
-    light.intensity = v;
+  /** Set a light's intensity (key/fill/rim/ambient). */
+  setLightIntensity(name: keyof StageLights, value: number): void {
+    const l = this.lights[name];
+    if (l) l.intensity = value;
   }
 
-  /** Key-light colour temperature: 0 = warm (3200K-ish) … 1 = cool (6500K+). */
-  setKeyTemperature(t: number): void {
-    const warm = new THREE.Color(0xffd9a8);
-    const cool = new THREE.Color(0xdfeaff);
-    this.keyLight.color.copy(warm).lerp(cool, clamp01(t));
+  /** Set a directional light's color (key/fill/rim) from a hex number. */
+  setLightColor(name: 'key' | 'fill' | 'rim', hex: number): void {
+    this.lights[name]?.color.setHex(hex);
   }
 
-  setStudioVisible(on: boolean): void {
-    this.studio.group.visible = on;
+  setExposure(value: number): void {
+    this.renderer.toneMappingExposure = value;
+    this.outputRenderer.toneMappingExposure = value;
   }
 
-  setStudioAccent(hex: number): void {
-    this.studio.setAccent(hex);
-  }
-
-  setStudioScreen(hex: number): void {
-    this.studio.setScreen(hex);
+  private setupBackdrop(): void {
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(14, 64),
+      new THREE.MeshStandardMaterial({ color: 0x0d1422, roughness: 0.4, metalness: 0.5 }),
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    this.scene.add(floor);
   }
 
   private resize(): void {
@@ -248,8 +243,4 @@ export class Stage {
       this.gateEl.style.height = `${gh}px`;
     }
   }
-}
-
-function clamp01(v: number): number {
-  return v < 0 ? 0 : v > 1 ? 1 : v;
 }
