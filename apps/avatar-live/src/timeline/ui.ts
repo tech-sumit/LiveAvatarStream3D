@@ -13,14 +13,19 @@ export interface TimelineUIHooks {
   onCapturePose(): void; // add a Custom-view camera cue from the live camera
   onRecordPath(): void; // toggle recording a free camera move
   onSelect?(cue: Cue | null): void; // a cue was selected/deselected (for the inspector)
+  onGenerate?(): void; // (re)generate narration from the script
+  onAddAudio?(): void; // add a background-audio clip
 }
 
 const LANES: { kind: TrackKind; name: string }[] = [
+  { kind: 'narration', name: 'Narration' },
   { kind: 'camera', name: 'Camera' },
   { kind: 'motion', name: 'Motion' },
+  { kind: 'audio', name: 'Audio' },
 ];
 const LABEL_W = 78;
-const LANE_H = 40;
+const LANE_H = 34;
+const RULER_H = 18;
 
 export class TimelineUI {
   private root: HTMLElement;
@@ -94,8 +99,18 @@ export class TimelineUI {
     this.timeLabel = el('span', 'tl-time');
     this.timeLabel.textContent = '0.0s';
 
+    const gen = el('button', 'tl-btn');
+    gen.id = 'tlGen';
+    gen.textContent = '🎙 Generate';
+    gen.title = 'Synthesize the script → narration lane (then Preview plays it lip-synced)';
+    gen.onclick = () => this.hooks.onGenerate?.();
+
     const addCam = this.addMenu('camera', '+ Camera');
     const addMotion = this.addMenu('motion', '+ Motion');
+    const addAudio = el('button', 'tl-btn');
+    addAudio.textContent = '+ Audio';
+    addAudio.title = 'Add a background-music / SFX clip';
+    addAudio.onclick = () => this.hooks.onAddAudio?.();
 
     const durLabel = el('span', 'tl-dim');
     durLabel.textContent = 'Length';
@@ -135,8 +150,11 @@ export class TimelineUI {
       play,
       this.timeLabel,
       sep(),
+      gen,
+      sep(),
       addCam,
       addMotion,
+      addAudio,
       capture,
       rec,
       sep(),
@@ -149,7 +167,7 @@ export class TimelineUI {
     // Body: fixed labels + scrollable track area
     const body = el('div', 'tl-body');
     const labels = el('div', 'tl-labels');
-    const ru=el('div','tl-lane-label'); ru.textContent=''; ru.style.height='18px'; labels.append(ru);
+    const ru=el('div','tl-lane-label'); ru.textContent=''; ru.style.height=`${RULER_H}px`; labels.append(ru);
     for (const l of LANES) {
       const lab = el('div', 'tl-lane-label');
       lab.textContent = l.name;
@@ -224,25 +242,40 @@ export class TimelineUI {
     ruler.style.left = `${LABEL_W}px`;
     this.trackArea.append(ruler);
 
-    for (const lane of LANES) {
+    LANES.forEach((lane, i) => {
       const laneEl = el('div', 'tl-lane');
       laneEl.style.left = `${LABEL_W}px`;
+      laneEl.style.top = `${RULER_H + i * LANE_H}px`;
       laneEl.style.height = `${LANE_H}px`;
       laneEl.dataset.kind = lane.kind;
       for (const cue of this.timeline.cues.filter((c) => c.track === lane.kind)) {
         laneEl.append(this.cueEl(cue));
       }
       this.trackArea.append(laneEl);
-    }
+    });
     this.layout();
   }
 
   private cueEl(cue: Cue): HTMLElement {
     const d = CATALOG[cue.type];
     const c = el('div', 'tl-cue');
-    c.style.background = d ? d.color : '#666';
-    c.textContent = d ? d.label : cue.type;
+    const label = cue.track === 'narration' ? (cue.text ?? '…') : cue.track === 'audio' ? (cue.label ?? 'audio') : d ? d.label : cue.type;
+    c.style.background = cue.track === 'narration' ? '#445170' : cue.track === 'audio' ? '#c78b3a' : d ? d.color : '#666';
+    c.textContent = label;
+    c.title = label;
     if (cue.id === this.selected) c.classList.add('sel');
+
+    // Narration blocks are read-only (timing is owned by the synthesized audio) —
+    // clickable to inspect, but not draggable/resizable.
+    if (cue.track === 'narration') {
+      c.style.cursor = 'pointer';
+      c.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        this.select(cue.id);
+      });
+      this.placeCue(c, cue);
+      return c;
+    }
 
     const handle = el('div', 'tl-handle');
     c.append(handle);
