@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Fetch avatars into their per-avatar folders (public/<id>-model/model.glb).
+# Fetch the Avaturn base avatar, then rebuild the recolor variants from it.
 #
-# All from the MIT-licensed met4citizen/talkinghead repo (avatars are generated /
-# large, kept out of git, fetched on demand). Each folder's config.json IS
-# committed, so the dropdown lists every avatar and a fresh checkout works on the
-# two committed models (brunette-model, facecap-model) before fetching.
+# Avaturn (the photoreal, RPM-compatible base) is from the MIT met4citizen/
+# talkinghead repo — large, gitignored, fetched on demand. Each avatar's
+# config.json IS committed, so the dropdown lists them; this restores the binaries.
+# Avaturn exports must be Type-2 (T2) or they have no blendshapes.
 #
-# Add your own: drop public/<name>-model/{model.glb,config.json} — auto-discovered
-# (see AVATARS.md). Avaturn exports must be Type-2 (T2) or they have no blendshapes.
+# Add your own: drop public/<name>-model/{model.glb,config.json} (auto-discovered),
+# or recolor avaturn into a new anchor with scripts/avatar-variant.py (see AVATARS.md).
 set -euo pipefail
-cd "$(dirname "$0")/../public"
+DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$DIR/../public"
 base="https://raw.githubusercontent.com/met4citizen/talkinghead/main/avatars"
-fetch() { mkdir -p "$1-model"; echo "→ $1"; curl -fsSL -o "$1-model/model.glb" "$base/$2"; }
-fetch avaturn     avaturn.glb      # photoreal (T2)
-fetch avatarsdk   avatarsdk.glb    # photoreal
-fetch mpfb        mpfb.glb         # realistic, CC0 (large, ~36MB)
-fetch vroid       vroid.glb        # stylized
-fetch brunette-t  brunette-t.glb   # RPM lite variant
-echo "Fetched avatars into $(pwd)"
+mkdir -p avaturn-model
+echo "→ avaturn"
+curl -fsSL -o avaturn-model/model.glb "$base/avaturn.glb"
+echo "Fetched avaturn. Rebuilding recolor variants…"
+bash "$DIR/make-variants.sh" || echo "(variants need Blender — run scripts/make-variants.sh manually)"
+echo "Done."

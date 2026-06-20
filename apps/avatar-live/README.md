@@ -105,24 +105,31 @@ Use the **avatar dropdown** to switch between:
 Each avatar lives in its own folder, auto-discovered at runtime (no code to add one):
 `public/<id>-model/{model.glb, config.json}` → indexed into `/avatars.json` by the
 Vite avatar plugin. See **[AVATARS.md](AVATARS.md)** for the config schema, the
-lip-sync calibration fields, and a researched plan to source ≥10 ultra-realistic
-ARKit/Oculus-blendshape avatars.
+lip-sync calibration fields, and the open-source pipeline plan.
 
-- **Avaturn / Avatar SDK** (`avaturn-model`, `avatarsdk-model`) — *photoreal* humans,
-  full ARKit + Oculus visemes + RPM-compatible skeleton (lip-sync **and** body
-  animation). **Fetched, not committed** (size + generated-asset terms):
-  ```bash
-  apps/avatar-live/scripts/fetch-avatars.sh   # → public/{avaturn,avatarsdk}-model/model.glb
-  ```
-  (Avaturn must be a **Type-2** export — separate eyeballs + mouth cavity — or it
-  has no blendshapes and can't lip-sync.)
-- **Ready Player Me** (`brunette-model`) — stylized textured human (committed fallback).
-- **facecap** (`facecap-model`) — a real captured face scan, 52 ARKit shapes (committed).
+The roster is the **photoreal Avaturn base + in-Blender recolor variants** (all
+share Avaturn's RPM-compatible rig + ARKit/Oculus visemes → identical body
+animation **and** lip-sync):
 
-The app defaults to Avaturn when present, else the first discovered avatar. All
-bundled avatar assets originate from the MIT-licensed [met4citizen/talkinghead](https://github.com/met4citizen/talkinghead)
-repo; the generated avatars (RPM/Avaturn/Avatar SDK) are subject to those
-vendors' own terms for production use.
+- **`avaturn-model`** — the photoreal Avaturn base (Type-2 export).
+- **`avaturn-anchor2-model`**, **`avaturn-anchor3-model`** — recolored anchors
+  (hair/skin/outfit), generated from the base via `scripts/avatar-variant.py`.
+
+Model binaries are **fetched/generated, not committed** (size + generated-asset
+terms); each folder's `config.json` is committed. Restore them with:
+
+```bash
+apps/avatar-live/scripts/fetch-avatars.sh   # fetch avaturn base + rebuild variants (needs Blender)
+```
+
+Add a new anchor: recolor the base into `public/<id>-model/model.glb` with
+`scripts/avatar-variant.py` + a `config.json` (see AVATARS.md), or drop any
+ARKit/Oculus-blendshape `.glb` into a new folder. Avaturn exports must be
+**Type-2** (separate eyeballs + mouth cavity) or they have no blendshapes.
+
+The app defaults to Avaturn when present, else the first discovered avatar. The
+Avaturn base originates from the MIT-licensed [met4citizen/talkinghead](https://github.com/met4citizen/talkinghead)
+repo; generated Avaturn avatars are subject to Avaturn's terms for production use.
 
 **A model can only lip-sync if its face is animatable.** Loading an external
 `.glb` resolves to one of three outcomes (shown in the log):
