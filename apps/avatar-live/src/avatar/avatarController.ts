@@ -248,8 +248,9 @@ export class AvatarController {
       mouthRound: clamp01(cue.mouthRound * g * this.lip.round),
       mouthClose: cue.mouthClose,
     };
-    const m = this.mouthTarget;
-    this.speaking = m.jawOpen + m.mouthWide + m.mouthRound > 0.04;
+    // Derive "speaking" from the RAW cue, not the calibrated one — otherwise a low
+    // lip-sync gain (or 0) would falsely read as silent and freeze body animation.
+    this.speaking = cue.jawOpen + cue.mouthWide + cue.mouthRound > 0.04;
   }
 
   setSilent(): void {

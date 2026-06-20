@@ -170,8 +170,16 @@ interface AvatarConfig {
   lipsync: { gain: number; jaw: number; wide: number; round: number; smoothing: number };
 }
 const DEFAULT_LIP = { gain: 1, jaw: 1, wide: 1, round: 1, smoothing: 0.2 };
+// Pre-folder-migration projects stored raw model paths; map them to the new ids.
+const LEGACY_AVATAR_IDS: Record<string, string> = {
+  '/avatars/avaturn.glb': 'avaturn-model',
+  '/avatars/brunette.glb': 'brunette-model',
+  '/avatars/human.glb': 'facecap-model',
+  '/avatars/avatarsdk.glb': 'avatarsdk-model',
+};
 const avatarConfigs = new Map<string, AvatarConfig>();
 let currentAvatarId: string | null = null; // null = a file/URL-loaded avatar (not a folder)
+let adHocUrl: string | null = null; // a persistable http(s) URL for an ad-hoc avatar (not a blob:)
 let lipCfg = { ...DEFAULT_LIP }; // active lip-sync config (drives setLipsync + analyser smoothing)
 
 async function discoverAvatars(): Promise<void> {
@@ -219,13 +227,17 @@ function applyLipCfg(c: Partial<typeof DEFAULT_LIP>): void {
 async function loadAvatarById(id: string): Promise<boolean> {
   const cfg = avatarConfigs.get(id);
   if (!cfg) return false;
-  if (cfg.shot) shotSel.value = cfg.shot;
-  applyLipCfg(cfg.lipsync);
+  const prevShot = shotSel.value;
+  if (cfg.shot) shotSel.value = cfg.shot; // so loadAvatar frames with the right shot
   const ok = await loadAvatar(`/${id}/${cfg.model}`, cfg.label);
   if (ok) {
     currentAvatarId = id;
+    adHocUrl = null;
+    applyLipCfg(cfg.lipsync); // only adopt this avatar's lip config once it actually loaded
     lipSaveBtn.disabled = false;
     lipDimEl.textContent = `calibrating ${cfg.label} — saves to ${id}/config.json`;
+  } else {
+    shotSel.value = prevShot; // failed → keep the still-displayed avatar's state intact
   }
   return ok;
 }
@@ -817,9 +829,17 @@ function applyCaptureFormat(): void {
 captureFormatSel.addEventListener('change', applyCaptureFormat);
 applyCaptureFormat();
 
+// True while a performance owns the scene (record / preview / narration play) —
+// swapping the avatar or speaking a test line then would corrupt the take.
+function takeActive(): boolean {
+  return performing || render != null || previewStart != null || recorder.active;
+}
+
 // A file/URL-loaded avatar isn't a discovered folder, so it can't save config.
+// http(s) URLs are remembered so the project can persist them; blob: cannot.
 function loadAdHocAvatar(url: string, label: string): Promise<boolean> {
   currentAvatarId = null;
+  adHocUrl = /^https?:\/\//.test(url) ? url : null;
   lipSaveBtn.disabled = true;
   applyLipCfg(DEFAULT_LIP);
   return loadAvatar(url, label);
@@ -827,6 +847,10 @@ function loadAdHocAvatar(url: string, label: string): Promise<boolean> {
 glbInput.addEventListener('change', async () => {
   const file = glbInput.files?.[0];
   if (!file) return;
+  if (takeActive()) {
+    log('finish the current take before changing the avatar.');
+    return;
+  }
   const url = URL.createObjectURL(file);
   try {
     await loadAdHocAvatar(url, file.name);
@@ -836,10 +860,19 @@ glbInput.addEventListener('change', async () => {
 });
 
 avatarSel.addEventListener('change', () => {
+  if (takeActive()) {
+    log('finish the current take before switching avatars.');
+    avatarSel.value = currentAvatarId ?? avatarSel.value; // undo the dropdown change
+    return;
+  }
   void loadAvatarById(avatarSel.value);
 });
 
 loadUrlBtn.addEventListener('click', () => {
+  if (takeActive()) {
+    log('finish the current take before changing the avatar.');
+    return;
+  }
   const url = glbUrlInput.value.trim();
   if (url) void loadAdHocAvatar(url, url.split('/').pop() || 'url');
 });
@@ -863,6 +896,10 @@ function onLipSlider(): void {
 }
 [lipGainEl, lipJawEl, lipWideEl, lipRoundEl, lipSmoothEl].forEach((el) => el.addEventListener('input', onLipSlider));
 lipTestBtn.addEventListener('click', () => {
+  if (takeActive()) {
+    log('finish the current take before testing lips.');
+    return;
+  }
   audioCtx();
   session.start('Lip sync calibration test. Watch how much the lips are moving as I speak.');
   setSpeakingUi(true);
@@ -875,6 +912,7 @@ lipSaveBtn.addEventListener('click', async () => {
   const cfg = avatarConfigs.get(currentAvatarId);
   if (!cfg) return;
   cfg.lipsync = readLipSliders();
+  cfg.shot = shotSel.value as Shot; // persist the live shot too, not the stale cached one
   const doc = { label: cfg.label, description: cfg.description, model: cfg.model, shot: cfg.shot, lipsync: cfg.lipsync };
   try {
     const r = await fetch(`/avatar-config/${currentAvatarId}`, {
@@ -1485,7 +1523,7 @@ function serializeProject(name: string): ProjectDoc {
     rate: Number(rateEl.value),
     pitch: Number(pitchEl.value),
     emotion: emotionSel.value,
-    avatarUrl: currentAvatarId ?? '', // store the discovered-avatar id (empty for ad-hoc loads)
+    avatarUrl: currentAvatarId ?? adHocUrl ?? '', // discovered-avatar id, or a persistable URL
     shot: shotSel.value,
     studioOn,
     idleMotion: idleMotionOn,
@@ -1625,15 +1663,19 @@ async function applyProject(doc: ProjectDoc): Promise<void> {
     headlineInput.value = doc.headline;
     studio.setHeadline(doc.headline);
   }
-  // Restore the avatar: a discovered-avatar id (preferred) or a raw path/URL.
+  // Restore the avatar: a discovered-avatar id (preferred), a legacy path that
+  // maps to one of the new folders, or a raw URL.
   if (doc.avatarUrl) {
-    if (avatarConfigs.has(doc.avatarUrl)) {
-      if (doc.avatarUrl !== currentAvatarId) {
-        avatarSel.value = doc.avatarUrl;
-        await loadAvatarById(doc.avatarUrl);
+    const ref = LEGACY_AVATAR_IDS[doc.avatarUrl] ?? doc.avatarUrl;
+    if (avatarConfigs.has(ref)) {
+      if (ref !== currentAvatarId) {
+        avatarSel.value = ref;
+        await loadAvatarById(ref);
       }
-    } else if (/^(https?:|\/)/.test(doc.avatarUrl)) {
-      await loadAdHocAvatar(doc.avatarUrl, doc.avatarUrl.split('/').pop() || 'avatar');
+    } else if (/^https?:\/\//.test(ref)) {
+      await loadAdHocAvatar(ref, ref.split('/').pop() || 'avatar');
+    } else {
+      log(`project avatar "${doc.avatarUrl}" not found — keeping the current avatar.`);
     }
   }
 

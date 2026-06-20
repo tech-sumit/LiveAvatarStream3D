@@ -102,17 +102,25 @@ apps/avatar-live/scripts/fetch-animations.sh   # → public/animations/{idle,idl
 
 Use the **avatar dropdown** to switch between:
 
-- **Avaturn / Avatar SDK** — *photoreal* humans (realistic skin/hair/eyes), full
-  ARKit + Oculus viseme blendshapes + RPM-compatible skeleton (lip-sync **and**
-  body animation). **Fetched, not committed** (size + generated-asset terms):
-  ```bash
-  apps/avatar-live/scripts/fetch-avatars.sh   # → public/avatars/{avaturn,avatarsdk}.glb
-  ```
-- **Ready Player Me (brunette)** — stylized textured human (committed fallback).
-- **facecap** — a real captured face scan, 52 ARKit shapes, matte shading (committed).
+Each avatar lives in its own folder, auto-discovered at runtime (no code to add one):
+`public/<id>-model/{model.glb, config.json}` → indexed into `/avatars.json` by the
+Vite avatar plugin. See **[AVATARS.md](AVATARS.md)** for the config schema, the
+lip-sync calibration fields, and a researched plan to source ≥10 ultra-realistic
+ARKit/Oculus-blendshape avatars.
 
-The app defaults to Avaturn when present, else brunette, else facecap. All avatar
-assets originate from the MIT-licensed [met4citizen/talkinghead](https://github.com/met4citizen/talkinghead)
+- **Avaturn / Avatar SDK** (`avaturn-model`, `avatarsdk-model`) — *photoreal* humans,
+  full ARKit + Oculus visemes + RPM-compatible skeleton (lip-sync **and** body
+  animation). **Fetched, not committed** (size + generated-asset terms):
+  ```bash
+  apps/avatar-live/scripts/fetch-avatars.sh   # → public/{avaturn,avatarsdk}-model/model.glb
+  ```
+  (Avaturn must be a **Type-2** export — separate eyeballs + mouth cavity — or it
+  has no blendshapes and can't lip-sync.)
+- **Ready Player Me** (`brunette-model`) — stylized textured human (committed fallback).
+- **facecap** (`facecap-model`) — a real captured face scan, 52 ARKit shapes (committed).
+
+The app defaults to Avaturn when present, else the first discovered avatar. All
+bundled avatar assets originate from the MIT-licensed [met4citizen/talkinghead](https://github.com/met4citizen/talkinghead)
 repo; the generated avatars (RPM/Avaturn/Avatar SDK) are subject to those
 vendors' own terms for production use.
 

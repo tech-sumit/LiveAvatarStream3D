@@ -2,7 +2,7 @@ import { defineConfig, loadEnv, type Connect, type Plugin } from 'vite';
 import { AwsClient } from 'aws4fetch';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 
 // Realtime avatar app. Port 5175 to avoid clashing with the scene editor (5174)
 // and the web app.
@@ -68,7 +68,8 @@ function avatarPlugin(): Plugin {
       const handler: Connect.NextHandleFunction = async (req, res, next) => {
         const url = req.url || '';
         // Live, always-fresh index (newly-added folders appear without a restart).
-        if (url.startsWith('/avatars.json')) {
+        // Exact path only (don't shadow /avatars.json.map etc.).
+        if (url === '/avatars.json' || url.startsWith('/avatars.json?')) {
           res.setHeader('content-type', 'application/json');
           res.end(JSON.stringify(scanAvatars(publicDir)));
           return;
@@ -78,13 +79,19 @@ function avatarPlugin(): Plugin {
         if (m && req.method === 'POST') {
           const id = m[1];
           const dir = join(publicDir, id);
-          if (!existsSync(join(dir, 'config.json'))) {
+          // Defense in depth: the write target must stay inside publicDir.
+          if (!resolve(dir).startsWith(resolve(publicDir) + sep) || !existsSync(join(dir, 'config.json'))) {
             res.statusCode = 404;
             res.end('unknown avatar');
             return;
           }
           try {
-            const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+            const buf = await readBody(req);
+            if (buf.length > 65536) throw new Error('config too large');
+            const body = JSON.parse(buf.toString('utf8') || '{}');
+            if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new Error('config must be an object');
+            // Keep model a string so the loader can't be pointed at a non-string.
+            if ('model' in body && typeof body.model !== 'string') body.model = 'model.glb';
             writeFileSync(join(dir, 'config.json'), JSON.stringify(body, null, 2));
             res.setHeader('content-type', 'application/json');
             res.end('{"ok":true}');
