@@ -49,11 +49,20 @@ export class TimelinePlayer {
   update(t: number): void {
     this.updateCamera(t);
     this.fireMotion(t);
+    this.updateScreenSource(t);
+  }
+
+  // "Cut to screen" cues toggle the recorded output to the wall/cast video.
+  private updateScreenSource(t: number): void {
+    const cues = this.timeline.cues.filter((c) => c.type === 'cam.screenSource');
+    if (!cues.length) return; // leave the manual toggle alone if none authored
+    const active = cues.some((c) => c.start <= t && t < c.start + c.duration);
+    this.stage.setOutputSource(active ? 'screen' : 'scene');
   }
 
   private updateCamera(t: number): void {
     const cam = this.timeline.cues
-      .filter((c) => c.track === 'camera')
+      .filter((c) => c.track === 'camera' && c.type !== 'cam.screenSource')
       .sort((a, b) => a.start - b.start);
     if (!cam.length) return;
 

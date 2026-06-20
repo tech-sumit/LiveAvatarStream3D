@@ -7,6 +7,11 @@ export interface NewsStudio {
   group: THREE.Group;
   /** Update the big video wall's headline text. */
   setHeadline(title: string, kicker?: string): void;
+  /** Play a video element on the wall (its frames stream as the wall texture);
+   *  pass null to revert to the canvas headline. */
+  setScreenVideo(video: HTMLVideoElement | null): void;
+  /** The wall mesh — used for camera framing and the "screen source" cut. */
+  screen: THREE.Mesh;
 }
 
 export function buildNewsStudio(): NewsStudio {
@@ -30,12 +35,11 @@ export function buildNewsStudio(): NewsStudio {
   screenCanvas.height = 576;
   const screenTex = new THREE.CanvasTexture(screenCanvas);
   screenTex.colorSpace = THREE.SRGBColorSpace;
-  const screen = new THREE.Mesh(
-    new THREE.PlaneGeometry(4.2, 2.36),
-    new THREE.MeshBasicMaterial({ map: screenTex, toneMapped: false }),
-  );
+  const screenMat = new THREE.MeshBasicMaterial({ map: screenTex, toneMapped: false });
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 2.36), screenMat);
   screen.position.set(0, 1.95, -2.55);
   group.add(screen);
+  let videoTex: THREE.VideoTexture | null = null;
   // thin bezel
   const bezel = new THREE.Mesh(
     new THREE.PlaneGeometry(4.4, 2.56),
@@ -106,7 +110,22 @@ export function buildNewsStudio(): NewsStudio {
   }
   setHeadline('LIVE AVATAR STREAM 3D', 'LIVE');
 
-  return { group, setHeadline };
+  function setScreenVideo(video: HTMLVideoElement | null): void {
+    if (videoTex) {
+      videoTex.dispose();
+      videoTex = null;
+    }
+    if (video) {
+      videoTex = new THREE.VideoTexture(video);
+      videoTex.colorSpace = THREE.SRGBColorSpace;
+      screenMat.map = videoTex;
+    } else {
+      screenMat.map = screenTex;
+    }
+    screenMat.needsUpdate = true;
+  }
+
+  return { group, setHeadline, setScreenVideo, screen };
 }
 
 // Draws the video-wall content: dark gradient, red LIVE chip, headline, ticker.

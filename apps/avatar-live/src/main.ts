@@ -556,6 +556,114 @@ lightPresetSel.addEventListener('change', () => {
 });
 applyLights();
 
+// ── Back screen: play video on the wall + cast a tab/screen + camera source ───
+// A single offscreen <video> drives the wall texture (and the optional output
+// cut). Its audio is routed into the shared graph so it's heard + recorded.
+const wallVideo = document.createElement('video');
+wallVideo.playsInline = true;
+wallVideo.crossOrigin = 'anonymous';
+wallVideo.loop = false;
+let wallAudioWired = false;
+let outputScreenOn = false;
+let castStream: MediaStream | null = null;
+
+const screenUrlInput = $<HTMLInputElement>('screenUrl');
+const screenLoadBtn = $<HTMLButtonElement>('screenLoad');
+const screenFileInput = $<HTMLInputElement>('screenFile');
+const screenCastBtn = $<HTMLButtonElement>('screenCast');
+const screenStopBtn = $<HTMLButtonElement>('screenStop');
+const camSourceBtn = $<HTMLButtonElement>('camSource');
+
+function wireWallAudio(): void {
+  if (wallAudioWired) return;
+  const ctx = audioCtx();
+  try {
+    const src = ctx.createMediaElementSource(wallVideo);
+    src.connect(ctx.destination);
+    if (recordDest) src.connect(recordDest);
+    wallAudioWired = true;
+  } catch {
+    /* already wired */
+  }
+}
+function showOnWall(): void {
+  studio.setScreenVideo(wallVideo);
+  stage.setScreenSource(wallVideo);
+  void wallVideo.play().catch((e) => log(`video play blocked: ${String(e)}`));
+}
+function stopCast(): void {
+  castStream?.getTracks().forEach((t) => t.stop());
+  castStream = null;
+}
+async function loadWallVideo(src: string, label: string): Promise<void> {
+  stopCast();
+  wireWallAudio();
+  wallVideo.srcObject = null;
+  wallVideo.src = src;
+  wallVideo.muted = false;
+  showOnWall();
+  log(`back screen: playing ${label}.`);
+}
+screenLoadBtn.addEventListener('click', () => {
+  const url = screenUrlInput.value.trim();
+  if (url) void loadWallVideo(url, url.split('/').pop() || 'video');
+});
+screenUrlInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') screenLoadBtn.click();
+});
+screenFileInput.addEventListener('change', () => {
+  const file = screenFileInput.files?.[0];
+  if (!file) return;
+  void loadWallVideo(URL.createObjectURL(file), file.name);
+  screenFileInput.value = '';
+});
+screenCastBtn.addEventListener('click', async () => {
+  const md = navigator.mediaDevices as MediaDevices & { getDisplayMedia?: (c: unknown) => Promise<MediaStream> };
+  if (!md.getDisplayMedia) {
+    log('casting needs a browser that supports screen capture (getDisplayMedia).');
+    return;
+  }
+  try {
+    stopCast();
+    castStream = await md.getDisplayMedia({ video: true, audio: true });
+    wireWallAudio();
+    wallVideo.src = '';
+    wallVideo.srcObject = castStream;
+    wallVideo.muted = true; // avoid feedback; the tab's own audio is already audible
+    showOnWall();
+    castStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+      log('cast ended.');
+      revertScreen();
+    });
+    log('casting a tab/screen onto the wall.');
+  } catch (err) {
+    log(`cast cancelled: ${String(err)}`);
+  }
+});
+function revertScreen(): void {
+  stopCast();
+  wallVideo.pause();
+  wallVideo.srcObject = null;
+  wallVideo.src = '';
+  studio.setScreenVideo(null);
+  stage.setScreenSource(null);
+  outputScreenOn = false;
+  camSourceBtn.textContent = 'Camera source: Scene';
+  camSourceBtn.classList.remove('primary');
+  log('back screen: headline restored.');
+}
+screenStopBtn.addEventListener('click', revertScreen);
+camSourceBtn.addEventListener('click', () => {
+  if (!wallVideo.src && !wallVideo.srcObject) {
+    log('load a video / cast first, then switch the camera to the screen.');
+    return;
+  }
+  outputScreenOn = !outputScreenOn;
+  stage.setOutputSource(outputScreenOn ? 'screen' : 'scene');
+  camSourceBtn.textContent = `Camera source: ${outputScreenOn ? 'Screen' : 'Scene'}`;
+  camSourceBtn.classList.toggle('primary', outputScreenOn);
+});
+
 // ── Capture format (recording size) ──────────────────────────────────────────
 const CAPTURE_FORMATS = [
   { name: '1080p (16:9)', w: 1920, h: 1080 },
@@ -1173,4 +1281,4 @@ refreshSavedList();
 log(`ready · avatar: ${avatar.description}`);
 
 // Debug handle for inspecting the scene/camera from the console.
-(window as unknown as { __las: unknown }).__las = { stage, avatar };
+(window as unknown as { __las: unknown }).__las = { stage, avatar, studio, wallVideo };
