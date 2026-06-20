@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LAS · Realtime 3D Avatar</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="stage"></div>
+
+      <aside id="panel">
+        <header>
+          <h1>Realtime Avatar</h1>
+          <span id="avatarStatus" class="badge">loading…</span>
+        </header>
+
+        <section>
+          <label for="script">Script</label>
+          <textarea id="script" rows="6" spellcheck="false">Good evening, and welcome to the broadcast. I'm your AI anchor, reporting live in three dimensions. Tonight's lead story: realtime talking avatars are now rendered right here in your browser, speaking every word in perfect lip-sync.</textarea>
+          <div class="row">
+            <button id="speak" class="primary">▶ Speak (stream)</button>
+            <button id="stop" disabled>■ Stop</button>
+          </div>
+          <textarea id="liveLine" rows="1" placeholder="Type a line and press Enter to stream it in live…"></textarea>
+        </section>
+
+        <section>
+          <label for="voice">Voice</label>
+          <select id="voice"></select>
+          <div class="grid2">
+            <label class="mini">Rate <input id="rate" type="range" min="0.6" max="1.4" step="0.05" value="1" /></label>
+            <label class="mini">Pitch <input id="pitch" type="range" min="0.6" max="1.4" step="0.05" value="1" /></label>
+          </div>
+          <label for="emotion">Emotion</label>
+          <select id="emotion">
+            <option value="neutral">neutral</option>
+            <option value="warm">warm</option>
+            <option value="happy">happy</option>
+            <option value="excited">excited</option>
+            <option value="serious">serious</option>
+            <option value="concerned">concerned</option>
+            <option value="confident">confident</option>
+            <option value="thoughtful">thoughtful</option>
+          </select>
+        </section>
+
+        <section>
+          <label>Avatar &amp; camera</label>
+          <div class="row">
+            <label class="filebtn">Load .glb<input id="glb" type="file" accept=".glb,.gltf" hidden /></label>
+            <select id="shot">
+              <option value="close">close-up</option>
+              <option value="medium" selected>medium</option>
+              <option value="wide">wide</option>
+            </select>
+          </div>
+          <div class="row">
+            <button id="record">● Record camera</button>
+            <a id="download" hidden>⬇ Save clip</a>
+          </div>
+        </section>
+
+        <pre id="log" aria-live="polite"></pre>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

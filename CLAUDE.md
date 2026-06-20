@@ -26,6 +26,7 @@ Two render paths share one control plane:
 | `services/engine-three` | GPU pod | Headless Three.js renderer (Node 20 + `gl` + Xvfb). HTTP server `src/server.ts`; render pipeline `render.ts` → `stage.ts`/`sceneGraph.ts`/`timeline.ts`/`camera.ts`; face lip-sync under `src/face/` + `src/avatar/`. |
 | `services/gpu/` | GPU pod | Python FastAPI services: `voice/`, `avatar-build/`, `avatar-video/` (EchoMimicV3), `finishing/` (restore/SR/RIFE/NVENC), `image-gen/`, `realtime/` (MuseTalk). `deploy/` = pod bring-up (nginx, supervisord, validators). |
 | `apps/scene-editor` | browser | **three.js editor + LAS Render tab** (see below). |
+| `apps/avatar-live` (`@las/avatar-live`) | browser | **Realtime 3D talking avatar.** Stream a script → audio → browser-rendered Three.js avatar speaks it lip-synced in realtime. Avatar-agnostic `FaceChannels` drive glTF ARKit/Oculus blendshapes (`MorphFaceRig`) or a zero-asset procedural head. Web Speech TTS (local) or cloned-voice `ServerTts`. No GPU needed for the local path. See its README + `docs/specs/2026-06-20-realtime-avatar-live.md`. |
 | `apps/web` | browser | Vite + React webapp (Cloudflare Pages). |
 
 ## Common commands (run from project root)
@@ -33,6 +34,7 @@ Two render paths share one control plane:
 ```bash
 npm install                 # workspaces
 npm run dev:editor          # scene editor → http://localhost:5174
+npm run dev:avatar          # realtime 3D talking avatar → http://localhost:5175
 npm run dev:web             # web app
 npm run dev:api             # control-api wrangler dev
 npm run typecheck           # all workspaces (--if-present)
