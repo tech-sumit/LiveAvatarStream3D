@@ -11,6 +11,7 @@ import { BlendshapeTimelineLipsync } from './lipsync/blendshapeTimeline.js';
 import { LocalA2FClient } from './a2f/localA2F.js';
 import { ServerA2FClient } from './a2f/serverA2F.js';
 import type { A2FClient } from './a2f/types.js';
+import { resolveGesture, GESTURE_CLIPS, type Gesture } from './avatar/gestures.js';
 import type { EmotionName } from './avatar/emotion.js';
 import type { TtsSource } from './tts/types.js';
 
@@ -27,6 +28,7 @@ const pitchEl = $<HTMLInputElement>('pitch');
 const emotionSel = $<HTMLSelectElement>('emotion');
 const shotSel = $<HTMLSelectElement>('shot');
 const glbInput = $<HTMLInputElement>('glb');
+const avatarSel = $<HTMLSelectElement>('avatarSel');
 const glbUrlInput = $<HTMLInputElement>('glbUrl');
 const loadUrlBtn = $<HTMLButtonElement>('loadUrl');
 const recordBtn = $<HTMLButtonElement>('record');
@@ -73,7 +75,7 @@ async function loadAvatar(url: string, label: string): Promise<boolean> {
 
 // Body/gesture animation (Ready Player Me avatars only — RPM animation library
 // is licensed for use with RPM avatars). Clips are fetched locally, not bundled.
-const TALK_CLIPS = ['talk1', 'talk2', 'talk3'];
+// Per-segment gestures are mapped to clips via GESTURE_CLIPS (see onSegmentStart).
 async function setupBodyAnimation(): Promise<void> {
   if (!avatar.isReadyPlayerMe) {
     log('body animation: skipped (needs a Ready Player Me avatar).');
@@ -81,9 +83,12 @@ async function setupBodyAnimation(): Promise<void> {
   }
   const got = await avatar.loadAnimations([
     { name: 'idle', url: '/animations/idle.glb' },
+    { name: 'idle_calm', url: '/animations/idle_calm.glb' },
     { name: 'talk1', url: '/animations/talk1.glb' },
     { name: 'talk2', url: '/animations/talk2.glb' },
     { name: 'talk3', url: '/animations/talk3.glb' },
+    { name: 'talk4', url: '/animations/talk4.glb' },
+    { name: 'talk5', url: '/animations/talk5.glb' },
   ]);
   if (got.includes('idle')) avatar.playClip('idle', 0);
   log(
@@ -97,9 +102,18 @@ async function setupBodyAnimation(): Promise<void> {
 // met4citizen/talkinghead repo) with full ARKit + Oculus viseme blendshapes.
 // Falls back to the facecap head scan, then the procedural head.
 void (async () => {
-  if (await loadAvatar('/avatars/brunette.glb', 'Ready Player Me (brunette)')) return;
-  if (await loadAvatar('/avatars/human.glb', 'realistic face (facecap)')) return;
-  log('using procedural head.');
+  const order: [string, string][] = [
+    ['/avatars/avaturn.glb', 'Avaturn (photoreal)'],
+    ['/avatars/brunette.glb', 'Ready Player Me'],
+    ['/avatars/human.glb', 'facecap'],
+  ];
+  for (const [url, label] of order) {
+    if (await loadAvatar(url, label)) {
+      avatarSel.value = url;
+      return;
+    }
+  }
+  log('using procedural head — run scripts/fetch-avatars.sh for photoreal avatars.');
 })();
 
 // ── Lipsync state ────────────────────────────────────────────────────────────
@@ -116,7 +130,6 @@ let a2fLip: BlendshapeTimelineLipsync | null = null;
 let a2fSrc: AudioBufferSourceNode | null = null;
 let a2fStart = 0;
 
-let bodyTalking = false;
 stage.onFrame((dt) => {
   if (a2fLip && a2fCtx) {
     const t = a2fCtx.currentTime - a2fStart;
@@ -125,14 +138,6 @@ stage.onFrame((dt) => {
     avatar.setMouth(analyser ? analyser.sample() : boundary.sample(performance.now()));
   } else {
     avatar.setSilent();
-  }
-  // Switch body posture between idle and a talking gesture as speech starts/stops.
-  const isSpeaking = !!a2fLip || speaking;
-  if (isSpeaking !== bodyTalking) {
-    bodyTalking = isSpeaking;
-    if (avatar.animationClips.length) {
-      avatar.playClip(isSpeaking ? TALK_CLIPS[Math.floor(Math.random() * TALK_CLIPS.length)] : 'idle');
-    }
   }
   avatar.update(dt);
 });
@@ -169,10 +174,12 @@ async function runA2F(buffer: AudioBuffer, label: string): Promise<void> {
   a2fSrc = src;
   src.onended = () => {
     stopA2F();
+    if (avatar.animationClips.length) avatar.playClip('idle');
     setSpeakingUi(false);
     log('A2F playback done.');
   };
   src.start();
+  if (avatar.animationClips.length) avatar.playClip('talk1');
   setSpeakingUi(true);
 }
 
@@ -239,17 +246,22 @@ const session = new RealtimeSession(
       analyser = new AudioAnalyserLipsync(ctx, node);
       speaking = true;
     },
-    onSegmentStart: () => {
+    onSegmentStart: (_text, gesture) => {
       speaking = true;
+      if (avatar.animationClips.length && gesture) {
+        avatar.playClip(GESTURE_CLIPS[gesture as Gesture] ?? 'talk1');
+      }
     },
     onIdle: () => {
       speaking = false;
+      if (avatar.animationClips.length) avatar.playClip('idle');
       analyser = null;
       log('idle');
       setSpeakingUi(false);
     },
     onStatus: (m) => log(m),
   },
+  resolveGesture,
 );
 
 // ── Controls ─────────────────────────────────────────────────────────────────
@@ -303,6 +315,10 @@ glbInput.addEventListener('change', async () => {
   } finally {
     URL.revokeObjectURL(url);
   }
+});
+
+avatarSel.addEventListener('change', () => {
+  void loadAvatar(avatarSel.value, avatarSel.selectedOptions[0]?.text ?? 'avatar');
 });
 
 loadUrlBtn.addEventListener('click', () => {
