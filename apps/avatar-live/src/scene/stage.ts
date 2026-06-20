@@ -124,16 +124,31 @@ export class Stage {
     this.hideInOutput.push(obj);
   }
 
-  /** Aim the camera at a head center; distance from head height + shot. */
+  /** Aim the camera at the face (head center) at eye level; distance from the
+   *  head height + shot. Camera height is aligned to the face for every shot. */
   frame(headCenter: THREE.Vector3, headHeight: number, shot: Shot = 'medium', snap = true): void {
     const factor = shot === 'close' ? 2.0 : shot === 'medium' ? 3.4 : 6.5;
     const dist = headHeight * factor;
     this.controls.target.copy(headCenter);
     if (snap) {
-      const yOff = shot === 'close' ? headHeight * 0.04 : -headHeight * 0.08;
-      this.camera.position.set(headCenter.x, headCenter.y + yOff, headCenter.z + dist);
+      this.camera.position.set(headCenter.x, headCenter.y, headCenter.z + dist);
     }
     this.controls.update();
+  }
+
+  /** Snap the current free camera to look at the face at eye level, preserving
+   *  the horizontal direction + distance (the one-shot "align to face"). */
+  alignToFace(face: THREE.Vector3): void {
+    this.controls.target.copy(face);
+    this.camera.position.y = face.y;
+    this.camera.lookAt(face);
+    this.controls.update();
+  }
+
+  /** Soft per-frame pull toward a face-level framing (the auto-align toggle). */
+  softAlignToFace(face: THREE.Vector3, k = 0.12): void {
+    this.controls.target.lerp(face, k);
+    this.camera.position.y += (face.y - this.camera.position.y) * k;
   }
 
   setCaptureFormat(fmt: CaptureFormat): void {

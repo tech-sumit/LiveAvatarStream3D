@@ -237,6 +237,13 @@ const ttsOpts = () => ({
 });
 
 stage.onFrame((dt) => {
+  // Auto-align: softly keep the model's face centered at eye level. Active only
+  // when the user owns the camera (not during preview/render or gizmo editing),
+  // so orbit + zoom still work — the height/target just track the face.
+  if (autoAlignOn && previewStart == null && !render && !gizmoOn) {
+    stage.softAlignToFace(faceWorld());
+  }
+
   // Camera-path recording: sample the live camera ~30fps while the user navigates.
   if (camRec) {
     const rt = performance.now() / 1000 - camRec.start;
@@ -429,6 +436,22 @@ centerAvatarBtn.addEventListener('click', () => {
   avatar.setPosition(0, 0, 0);
   avatar.group.quaternion.identity();
   syncGizmoToAvatar();
+});
+
+// ── Align camera to the model's face ─────────────────────────────────────────
+// World-space face center (head center offset by the avatar's position).
+function faceWorld(): THREE.Vector3 {
+  return avatar.headCenter.clone().add(avatar.group.position);
+}
+const alignFaceBtn = $<HTMLButtonElement>('alignFace');
+const autoAlignBtn = $<HTMLButtonElement>('autoAlign');
+let autoAlignOn = false;
+alignFaceBtn.addEventListener('click', () => stage.alignToFace(faceWorld()));
+autoAlignBtn.addEventListener('click', () => {
+  autoAlignOn = !autoAlignOn;
+  autoAlignBtn.textContent = `Auto-align: ${autoAlignOn ? 'On' : 'Off'}`;
+  autoAlignBtn.classList.toggle('primary', autoAlignOn);
+  if (autoAlignOn) stage.alignToFace(faceWorld()); // snap immediately, then keep aligned
 });
 
 // ── 3D transform gizmo (Unity/Unreal-style) — move/rotate the avatar in the
