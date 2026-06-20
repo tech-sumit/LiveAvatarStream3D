@@ -28,12 +28,12 @@ const shotSel = $<HTMLSelectElement>('shot');
 const glbInput = $<HTMLInputElement>('glb');
 const avatarSel = $<HTMLSelectElement>('avatarSel');
 const glbUrlInput = $<HTMLInputElement>('glbUrl');
-const posX = $<HTMLInputElement>('posX');
-const posY = $<HTMLInputElement>('posY');
-const posZ = $<HTMLInputElement>('posZ');
 const resetViewBtn = $<HTMLButtonElement>('resetView');
 const centerAvatarBtn = $<HTMLButtonElement>('centerAvatar');
 const gizmoBtn = $<HTMLButtonElement>('gizmoBtn');
+const gizmoModesEl = $<HTMLDivElement>('gizmoModes');
+const moveModeBtn = $<HTMLButtonElement>('moveMode');
+const rotateModeBtn = $<HTMLButtonElement>('rotateMode');
 const loadUrlBtn = $<HTMLButtonElement>('loadUrl');
 const recordBtn = $<HTMLButtonElement>('record');
 const downloadEl = $<HTMLAnchorElement>('download');
@@ -77,8 +77,8 @@ async function loadAvatar(url: string, label: string): Promise<boolean> {
       log(`⚠ ${label}: ${res.detail}. Use an ARKit/Oculus-blendshape avatar (e.g. Ready Player Me).`);
       return false;
     }
-    posX.value = posY.value = posZ.value = '0';
     avatar.setPosition(0, 0, 0);
+    avatar.group.quaternion.identity();
     stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot);
     statusEl.textContent = avatar.description;
     log(`loaded ${label} — ${res.detail}`);
@@ -263,55 +263,85 @@ avatar.setEmotion(emotionSel.value as EmotionName);
 shotSel.addEventListener('change', () => stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot));
 rateEl.addEventListener('input', () => boundary.setRate(Number(rateEl.value)));
 
-// Avatar position (X/Y/Z) + camera resets.
-const applyPos = () => avatar.setPosition(Number(posX.value), Number(posY.value), Number(posZ.value));
-[posX, posY, posZ].forEach((el) => el.addEventListener('input', applyPos));
 resetViewBtn.addEventListener('click', () =>
   stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot, true),
 );
 centerAvatarBtn.addEventListener('click', () => {
-  posX.value = posY.value = posZ.value = '0';
-  applyPos();
+  avatar.setPosition(0, 0, 0);
+  avatar.group.quaternion.identity();
   syncGizmoToAvatar();
 });
 
-// TransformControls gizmo — drag the avatar directly in 3D. The handle sits at a
-// proxy placed at chest height (the avatar's own origin is at the feet, off-
-// screen); dragging the proxy translates the avatar by the same delta. Disables
-// orbit while dragging and keeps the X/Y/Z sliders in sync.
+// ── 3D transform gizmo (Unity/Unreal-style) — move/rotate the avatar in the
+// viewport. The handle rides a proxy at chest height (the avatar's own origin is
+// at the feet, off-screen in head shots); dragging maps back to the avatar.
+// Rotate is Y-only (turn left/right), which keeps the chest above the feet so the
+// position mapping stays valid. Orbit is disabled while dragging.
 const gizmoProxy = new THREE.Object3D();
 stage.add(gizmoProxy);
 let chestY = 1.15;
 function syncGizmoToAvatar(): void {
-  chestY = Math.max(0.5, avatar.headCenter.y - 0.45); // upper chest — clear of the face
+  chestY = Math.max(0.5, avatar.headCenter.y - 0.45);
   gizmoProxy.position.set(avatar.group.position.x, avatar.group.position.y + chestY, avatar.group.position.z);
+  gizmoProxy.quaternion.copy(avatar.group.quaternion);
 }
 
 const gizmo = new TransformControls(stage.camera, stage.renderer.domElement);
-gizmo.setMode('translate');
-gizmo.setSpace('world');
-gizmo.setSize(1.8);
+gizmo.setSpace('local');
+gizmo.setSize(2.0);
 gizmo.attach(gizmoProxy);
 gizmo.visible = false;
 gizmo.enabled = false;
 stage.add(gizmo);
+stage.excludeFromCapture(gizmo); // never in the recorded output
 gizmo.addEventListener('dragging-changed', (e) => {
   stage.controls.enabled = !(e as unknown as { value: boolean }).value;
 });
 gizmo.addEventListener('objectChange', () => {
   avatar.setPosition(gizmoProxy.position.x, gizmoProxy.position.y - chestY, gizmoProxy.position.z);
-  posX.value = avatar.group.position.x.toFixed(2);
-  posY.value = avatar.group.position.y.toFixed(2);
-  posZ.value = avatar.group.position.z.toFixed(2);
+  avatar.group.quaternion.copy(gizmoProxy.quaternion);
 });
-stage.excludeFromCapture(gizmo); // keep the XYZ handles out of the recorded output
+
+function setGizmoMode(mode: 'translate' | 'rotate'): void {
+  gizmo.setMode(mode);
+  gizmo.showX = gizmo.showZ = mode === 'translate';
+  gizmo.showY = true; // rotate = Y-turn only; translate = all axes
+  moveModeBtn.classList.toggle('primary', mode === 'translate');
+  rotateModeBtn.classList.toggle('primary', mode === 'rotate');
+}
+function setGizmoOn(on: boolean): void {
+  if (on) {
+    syncGizmoToAvatar();
+    stage.frame(avatar.headCenter, avatar.headHeight, 'wide', true); // reveal the avatar + gizmo
+    shotSel.value = 'wide';
+  }
+  gizmo.visible = on;
+  gizmo.enabled = on;
+  gizmoBtn.classList.toggle('primary', on);
+  gizmoModesEl.hidden = !on;
+}
 let gizmoOn = false;
+setGizmoMode('translate');
 gizmoBtn.addEventListener('click', () => {
   gizmoOn = !gizmoOn;
-  if (gizmoOn) syncGizmoToAvatar();
-  gizmo.visible = gizmoOn;
-  gizmo.enabled = gizmoOn;
-  gizmoBtn.classList.toggle('primary', gizmoOn);
+  setGizmoOn(gizmoOn);
+});
+moveModeBtn.addEventListener('click', () => setGizmoMode('translate'));
+rotateModeBtn.addEventListener('click', () => setGizmoMode('rotate'));
+// Unity-style hotkeys: W = move, E = rotate, G = toggle gizmo, Esc = hide.
+window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  if (e.key === 'g' || e.key === 'G') {
+    gizmoOn = !gizmoOn;
+    setGizmoOn(gizmoOn);
+  } else if (e.key === 'Escape') {
+    gizmoOn = false;
+    setGizmoOn(false);
+  } else if (gizmoOn && (e.key === 'w' || e.key === 'W')) {
+    setGizmoMode('translate');
+  } else if (gizmoOn && (e.key === 'e' || e.key === 'E')) {
+    setGizmoMode('rotate');
+  }
 });
 
 // ── Capture format (recording size) ──────────────────────────────────────────
