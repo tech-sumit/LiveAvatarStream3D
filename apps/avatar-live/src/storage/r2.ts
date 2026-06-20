@@ -9,11 +9,13 @@ function encodePath(key: string): string {
     .join('/');
 }
 
-/** True if the dev server has R2 configured (R2_* in .env). */
+/** True if the dev server has R2 configured (R2_* in .env). Requires a JSON
+ *  response — a static host's SPA fallback returns 200 text/html, which must NOT
+ *  be mistaken for a working backend (else saves would silently go nowhere). */
 export async function r2Available(): Promise<boolean> {
   try {
     const r = await fetch('/r2/list?prefix=__probe__/');
-    return r.ok;
+    return r.ok && (r.headers.get('content-type') || '').includes('application/json');
   } catch {
     return false;
   }
