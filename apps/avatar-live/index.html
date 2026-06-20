@@ -68,6 +68,17 @@
           </div>
         </section>
 
+        <section>
+          <label>Lip-sync engine — NVIDIA Audio2Face-3D <span id="a2fMode" class="badge">local</span></label>
+          <div class="row">
+            <button id="a2fDemo">▶ A2F demo (sample audio)</button>
+            <label class="filebtn">A2F audio…<input id="a2fAudio" type="file" accept="audio/*" hidden /></label>
+          </div>
+          <p class="hint">Audio → full-face ARKit blendshapes, synced to playback. Set
+            <code>VITE_A2F_URL</code> to use a real A2F-3D NIM; otherwise a GPU-free
+            stand-in produces the same timeline format.</p>
+        </section>
+
         <pre id="log" aria-live="polite"></pre>
       </aside>
     </div>

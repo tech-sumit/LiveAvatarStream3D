@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+grpcio>=1.62
+protobuf>=4.25
+numpy>=1.24
+# Plus the generated nvidia_ace.* gRPC stubs from the A2F-3D-Samples proto/
+# directory (see README.md).

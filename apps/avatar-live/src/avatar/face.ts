@@ -29,4 +29,6 @@ export function zeroChannels(): FaceChannels {
 /** Anything that can render abstract face channels onto a concrete avatar. */
 export interface FaceRig {
   apply(c: FaceChannels): void;
+  /** Optional: drive the full face from an ARKit name→weight map (A2F-3D output). */
+  applyNamed?(weights: Record<string, number>): void;
 }
