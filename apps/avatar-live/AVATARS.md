@@ -251,3 +251,58 @@ Relevant files on this platform:
 - `/Users/sumitagrawal/CODE/sumit/n8n/projects/LiveAvatarStream3D/apps/avatar-live/public/<id>-model/{model.glb,config.json}` (per-avatar drop-in)
 - `/Users/sumitagrawal/CODE/sumit/n8n/projects/LiveAvatarStream3D/apps/avatar-live/src/avatar/morphRig.ts` (morph binding / compatibility logic)
 - `/Users/sumitagrawal/CODE/sumit/n8n/projects/LiveAvatarStream3D/apps/avatar-live/src/avatar/face.ts` (FaceChannels contract)
+
+---
+
+## Importing your own avatars (`scripts/import-avatar.mjs`)
+
+A drop-in pipeline that makes an arbitrary `.glb` **work** on this platform
+(rig/morphs/config) — it does **not** restyle geometry or textures.
+
+```bash
+npm run import-avatar -- path/to/model.glb --id my-anchor --label "My Anchor" --shot medium
+# flags: --body true|false  --no-rename  --dry  --overwrite-config
+```
+
+What it does (editing only the GLB's JSON chunk, so Draco/meshopt files are fine):
+
+1. Reads the model's blendshape names and **renames** the conventions the rig
+   doesn't already cover (VRM/VRoid `Fcl_*` → Oculus visemes; collision-guarded).
+   ARKit camelCase, ARKit `_L/_R`, Oculus `viseme_*` and `mouthOpen` already bind.
+2. Prints a **compatibility report**: lip-sync channels covered (jaw/wide/round/
+   close) and whether the skeleton is RPM/Mixamo-compatible (→ body animation).
+3. Writes `public/<id>-model/{model.glb, config.json}` (auto-discovered). Refuses
+   models with no jaw/open channel (a frozen face) and tells you to add ARKit
+   blendshapes first (Blender FaceIt).
+
+Then calibrate its lip-sync in the editor's **Lip-sync calibration** panel.
+
+## Custom-face avatars & "face swap" — what's actually feasible
+
+**Can we make new photoreal identities by swapping faces on a base model?**
+Not with quality, in-house. A convincing identity swap on a *rigged* head means
+fitting a 3D Morphable Model (FLAME/DECA-class) to a photo and synthesizing skin
+texture (inpainting/UV) — a real ML pipeline with model weights + datasets, i.e.
+re-building what photo-avatar services already do. A naïve texture paste onto the
+face UV looks wrong (no landmark fit, seams, lighting mismatch). So: **don't
+hand-roll identity face-swap.** Generate custom faces from the source instead
+(below), then `import-avatar`.
+
+**Can we re-create Avaturn's avatar maker from "public sources"?**
+No — Avaturn's photo→3D models (face reconstruction, texture synthesis, hair,
+body, rigging) are **proprietary and not open source**; there is nothing public
+to re-create it from. What *is* public is their **SDK**, which **embeds their
+hosted creator in an iframe** — you get the finished GLB, not the models. So the
+legitimate, low-effort path to "a customize-avatar page on our site" is:
+
+- Add a **Create Avatar** page that embeds Avaturn's official creator
+  (`@avaturn/sdk`: photo upload + their styling UI run in the iframe).
+- On `export`, the SDK hands back a GLB URL → pipe it through `import-avatar`
+  (or the in-app loader) → a new `public/<id>-model/` avatar.
+- Requires an Avaturn account/SDK key (free for non-commercial; ~$800/mo to ship
+  commercially — see the table above). Same applies to Avatar SDK / MetaPerson,
+  which also offer an embeddable creator + API.
+
+This gives exactly the requested capability (custom faces from images + styling,
+on our site) using the source's *official* embed — without (illegally/
+impractically) cloning their proprietary pipeline.
