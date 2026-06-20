@@ -182,6 +182,11 @@ interface RenderState {
 }
 let render: RenderState | null = null;
 
+// Pre-generated narration: the whole script synthesized into one buffer + the
+// per-sentence timeline. Built by "Generate", then played (preview) or recorded.
+let narrationAudio: AudioBuffer | null = null;
+let narrationSegs: { t: number; gesture: string; emotion?: string }[] = [];
+
 // ── Director timeline (camera + motion choreography) ─────────────────────────
 function demoTimeline(): Timeline {
   const c = (track: 'camera' | 'motion', type: string, start: number, duration: number) => ({
@@ -257,6 +262,7 @@ stage.onFrame((dt) => {
     // sync with the captured audio, both rendered from the same timeline.
     const t = render.ctx.currentTime - render.start;
     if (t >= 0) {
+      timelineUI?.setPlayhead(t);
       if (player.hasCameraCues()) player.update(t); // director camera + motion, synced
       avatar.setMouth(render.analyser.sample());
       avatar.setGazeTarget(stage.cameraWorldPosition());
@@ -391,6 +397,10 @@ avatar.setEmotion(emotionSel.value as EmotionName);
 
 shotSel.addEventListener('change', () => stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot));
 rateEl.addEventListener('input', () => boundary.setRate(Number(rateEl.value)));
+// Editing the script (or voice settings) invalidates pre-generated narration.
+scriptEl.addEventListener('input', () => {
+  narrationAudio = null;
+});
 
 resetViewBtn.addEventListener('click', () =>
   stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot, true),
@@ -624,48 +634,94 @@ function monoData(b: AudioBuffer): Float32Array {
   return out;
 }
 
-async function renderVideo(): Promise<void> {
-  session.stop();
+// Synthesize the whole script into one buffer + per-sentence timeline, and lay
+// the sentences onto the Narration lane (timing comes from the real audio).
+async function buildNarration(): Promise<boolean> {
+  if (!activeTts.synthesize) {
+    log('narration needs ElevenLabs — add ELEVENLABS_API_KEY to apps/avatar-live/.env.');
+    return false;
+  }
   const lines = scriptEl.value
     .replace(/\s+/g, ' ')
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
   if (!lines.length) {
-    log('nothing to render — script is empty.');
-    return;
+    log('nothing to generate — script is empty.');
+    return false;
   }
   const segs = lines.map(resolveGesture);
   const ctx = audioCtx();
   await ctx.resume();
-
-  recordBtn.disabled = true;
-  log(`render: synthesizing ${segs.length} segment(s)…`);
+  log(`narration: synthesizing ${segs.length} sentence(s)…`);
   const buffers: AudioBuffer[] = [];
   try {
     for (const s of segs) buffers.push(await activeTts.synthesize!(s.text, ttsOpts()));
   } catch (err) {
-    log(`render failed (TTS): ${String(err)}`);
-    recordBtn.disabled = false;
-    return;
+    log(`narration failed (TTS): ${String(err)}`);
+    return false;
   }
 
-  // Concatenate into one buffer (with a short gap between sentences) + timeline.
+  // Concatenate into one buffer (short gap between sentences) + timeline + cues.
   const sr = buffers[0].sampleRate;
   const gap = Math.round(sr * 0.18);
   const total = buffers.reduce((a, b) => a + b.length + gap, 0);
   const out = ctx.createBuffer(1, total, sr);
   const od = out.getChannelData(0);
   const segTimeline: { t: number; gesture: string; emotion?: string }[] = [];
+  const cues: Cue[] = [];
   let off = 0;
   buffers.forEach((b, i) => {
     od.set(monoData(b), off);
-    segTimeline.push({ t: off / sr, gesture: segs[i].gesture, emotion: segs[i].emotion });
+    const t = off / sr;
+    segTimeline.push({ t, gesture: segs[i].gesture, emotion: segs[i].emotion });
+    cues.push({
+      id: cueId(),
+      track: 'narration',
+      type: 'narration',
+      start: Math.round(t * 10) / 10,
+      duration: Math.round((b.length / sr) * 10) / 10,
+      text: segs[i].text,
+      gesture: segs[i].gesture,
+      emotion: segs[i].emotion,
+    });
     off += b.length + gap;
   });
-  recordBtn.disabled = false;
 
-  // Audio graph: buffer → gain → speakers + record destination + analyser.
+  narrationAudio = out;
+  narrationSegs = segTimeline;
+  // Replace any existing narration cues; extend the timeline to cover the audio.
+  timeline.cues = timeline.cues.filter((c) => c.track !== 'narration').concat(cues);
+  timeline.duration = Math.max(timeline.duration, Math.ceil(total / sr) + 1);
+  player.load(timeline);
+  timelineUI?.reload();
+  log(`narration ready · ${(total / sr).toFixed(1)}s, ${cues.length} sentence(s). Preview to play it.`);
+  return true;
+}
+
+async function generateNarration(): Promise<void> {
+  const gen = document.getElementById('tlGen') as HTMLButtonElement | null;
+  if (gen) gen.disabled = true;
+  try {
+    await buildNarration();
+  } finally {
+    if (gen) gen.disabled = false;
+  }
+}
+
+// Unified performance: play the pre-generated narration once while driving
+// lipsync + motion + camera off the audio clock. record=true also captures it to
+// a downloadable clip; record=false is an in-editor preview.
+async function perform(record: boolean): Promise<void> {
+  session.stop();
+  if (!narrationAudio) {
+    if (!(await buildNarration())) return;
+  }
+  const ctx = audioCtx();
+  await ctx.resume();
+  const out = narrationAudio!;
+
+  // Audio graph: narration → gain → speakers + record destination + analyser.
   const srcNode = ctx.createBufferSource();
   srcNode.buffer = out;
   const gain = ctx.createGain();
@@ -674,41 +730,82 @@ async function renderVideo(): Promise<void> {
   if (recordDest) gain.connect(recordDest);
   const ana = new AudioAnalyserLipsync(ctx, gain);
 
-  try {
-    recorder.start();
-  } catch (err) {
-    log(`record start failed: ${String(err)}`);
-    return;
+  if (record) {
+    try {
+      recorder.start();
+    } catch (err) {
+      log(`record start failed: ${String(err)}`);
+      return;
+    }
+    setRecUi(true);
+    downloadEl.hidden = true;
   }
-  setRecUi(true);
-  downloadEl.hidden = true;
-  log(`render: recording ${stage.captureLabel()} · ${(total / sr).toFixed(1)}s …`);
 
+  const startAt = ctx.currentTime + 0.12;
   renderSrc = srcNode;
-  render = { ctx, start: ctx.currentTime + 0.08, analyser: ana, timeline: segTimeline, idx: -1 };
+  render = { ctx, start: startAt, analyser: ana, timeline: narrationSegs, idx: -1 };
   const directing = player.hasCameraCues();
-  if (directing) player.begin(); // camera/motion choreography, synced + captured
+  if (directing) player.begin(); // camera/motion choreography, synced
+  scheduleAudioCues(ctx, startAt); // background-music / SFX clips, mixed + captured
+  timelineUI?.setPlaying(!record);
+  log(
+    record
+      ? `render: recording ${stage.captureLabel()} · ${(out.length / out.sampleRate).toFixed(1)}s …`
+      : `playing narration · ${(out.length / out.sampleRate).toFixed(1)}s …`,
+  );
+
   srcNode.onended = async () => {
     render = null;
     renderSrc = null;
     if (directing) player.end();
+    stopAudioCues();
     avatar.setSilent();
     avatar.setGazeTarget(null);
     if (avatar.animationClips.length) avatar.playClip('idle');
-    const { url, filename } = await recorder.stop();
-    setRecUi(false);
-    downloadClip(url, filename);
+    timelineUI?.setPlaying(false);
+    timelineUI?.setPlayhead(0);
+    if (record) {
+      const { url, filename } = await recorder.stop();
+      setRecUi(false);
+      downloadClip(url, filename);
+    } else {
+      log('narration playback finished.');
+    }
   };
-  srcNode.start(render.start);
+  srcNode.start(startAt);
+}
+
+/** Stop an in-progress perform() (preview or record) — onended does the cleanup. */
+function stopPerform(): void {
+  try {
+    renderSrc?.stop();
+  } catch {
+    /* already stopped */
+  }
+}
+
+// ── Background audio (filled in by Phase 2) ──────────────────────────────────
+let scheduledAudio: AudioBufferSourceNode[] = [];
+function scheduleAudioCues(_ctx: AudioContext, _startAt: number): void {
+  /* phase 2: schedule background-audio cues with fades */
+}
+function stopAudioCues(): void {
+  for (const s of scheduledAudio) {
+    try {
+      s.stop();
+    } catch {
+      /* already stopped */
+    }
+  }
+  scheduledAudio = [];
+}
+function addAudioClip(): void {
+  log('background audio — adding in the next step.');
 }
 
 recordBtn.addEventListener('click', () => {
   if (render) {
-    try {
-      renderSrc?.stop(); // ends early → onended exports what's captured
-    } catch {
-      /* already stopped */
-    }
+    stopPerform(); // ends early → onended exports what's captured (if recording)
     return;
   }
   if (recorder.active) {
@@ -721,7 +818,7 @@ recordBtn.addEventListener('click', () => {
   }
   audioCtx();
   if (activeTts.synthesize) {
-    void renderVideo();
+    void perform(true);
   } else {
     // Web Speech fallback: live capture; press Speak to perform, Stop record to save.
     try {
@@ -753,6 +850,8 @@ function buildTimelineUI(): void {
     onCapturePose: captureCameraCue,
     onRecordPath: toggleCameraRecord,
     onSelect: showCueInspector,
+    onGenerate: () => void generateNarration(),
+    onAddAudio: addAudioClip,
   });
 }
 timelineToggle.addEventListener('click', () => {
@@ -776,7 +875,17 @@ function stopPreview(): void {
   timelineUI?.setPlayhead(0);
 }
 function togglePreview(): void {
-  if (previewStart != null) stopPreview();
+  if (render) {
+    stopPerform(); // narration playback in progress → stop
+    return;
+  }
+  if (previewStart != null) {
+    stopPreview();
+    return;
+  }
+  // If narration is generated, Preview plays it lip-synced; otherwise it's a
+  // silent camera/motion rehearsal.
+  if (narrationAudio) void perform(false);
   else startPreview();
 }
 function seekPreview(t: number): void {

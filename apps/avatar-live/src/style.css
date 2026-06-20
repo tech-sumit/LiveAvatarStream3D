@@ -37,7 +37,7 @@ body {
   height: 100vh;
 }
 #app.tl-open {
-  grid-template-rows: 46px minmax(0, 1fr) 212px;
+  grid-template-rows: 46px minmax(0, 1fr) 244px;
 }
 
 /* Top bar */
@@ -295,16 +295,10 @@ body {
   right: 0;
   border-bottom: 1px solid rgba(40, 49, 67, 0.5);
 }
-.tl-lane[data-kind='camera'] {
-  top: 18px;
-}
-.tl-lane[data-kind='motion'] {
-  top: 58px;
-}
 .tl-cue {
   position: absolute;
-  top: 5px;
-  height: 30px;
+  top: 4px;
+  height: 26px;
   border-radius: 5px;
   color: #06101f;
   font-size: 10px;
