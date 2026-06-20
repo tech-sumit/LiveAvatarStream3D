@@ -51,9 +51,15 @@ script text ──► RealtimeSession ──► TtsSource ──► (audio)
 
 ## Avatars & lip-sync requirements
 
-The default avatar is **facecap** (`public/avatars/human.glb`) — a real captured
-human face with the full 52-shape ARKit blendshape set. It has realistic
-geometry but matte "clay" shading (no photoreal skin texture).
+The default avatar is **brunette** (`public/avatars/brunette.glb`) — a textured
+Ready Player Me human (skin, hair, clothing) with the full ARKit + Oculus viseme
+blendshape set, from the MIT-licensed [met4citizen/talkinghead](https://github.com/met4citizen/talkinghead)
+project. A bundled fallback, **facecap** (`public/avatars/human.glb`), is a real
+captured face scan (52 ARKit shapes) with matte "clay" shading.
+
+> Avatar credit: `brunette.glb` (and the Ready Player Me / Avaturn format) from
+> met4citizen/talkinghead (MIT). Ready Player Me avatars are subject to RPM's own
+> terms for production use.
 
 **A model can only lip-sync if its face is animatable.** Loading an external
 `.glb` resolves to one of three outcomes (shown in the log):
@@ -84,6 +90,21 @@ Load via **Load .glb** (file) or paste a URL into the **Load** field:
 It's a content-pipeline step, not runtime: open the model in **Blender** and add
 ARKit shape keys (manually or with an add-on like FaceIt), or bake facial
 animation with **NVIDIA Audio2Face**, then export glTF **with morph targets**.
+
+### Higher-quality lip-sync engines (server-side)
+
+The current in-browser lip-sync is amplitude/word-boundary based. For
+broadcast-grade accuracy, generate an ARKit-blendshape *timeline* on the server
+and stream it to the browser (the avatar already exposes ARKit morphs):
+
+- **[NVIDIA Audio2Face-3D](https://github.com/NVIDIA/Audio2Face-3D-Samples)** —
+  audio → 52 ARKit blendshape coefficients via a GPU NIM microservice. The
+  samples repo provides the gRPC client + example audio (the A2F-3D *models*
+  require NVIDIA NIM/NGC access; check that repo's license for terms). This is
+  the production path; `services/engine-three/src/face/a2f.ts` already calls A2F
+  for the offline renderer.
+- **talkinghead's** text→phoneme→Oculus-viseme timing is a lighter, no-GPU
+  alternative worth porting for crisper consonants.
 
 > Compressed avatars work out of the box — the loader wires Draco, meshopt, and
 > KTX2/basis decoders (served from `public/decoders/`).
