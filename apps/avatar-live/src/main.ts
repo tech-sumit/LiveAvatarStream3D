@@ -268,7 +268,7 @@ stage.onFrame((dt) => {
     const t = render.ctx.currentTime - render.start;
     if (t >= 0) {
       timelineUI?.setPlayhead(t);
-      if (player.hasCameraCues()) player.update(t); // director camera + motion, synced
+      player.update(t); // director camera (if any) + motion + screen cuts, synced
       avatar.setMouth(render.analyser.sample());
       avatar.setGazeTarget(stage.cameraWorldPosition());
       while (render.idx + 1 < render.timeline.length && render.timeline[render.idx + 1].t <= t) {
@@ -315,6 +315,13 @@ void (async () => {
   await populateVoices();
 })();
 
+// A project loaded before the voice list finished populating stashes its voice
+// here; populateVoices() applies it once the matching <option> exists.
+let pendingVoiceId: string | null = null;
+function voiceOptionExists(id: string): boolean {
+  return [...voiceSel.options].some((o) => o.value === id);
+}
+
 async function populateVoices(): Promise<void> {
   voiceSel.innerHTML = '';
   if (!activeTts.listVoices) return;
@@ -329,6 +336,11 @@ async function populateVoices(): Promise<void> {
   if (activeTts.kind === 'web-speech') {
     const en = voices.find((v) => /en[-_]/i.test(v.id) || /English/i.test(v.label));
     if (en) voiceSel.value = en.id;
+  }
+  // Apply a voice from a project that loaded before the list was ready.
+  if (pendingVoiceId && voiceOptionExists(pendingVoiceId)) {
+    voiceSel.value = pendingVoiceId;
+    pendingVoiceId = null;
   }
 }
 
@@ -565,8 +577,8 @@ wallVideo.playsInline = true;
 wallVideo.crossOrigin = 'anonymous';
 wallVideo.loop = false;
 let wallAudioWired = false;
-let outputScreenOn = false;
 let castStream: MediaStream | null = null;
+let castAudioNode: MediaStreamAudioSourceNode | null = null;
 // What's on the wall, for project persistence (a live cast can't be persisted).
 let backScreen: { kind: 'url' | 'r2' | 'file'; src: string; blob?: Blob } | null = null;
 
@@ -595,6 +607,8 @@ function showOnWall(): void {
   void wallVideo.play().catch((e) => log(`video play blocked: ${String(e)}`));
 }
 function stopCast(): void {
+  castAudioNode?.disconnect();
+  castAudioNode = null;
   castStream?.getTracks().forEach((t) => t.stop());
   castStream = null;
 }
@@ -637,7 +651,13 @@ screenCastBtn.addEventListener('click', async () => {
     wireWallAudio();
     wallVideo.src = '';
     wallVideo.srcObject = castStream;
-    wallVideo.muted = true; // avoid feedback; the tab's own audio is already audible
+    // Mute the wall element (its tab is already audible locally → no echo), but tap
+    // the cast stream's audio into the recording so the captured clip has it.
+    wallVideo.muted = true;
+    if (castStream.getAudioTracks().length && recordDest) {
+      castAudioNode = audioCtx().createMediaStreamSource(castStream);
+      castAudioNode.connect(recordDest);
+    }
     showOnWall();
     castStream.getVideoTracks()[0]?.addEventListener('ended', () => {
       log('cast ended.');
@@ -655,11 +675,15 @@ function revertScreen(): void {
   wallVideo.srcObject = null;
   wallVideo.src = '';
   studio.setScreenVideo(null);
-  stage.setScreenSource(null);
-  outputScreenOn = false;
-  camSourceBtn.textContent = 'Camera source: Scene';
-  camSourceBtn.classList.remove('primary');
+  stage.setScreenSource(null); // also resets the output to 'scene'
+  updateCamSourceLabel();
   log('back screen: headline restored.');
+}
+// The button always reflects the Stage's actual output source (single source of truth).
+function updateCamSourceLabel(): void {
+  const on = stage.outputIsScreen;
+  camSourceBtn.textContent = `Camera source: ${on ? 'Screen' : 'Scene'}`;
+  camSourceBtn.classList.toggle('primary', on);
 }
 screenStopBtn.addEventListener('click', revertScreen);
 camSourceBtn.addEventListener('click', () => {
@@ -667,10 +691,8 @@ camSourceBtn.addEventListener('click', () => {
     log('load a video / cast first, then switch the camera to the screen.');
     return;
   }
-  outputScreenOn = !outputScreenOn;
-  stage.setOutputSource(outputScreenOn ? 'screen' : 'scene');
-  camSourceBtn.textContent = `Camera source: ${outputScreenOn ? 'Screen' : 'Scene'}`;
-  camSourceBtn.classList.toggle('primary', outputScreenOn);
+  stage.setOutputSource(stage.outputIsScreen ? 'scene' : 'screen');
+  updateCamSourceLabel();
 });
 
 // ── Capture format (recording size) ──────────────────────────────────────────
@@ -775,9 +797,10 @@ async function buildNarration(): Promise<boolean> {
   const ctx = audioCtx();
   await ctx.resume();
   log(`narration: synthesizing ${segs.length} sentence(s)…`);
-  const buffers: AudioBuffer[] = [];
+  let buffers: AudioBuffer[];
   try {
-    for (const s of segs) buffers.push(await activeTts.synthesize!(s.text, ttsOpts()));
+    // Sentences are independent → synthesize in parallel (≈one round-trip, not N).
+    buffers = await Promise.all(segs.map((s) => activeTts.synthesize!(s.text, ttsOpts())));
   } catch (err) {
     log(`narration failed (TTS): ${String(err)}`);
     return false;
@@ -833,10 +856,16 @@ async function generateNarration(): Promise<void> {
 // Unified performance: play the pre-generated narration once while driving
 // lipsync + motion + camera off the audio clock. record=true also captures it to
 // a downloadable clip; record=false is an in-editor preview.
+let performing = false; // guards against re-entry while synthesizing / playing
 async function perform(record: boolean): Promise<void> {
+  if (performing) return;
+  performing = true;
   session.stop();
   if (!narrationAudio) {
-    if (!(await buildNarration())) return;
+    if (!(await buildNarration())) {
+      performing = false;
+      return;
+    }
   }
   const ctx = audioCtx();
   await ctx.resume();
@@ -856,6 +885,7 @@ async function perform(record: boolean): Promise<void> {
       recorder.start();
     } catch (err) {
       log(`record start failed: ${String(err)}`);
+      performing = false;
       return;
     }
     setRecUi(true);
@@ -865,8 +895,7 @@ async function perform(record: boolean): Promise<void> {
   const startAt = ctx.currentTime + 0.12;
   renderSrc = srcNode;
   render = { ctx, start: startAt, analyser: ana, timeline: narrationSegs, idx: -1 };
-  const directing = player.hasCameraCues();
-  if (directing) player.begin(); // camera/motion choreography, synced
+  player.begin(); // drives camera (if framing cues) + motion + screen cuts off the clock
   scheduleAudioCues(ctx, startAt); // background-music / SFX clips, mixed + captured
   timelineUI?.setPlaying(!record);
   log(
@@ -878,13 +907,14 @@ async function perform(record: boolean): Promise<void> {
   srcNode.onended = async () => {
     render = null;
     renderSrc = null;
-    if (directing) player.end();
+    player.end();
     stopAudioCues();
     avatar.setSilent();
     avatar.setGazeTarget(null);
     if (avatar.animationClips.length) avatar.playClip('idle');
     timelineUI?.setPlaying(false);
     timelineUI?.setPlayhead(0);
+    performing = false;
     if (record) {
       const { url, filename } = await recorder.stop();
       setRecUi(false);
@@ -911,6 +941,13 @@ const audioBlobs = new Map<string, Blob>(); // cue.id → original bytes (for R2
 let scheduledAudio: AudioBufferSourceNode[] = [];
 const audioFileEl = $<HTMLInputElement>('audioFile');
 
+// Drop decoded buffers / blobs for audio cues that no longer exist (e.g. deleted).
+function pruneAudioMaps(): void {
+  const ids = new Set(timeline.cues.filter((c) => c.track === 'audio').map((c) => c.id));
+  for (const id of [...audioBuffers.keys()]) if (!ids.has(id)) audioBuffers.delete(id);
+  for (const id of [...audioBlobs.keys()]) if (!ids.has(id)) audioBlobs.delete(id);
+}
+
 // "+ Audio": pick a file, decode it, drop a clip on the Audio lane at the playhead.
 function addAudioClip(): void {
   audioFileEl.click();
@@ -925,19 +962,23 @@ audioFileEl.addEventListener('change', async () => {
     const id = cueId();
     audioBuffers.set(id, buf);
     audioBlobs.set(id, file);
+    const start = Math.round(playheadT * 10) / 10;
+    const duration = Math.round(buf.duration * 10) / 10;
     timeline.cues.push({
       id,
       track: 'audio',
       type: 'audio.clip',
-      start: Math.round(playheadT * 10) / 10,
-      duration: Math.round(buf.duration * 10) / 10,
+      start,
+      duration,
       label: file.name.replace(/\.[^.]+$/, ''),
       volume: 0.8,
       fadeIn: 0,
       fadeOut: 1.0,
     });
+    // Extend the timeline to cover a clip that runs past the current end.
+    timeline.duration = Math.max(timeline.duration, Math.ceil(start + duration) + 1);
     player.load(timeline);
-    timelineUI?.refresh();
+    timelineUI?.reload();
     log(`added audio "${file.name}" (${buf.duration.toFixed(1)}s) @ ${playheadT.toFixed(1)}s.`);
   } catch (err) {
     log(`couldn't load audio: ${String(err)}`);
@@ -952,11 +993,18 @@ function scheduleAudioCues(ctx: AudioContext, startAt: number): void {
     const buf = audioBuffers.get(c.id);
     if (!buf) continue; // file not loaded this session (e.g. after a reload)
     const vol = c.volume ?? 0.8;
-    const fi = Math.max(0, c.fadeIn ?? 0);
-    const fo = Math.max(0, c.fadeOut ?? 1);
     const len = Math.min(buf.duration, c.duration);
     const t0 = startAt + c.start;
     const tEnd = t0 + len;
+    // Clamp the fades so fade-in then fade-out fit inside the clip (no overlap /
+    // events scheduled past the stop time → no clicks).
+    let fi = Math.max(0, c.fadeIn ?? 0);
+    let fo = Math.max(0, c.fadeOut ?? 1);
+    if (fi + fo > len && fi + fo > 0) {
+      const s = len / (fi + fo);
+      fi *= s;
+      fo *= s;
+    }
 
     const src = ctx.createBufferSource();
     src.buffer = buf;
@@ -966,14 +1014,10 @@ function scheduleAudioCues(ctx: AudioContext, startAt: number): void {
     if (recordDest) gain.connect(recordDest);
 
     const g = gain.gain;
-    if (fi > 0) {
-      g.setValueAtTime(0.0001, t0);
-      g.linearRampToValueAtTime(vol, t0 + Math.min(fi, len));
-    } else {
-      g.setValueAtTime(vol, t0);
-    }
+    g.setValueAtTime(fi > 0 ? 0.0001 : vol, t0);
+    if (fi > 0) g.linearRampToValueAtTime(vol, t0 + fi);
     if (fo > 0) {
-      g.setValueAtTime(vol, Math.max(t0 + fi, tEnd - fo));
+      g.setValueAtTime(vol, tEnd - fo); // tEnd-fo >= t0+fi after clamping
       g.linearRampToValueAtTime(0.0001, tEnd);
     }
     src.start(t0, 0, len);
@@ -1031,7 +1075,10 @@ const timelineToggle = $<HTMLButtonElement>('timelineToggle');
 function buildTimelineUI(): void {
   if (timelineUI) return;
   timelineUI = new TimelineUI(timelineEl, timeline, {
-    onChange: () => player.load(timeline),
+    onChange: () => {
+      player.load(timeline);
+      pruneAudioMaps(); // free buffers/blobs for deleted audio cues
+    },
     onPreview: togglePreview,
     onStop: stopPreview,
     onSeek: seekPreview,
@@ -1149,8 +1196,13 @@ function showCueInspector(cue: Cue | null): void {
   cueTypeEl.textContent = `${cue.track} · ${name}`;
   cueStartEl.value = cue.start.toFixed(1);
   cueDurEl.value = cue.duration.toFixed(1);
-  // "Set to current view" only makes sense for posed camera cues (not preset / path).
-  cueSetViewBtn.hidden = cue.track !== 'camera' || !!cue.path;
+  // Narration timing is owned by the synthesized audio — its blocks are read-only.
+  const ro = cue.track === 'narration';
+  cueStartEl.disabled = ro;
+  cueDurEl.disabled = ro;
+  // "Set to current view" only makes sense for posed framing cues (not preset /
+  // path / the screen-source cut).
+  cueSetViewBtn.hidden = cue.track !== 'camera' || !!cue.path || cue.type === 'cam.screenSource';
   // Audio-only fields (volume + fade envelope).
   cueAudioEl.hidden = cue.track !== 'audio';
   if (cue.track === 'audio') {
@@ -1160,7 +1212,7 @@ function showCueInspector(cue: Cue | null): void {
   }
 }
 function commitCueEdit(): void {
-  if (!selectedCue) return;
+  if (!selectedCue || selectedCue.track === 'narration') return; // narration is read-only
   selectedCue.start = Math.max(0, Number(cueStartEl.value) || 0);
   selectedCue.duration = Math.max(0.1, Number(cueDurEl.value) || 0.1);
   player.load(timeline);
@@ -1176,9 +1228,8 @@ function commitAudioEdit(): void {
 }
 [cueVolEl, cueFadeInEl, cueFadeOutEl].forEach((el) => el.addEventListener('input', commitAudioEdit));
 cueSetViewBtn.addEventListener('click', () => {
-  if (!selectedCue) return;
+  if (!selectedCue || selectedCue.track !== 'camera' || selectedCue.type === 'cam.screenSource') return;
   selectedCue.pose = poseToTuple(stage.getCameraPose());
-  if (!selectedCue.type.startsWith('cam.')) return;
   selectedCue.type = 'cam.custom';
   player.load(timeline);
   timelineUI?.refresh();
@@ -1277,24 +1328,34 @@ function serializeProject(name: string): ProjectDoc {
 
 // Upload any session-only assets (audio clips, a back-screen file) to R2 and
 // rewrite their references to R2 keys so the saved project is self-contained.
-async function uploadAssets(name: string): Promise<void> {
+// Keys are project-independent (random ids) so renaming/duplicating a project
+// never strands or overwrites an asset, and an already-uploaded asset (c.src set)
+// is reused as-is. Uploads run in parallel.
+async function uploadAssets(): Promise<void> {
   if (!r2On) return;
+  const jobs: Promise<void>[] = [];
   for (const c of timeline.cues) {
-    if (c.track === 'audio' && !c.src) {
-      const blob = audioBlobs.get(c.id);
-      if (blob) {
-        const key = `assets/${name}/${c.id}-${sanitize(c.label ?? 'audio')}`;
-        await r2PutBlob(key, blob);
+    if (c.track !== 'audio' || c.src) continue;
+    const blob = audioBlobs.get(c.id);
+    if (!blob) continue;
+    const key = `assets/${crypto.randomUUID()}-${sanitize(c.label ?? 'audio')}`;
+    jobs.push(
+      r2PutBlob(key, blob).then(() => {
         c.src = key;
-      }
-    }
+      }),
+    );
   }
   if (backScreen?.kind === 'file' && backScreen.blob) {
     const ext = (backScreen.blob.type.split('/')[1] || 'mp4').replace(/[^\w]+/g, '');
-    const key = `assets/${name}/backscreen.${ext}`;
-    await r2PutBlob(key, backScreen.blob);
-    backScreen = { kind: 'r2', src: key };
+    const blob = backScreen.blob;
+    const key = `assets/${crypto.randomUUID()}-backscreen.${ext}`;
+    jobs.push(
+      r2PutBlob(key, blob).then(() => {
+        backScreen = { kind: 'r2', src: key };
+      }),
+    );
   }
+  await Promise.all(jobs);
 }
 
 function downloadJson(filename: string, obj: unknown): void {
@@ -1311,7 +1372,7 @@ async function saveProject(): Promise<void> {
   const name = sanitize(projectNameEl.value);
   saveTimelineBtn.disabled = true;
   try {
-    await uploadAssets(name);
+    await uploadAssets();
     const doc = serializeProject(name);
     if (r2On) {
       await r2PutJson(`${PROJECT_PREFIX}${name}.json`, doc);
@@ -1335,10 +1396,12 @@ async function saveProject(): Promise<void> {
 }
 
 // Apply just the timeline portion (fresh cue ids), reusing it for raw timeline files.
-function applyTimelineDoc(data: { duration?: number; cues?: Cue[] }): void {
-  timeline.duration = Math.max(2, Number(data.duration) || 26);
-  timeline.cues = (data.cues ?? []).map((c) => ({ ...c, id: cueId() }));
+function applyTimelineDoc(data: { duration?: number; cues?: Cue[] } | null | undefined): void {
+  const cues = Array.isArray(data?.cues) ? data.cues : [];
+  timeline.duration = Math.max(2, Number(data?.duration) || 26);
+  timeline.cues = cues.map((c) => ({ ...c, id: cueId() }));
   player.load(timeline);
+  pruneAudioMaps();
   buildTimelineUI();
   timelineUI?.reload();
   if (!appEl.classList.contains('tl-open')) {
@@ -1356,7 +1419,11 @@ async function applyProject(doc: ProjectDoc): Promise<void> {
   emotionSel.value = doc.emotion ?? 'neutral';
   avatar.setEmotion(emotionSel.value as EmotionName);
   shotSel.value = doc.shot ?? 'medium';
-  if (doc.voiceId) voiceSel.value = doc.voiceId;
+  // The voice list may still be loading; defer if its option isn't there yet.
+  if (doc.voiceId) {
+    if (voiceOptionExists(doc.voiceId)) voiceSel.value = doc.voiceId;
+    else pendingVoiceId = doc.voiceId;
+  }
 
   if (doc.lights) {
     lightKey.value = String(doc.lights.key);
@@ -1387,18 +1454,20 @@ async function applyProject(doc: ProjectDoc): Promise<void> {
 
   applyTimelineDoc(doc.timeline);
 
-  // Re-fetch + decode audio assets (cue ids were regenerated above).
-  for (const c of timeline.cues) {
-    if (c.track === 'audio' && c.src) {
-      try {
-        const blob = await r2GetBlob(c.src);
-        audioBlobs.set(c.id, blob);
-        audioBuffers.set(c.id, await audioCtx().decodeAudioData(await blob.arrayBuffer()));
-      } catch {
-        log(`audio asset missing: ${c.src}`);
-      }
-    }
-  }
+  // Re-fetch + decode audio assets in parallel (cue ids were regenerated above).
+  await Promise.all(
+    timeline.cues
+      .filter((c) => c.track === 'audio' && c.src)
+      .map(async (c) => {
+        try {
+          const blob = await r2GetBlob(c.src!);
+          audioBlobs.set(c.id, blob);
+          audioBuffers.set(c.id, await audioCtx().decodeAudioData(await blob.arrayBuffer()));
+        } catch {
+          log(`audio asset missing: ${c.src}`);
+        }
+      }),
+  );
   // Restore the back-screen video.
   revertScreen();
   if (doc.backScreen) {
@@ -1434,15 +1503,18 @@ timelineFileEl.addEventListener('change', async () => {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
-    if (data && (data.script !== undefined || data.timeline)) {
+    const isObj = data && typeof data === 'object';
+    const isProject = isObj && (typeof data.script === 'string' || (data.timeline && typeof data.timeline === 'object'));
+    const isTimeline = isObj && Array.isArray(data.cues);
+    if (isProject) {
       await applyProject(data as ProjectDoc); // full project file
-    } else if (data && Array.isArray(data.cues)) {
+      projectNameEl.value = file.name.replace(/\.(project|timeline)\.json$|\.json$/i, '');
+    } else if (isTimeline) {
       applyTimelineDoc(data); // raw timeline file
       log(`loaded timeline — ${timeline.cues.length} cue(s).`);
     } else {
       log('load failed: unrecognized file.');
     }
-    projectNameEl.value = file.name.replace(/\.(project|timeline)\.json$|\.json$/i, '');
   } catch (err) {
     log(`load failed: ${String(err)}`);
   }

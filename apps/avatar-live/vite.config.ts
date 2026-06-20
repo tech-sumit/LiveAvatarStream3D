@@ -68,14 +68,21 @@ function r2Plugin(env: Record<string, string>): Plugin {
         }
         try {
           await ensureBucket();
-          // GET /r2/list?prefix=
+          // GET /r2/list?prefix=  (follows pagination so >1000 keys are returned)
           if (url.startsWith('/r2/list')) {
             const prefix = new URL(url, 'http://x').searchParams.get('prefix') || '';
-            const r = await aws.fetch(
-              `${endpoint}/${bucket}?list-type=2&prefix=${encodeURIComponent(prefix)}`,
-            );
-            const xml = await r.text();
-            const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map((m) => decodeXml(m[1]));
+            const keys: string[] = [];
+            let token: string | undefined;
+            do {
+              const q =
+                `${endpoint}/${bucket}?list-type=2&prefix=${encodeURIComponent(prefix)}` +
+                (token ? `&continuation-token=${encodeURIComponent(token)}` : '');
+              const xml = await (await aws.fetch(q)).text();
+              for (const m of xml.matchAll(/<Key>([^<]+)<\/Key>/g)) keys.push(decodeXml(m[1]));
+              const truncated = /<IsTruncated>\s*true\s*<\/IsTruncated>/.test(xml);
+              const next = xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/);
+              token = truncated && next ? decodeXml(next[1]) : undefined;
+            } while (token);
             res.setHeader('content-type', 'application/json');
             res.end(JSON.stringify({ keys }));
             return;
@@ -91,9 +98,16 @@ function r2Plugin(env: Record<string, string>): Plugin {
           const target = `${endpoint}/${bucket}/${key.split('/').map(encodeURIComponent).join('/')}`;
 
           if (req.method === 'GET') {
-            const r = await aws.fetch(target);
+            // Forward Range so <video> can seek/stream large objects (206 partials).
+            const range = req.headers['range'];
+            const r = await aws.fetch(target, range ? { headers: { range } } : undefined);
             res.statusCode = r.status;
             res.setHeader('content-type', r.headers.get('content-type') || 'application/octet-stream');
+            res.setHeader('accept-ranges', 'bytes');
+            for (const h of ['content-range', 'content-length']) {
+              const v = r.headers.get(h);
+              if (v) res.setHeader(h, v);
+            }
             res.end(Buffer.from(await r.arrayBuffer()));
             return;
           }

@@ -25,25 +25,27 @@ export class TimelinePlayer {
     this.timeline = timeline;
   }
 
-  /** Take the camera and reset playback state to t=0. */
+  /** Take the camera (only if there are real framing cues) and reset to t=0. */
   begin(): void {
     this.firedMotion.clear();
-    this.stage.setDirector(true);
+    this.stage.setDirector(this.hasFramingCues());
     this.update(0);
   }
 
-  /** Release the camera back to OrbitControls. */
+  /** Release the camera back to OrbitControls and end any screen cut. */
   end(): void {
     this.stage.setDirector(false);
     this.avatar.setTurn(0);
+    this.stage.setScreenCut(false); // revert the output to the manual source
   }
 
   get duration(): number {
     return this.timeline.duration;
   }
 
-  hasCameraCues(): boolean {
-    return this.timeline.cues.some((c) => c.track === 'camera');
+  /** Real camera framings (excludes the cam.screenSource vision-mixer cut). */
+  hasFramingCues(): boolean {
+    return this.timeline.cues.some((c) => c.track === 'camera' && c.type !== 'cam.screenSource');
   }
 
   update(t: number): void {
@@ -53,11 +55,12 @@ export class TimelinePlayer {
   }
 
   // "Cut to screen" cues toggle the recorded output to the wall/cast video.
+  // When no such cue is authored we don't touch the output (manual toggle wins).
   private updateScreenSource(t: number): void {
     const cues = this.timeline.cues.filter((c) => c.type === 'cam.screenSource');
-    if (!cues.length) return; // leave the manual toggle alone if none authored
+    if (!cues.length) return;
     const active = cues.some((c) => c.start <= t && t < c.start + c.duration);
-    this.stage.setOutputSource(active ? 'screen' : 'scene');
+    this.stage.setScreenCut(active); // screen while a cut is active, else the manual source
   }
 
   private updateCamera(t: number): void {

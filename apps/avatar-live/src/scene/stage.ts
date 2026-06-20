@@ -43,7 +43,8 @@ export class Stage {
 
   // "Screen source": when on, the recorded output cuts to a fullscreen video
   // feed (the studio wall content / a cast tab) instead of the 3D camera.
-  private outputSource: 'scene' | 'screen' = 'scene';
+  private outputSource: 'scene' | 'screen' = 'scene'; // live output (may be overridden by a cut)
+  private manualSource: 'scene' | 'screen' = 'scene'; // the user's sticky preference
   private screenVideo: HTMLVideoElement | null = null;
   private screenScene = new THREE.Scene();
   private screenCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -205,14 +206,21 @@ export class Stage {
       mat.map = tex;
     } else {
       mat.map = null;
+      this.manualSource = 'scene';
       this.outputSource = 'scene';
     }
     mat.needsUpdate = true;
   }
 
-  /** Switch the recorded output between the 3D camera and the screen feed. */
+  /** Manual toggle of the recorded output (sticky user preference). */
   setOutputSource(src: 'scene' | 'screen'): void {
-    this.outputSource = src === 'screen' && this.screenVideo ? 'screen' : 'scene';
+    this.manualSource = src === 'screen' && this.screenVideo ? 'screen' : 'scene';
+    this.outputSource = this.manualSource;
+  }
+
+  /** Director-driven cut during a performance; reverts to the manual source when inactive. */
+  setScreenCut(active: boolean): void {
+    this.outputSource = active && this.screenVideo ? 'screen' : this.manualSource;
   }
 
   get outputIsScreen(): boolean {
