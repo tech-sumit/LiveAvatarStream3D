@@ -12,6 +12,7 @@ export interface TimelineUIHooks {
   onSeek(t: number): void;
   onCapturePose(): void; // add a Custom-view camera cue from the live camera
   onRecordPath(): void; // toggle recording a free camera move
+  onSelect?(cue: Cue | null): void; // a cue was selected/deselected (for the inspector)
 }
 
 const LANES: { kind: TrackKind; name: string }[] = [
@@ -67,6 +68,13 @@ export class TimelineUI {
     this.render();
   }
 
+  /** Rebuild from scratch after the timeline is replaced (load / new). */
+  reload(): void {
+    this.selected = null;
+    this.build();
+    this.hooks.onSelect?.(null);
+  }
+
   setPlayhead(t: number): void {
     const x = LABEL_W + t * this.pxPerSec;
     this.playheadEl.style.left = `${x}px`;
@@ -118,6 +126,7 @@ export class TimelineUI {
     clear.onclick = () => {
       this.timeline.cues = [];
       this.selected = null;
+      this.hooks.onSelect?.(null);
       this.render();
       this.hooks.onChange();
     };
@@ -194,9 +203,17 @@ export class TimelineUI {
 
   private remove(id: string): void {
     this.timeline.cues = this.timeline.cues.filter((c) => c.id !== id);
-    if (this.selected === id) this.selected = null;
+    if (this.selected === id) {
+      this.selected = null;
+      this.hooks.onSelect?.(null);
+    }
     this.render();
     this.hooks.onChange();
+  }
+
+  /** Remove a cue programmatically (e.g. from the inspector's Delete button). */
+  removeCue(id: string): void {
+    this.remove(id);
   }
 
   private render(): void {
@@ -284,6 +301,7 @@ export class TimelineUI {
     this.selected = id;
     this.trackArea.querySelectorAll('.tl-cue').forEach((n) => n.classList.remove('sel'));
     this.render();
+    this.hooks.onSelect?.(this.timeline.cues.find((c) => c.id === id) ?? null);
   }
 
   private placeCue(c: HTMLElement, cue: Cue): void {

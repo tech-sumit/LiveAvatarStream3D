@@ -3,27 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LAS · Realtime 3D Avatar</title>
+    <title>LAS · 3D Avatar Studio</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="app">
-      <div id="stage">
-        <div id="cameraGate"><span id="gateLabel"></span></div>
-        <div id="pipFrame"><span>● OUTPUT</span></div>
-        <div id="viewHint">drag&nbsp;rotate · scroll&nbsp;zoom · right-drag&nbsp;pan</div>
-        <div id="timeline"></div>
-      </div>
-
-      <aside id="panel">
-        <header>
-          <h1>Realtime Avatar</h1>
+      <!-- ── Top bar ─────────────────────────────────────────────────────── -->
+      <header id="topbar">
+        <div class="tb-group">
+          <span class="tb-brand">▣ LAS Studio</span>
           <span id="avatarStatus" class="badge">loading…</span>
-        </header>
+        </div>
+        <div class="tb-group">
+          <input id="projectName" type="text" value="untitled" title="Project name" />
+          <button id="saveTimeline" class="tb-btn" title="Save timeline to a .json + browser">⤓ Save</button>
+          <button id="loadTimeline" class="tb-btn" title="Load a timeline .json">⤒ Load</button>
+          <select id="savedList" title="Saved timelines"></select>
+          <input id="timelineFile" type="file" accept="application/json,.json" hidden />
+        </div>
+        <div class="tb-group tb-right">
+          <select id="captureFormat" title="Recording size"></select>
+          <button id="record" class="tb-btn rec-btn">● Record</button>
+          <a id="download" hidden>⬇ Save clip</a>
+          <button id="timelineToggle" class="tb-btn">🎞 Timeline</button>
+        </div>
+      </header>
 
-        <section>
-          <label for="script">Script</label>
-          <textarea id="script" rows="8" spellcheck="false">[warm][wave] Good evening, and welcome to the broadcast. [serious] Tonight's top story: a breakthrough in realtime three-D avatars. [point] Just look at the headline on the wall behind me. [surprised] Honestly, nobody expected this to arrive so quickly. [count] There are three things you need to know. [open_palms] First, it runs entirely inside your browser. [excited][thumbs_up] Second, the lip-sync is incredibly accurate! [concerned] Third, some worry the technology could be misused. [thoughtful] So what does this mean for the future of news? [hand_to_chest] Personally, I believe it will change everything. [shrug] But of course, only time will tell. [confident][nod] Our team will keep following this story closely. [sad] That is all the heavy news for tonight. [happy][wave] Thank you for watching — goodnight!</textarea>
+      <!-- ── Left panel: performance (what to say) ───────────────────────── -->
+      <aside id="leftPanel" class="panel">
+        <section class="grp">
+          <h2>Script</h2>
+          <textarea id="script" rows="7" spellcheck="false">[warm][wave] Good evening, and welcome to the broadcast. [serious] Tonight's top story: a breakthrough in realtime three-D avatars. [point] Just look at the headline on the wall behind me. [surprised] Honestly, nobody expected this to arrive so quickly. [count] There are three things you need to know. [open_palms] First, it runs entirely inside your browser. [excited][thumbs_up] Second, the lip-sync is incredibly accurate! [concerned] Third, some worry the technology could be misused. [thoughtful] So what does this mean for the future of news? [hand_to_chest] Personally, I believe it will change everything. [shrug] But of course, only time will tell. [confident][nod] Our team will keep following this story closely. [sad] That is all the heavy news for tonight. [happy][wave] Thank you for watching — goodnight!</textarea>
           <div class="row">
             <button id="speak" class="primary">▶ Speak (stream)</button>
             <button id="stop" disabled>■ Stop</button>
@@ -31,18 +41,17 @@
           <textarea id="liveLine" rows="1" placeholder="Type a line and press Enter to stream it in live…"></textarea>
           <p class="hint">Stage directions — put <code>[tags]</code> in the script:
             gestures <code>[wave] [point] [count] [open_palms] [thumbs_up] [shrug] [hand_to_chest]</code>
-            and emotions <code>[serious] [happy] [excited] [warm] [concerned]</code>.
-            e.g. <em>"[serious] Good evening. [point] Our top story. [excited][wave] Great news!"</em></p>
+            and emotions <code>[serious] [happy] [excited] [warm] [concerned]</code>.</p>
         </section>
 
-        <section>
-          <label for="voice">Voice</label>
+        <section class="grp">
+          <h2>Voice</h2>
           <select id="voice"></select>
           <div class="grid2">
             <label class="mini">Rate <input id="rate" type="range" min="0.6" max="1.4" step="0.05" value="1" /></label>
             <label class="mini">Pitch <input id="pitch" type="range" min="0.6" max="1.4" step="0.05" value="1" /></label>
           </div>
-          <label for="emotion">Emotion</label>
+          <label for="emotion">Default emotion</label>
           <select id="emotion">
             <option value="neutral">neutral</option>
             <option value="warm">warm</option>
@@ -55,12 +64,27 @@
           </select>
         </section>
 
-        <section>
-          <label>Avatar &amp; camera</label>
+        <section class="grp grp-grow">
+          <h2>Console</h2>
+          <pre id="log" aria-live="polite"></pre>
+        </section>
+      </aside>
+
+      <!-- ── Center: 3D viewport ─────────────────────────────────────────── -->
+      <main id="stage">
+        <div id="cameraGate"><span id="gateLabel"></span></div>
+        <div id="pipFrame"><span>● OUTPUT</span></div>
+        <div id="viewHint">drag&nbsp;rotate · scroll&nbsp;zoom · right-drag&nbsp;pan · arrows&nbsp;move</div>
+      </main>
+
+      <!-- ── Right panel: scene & inspector ──────────────────────────────── -->
+      <aside id="rightPanel" class="panel">
+        <section class="grp">
+          <h2>Avatar</h2>
           <select id="avatarSel">
+            <option value="/avatars/avaturn.glb">Avaturn (photoreal)</option>
             <option value="/avatars/brunette.glb">Ready Player Me (body anim ✓)</option>
-            <option value="/avatars/avaturn.glb">Avaturn (photoreal · head shots)</option>
-            <option value="/avatars/avatarsdk.glb">Avatar SDK (photoreal · head shots)</option>
+            <option value="/avatars/avatarsdk.glb">Avatar SDK (photoreal)</option>
             <option value="/avatars/human.glb">facecap (face scan)</option>
           </select>
           <div class="row">
@@ -72,36 +96,29 @@
             </select>
           </div>
           <div class="row">
-            <input id="glbUrl" type="text" placeholder="…or paste a .glb URL (Ready Player Me / Avaturn)" />
+            <input id="glbUrl" type="text" placeholder="…or paste a .glb URL" />
             <button id="loadUrl">Load</button>
           </div>
+        </section>
 
-          <label>Transform avatar (3D gizmo)</label>
-          <button id="gizmoBtn">✥ Edit in 3D space</button>
+        <section class="grp">
+          <h2>Transform &amp; camera</h2>
+          <button id="gizmoBtn">✥ Edit avatar in 3D</button>
           <div class="row" id="gizmoModes" hidden>
             <button id="moveMode" class="primary">Move (W)</button>
             <button id="rotateMode">Rotate (E)</button>
           </div>
-          <button id="timelineToggle">🎞 Director timeline (camera &amp; motion)</button>
           <div class="row">
             <button id="resetView">Reset camera</button>
             <button id="centerAvatar">Reset avatar</button>
           </div>
-          <p class="hint">Needs facial blendshapes (ARKit/Oculus) or a jaw bone to lip-sync.
-            Plain Mixamo / Sketchfab / scanned models have a frozen face.</p>
-
-          <label for="captureFormat">Capture (recording size)</label>
-          <select id="captureFormat"></select>
           <div class="row">
-            <button id="record">● Record camera</button>
-            <a id="download" hidden>⬇ Save clip</a>
+            <button id="idleMotionToggle">Idle motion: Off</button>
           </div>
-          <p class="hint">The frame outline is the capture area. Recording saves the
-            virtual-camera output at the chosen size; the editor stays usable.</p>
         </section>
 
-        <section>
-          <label>News studio &amp; lighting</label>
+        <section class="grp">
+          <h2>Studio &amp; lighting</h2>
           <div class="row">
             <button id="studioToggle" class="primary">Studio: On</button>
             <select id="lightPreset">
@@ -113,14 +130,11 @@
             </select>
           </div>
           <input id="headline" type="text" placeholder="Video-wall headline…" />
-          <div class="row">
-            <button id="idleMotionToggle">Idle motion: Off</button>
-          </div>
           <div class="grid2">
             <label class="mini">Key <input id="lightKey" type="range" min="0" max="4" step="0.05" value="1.6" /></label>
             <label class="mini">Fill <input id="lightFill" type="range" min="0" max="3" step="0.05" value="0.35" /></label>
             <label class="mini">Rim <input id="lightRim" type="range" min="0" max="3" step="0.05" value="0.6" /></label>
-            <label class="mini">Ambient <input id="lightAmbient" type="range" min="0" max="2" step="0.05" value="0.45" /></label>
+            <label class="mini">Amb <input id="lightAmbient" type="range" min="0" max="2" step="0.05" value="0.45" /></label>
           </div>
           <div class="grid2">
             <label class="mini">Exposure <input id="exposure" type="range" min="0.4" max="2" step="0.05" value="1.05" /></label>
@@ -128,8 +142,20 @@
           </div>
         </section>
 
-        <pre id="log" aria-live="polite"></pre>
+        <section class="grp" id="cueInspector" hidden>
+          <h2>Cue inspector</h2>
+          <div id="cueType" class="tl-dim">—</div>
+          <div class="grid2">
+            <label class="mini">Start <input id="cueStart" type="number" step="0.1" min="0" /></label>
+            <label class="mini">Length <input id="cueDur" type="number" step="0.1" min="0.1" /></label>
+          </div>
+          <button id="cueSetView" hidden>⌖ Set to current camera view</button>
+          <button id="cueDelete">🗑 Delete cue</button>
+        </section>
       </aside>
+
+      <!-- ── Bottom: director timeline (docked) ──────────────────────────── -->
+      <div id="timeline"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
