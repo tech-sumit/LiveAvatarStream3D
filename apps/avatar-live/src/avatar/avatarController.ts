@@ -1,9 +1,19 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { zeroChannels, type FaceChannels, type FaceRig } from './face.js';
 import { MorphFaceRig } from './morphRig.js';
+import { JawBoneRig } from './jawBoneRig.js';
 import { createProceduralHead } from './proceduralHead.js';
 import { emotionBias, type EmotionName } from './emotion.js';
+
+// Outcome of loading an external model, so the UI can explain what happened.
+export interface LoadResult {
+  mode: 'morphs' | 'jawbone' | 'none';
+  detail: string;
+}
 
 // Owns the avatar object + its FaceRig. Receives target lipsync/emotion values
 // and, each render tick, smooths the actual channels toward them, layers in
@@ -22,6 +32,7 @@ const SILENT: MouthCue = { jawOpen: 0, mouthWide: 0, mouthRound: 0, mouthClose: 
 export class AvatarController {
   readonly group = new THREE.Group();
   headCenter = new THREE.Vector3(0, 1.5, 0);
+  headHeight = 0.42; // world-space head height, drives camera framing distance
   description = 'procedural head';
 
   private rig: FaceRig;
@@ -39,6 +50,9 @@ export class AvatarController {
   // idle motion
   private idleClock = 0;
 
+  // Renderer is needed for KTX2 transcoder support detection.
+  private renderer: THREE.WebGLRenderer | null = null;
+
   constructor() {
     const head = createProceduralHead();
     // The procedural head is modeled at ~1m radius for easy authoring; scale it
@@ -51,24 +65,58 @@ export class AvatarController {
     this.headCenter = new THREE.Vector3(0, 1.53, 0);
   }
 
-  /** Replace the procedural head with a glTF avatar if it exposes usable morphs. */
-  async loadGltf(url: string): Promise<boolean> {
+  setRenderer(renderer: THREE.WebGLRenderer): void {
+    this.renderer = renderer;
+  }
+
+  /**
+   * Load an external glTF/GLB. Uses facial blendshapes if present (full visemes),
+   * else falls back to a jaw bone (open/close only), else reports that the model
+   * has a frozen face and keeps the current avatar.
+   */
+  async loadGltf(url: string): Promise<LoadResult> {
     const loader = new GLTFLoader();
+    // Support compressed avatars (RPM, facecap, etc.): Draco geometry, meshopt,
+    // and KTX2/basis textures. Decoder assets are served from /decoders/.
+    const draco = new DRACOLoader().setDecoderPath('/decoders/draco/');
+    loader.setDRACOLoader(draco);
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    if (this.renderer) {
+      const ktx2 = new KTX2Loader().setTranscoderPath('/decoders/basis/').detectSupport(this.renderer);
+      loader.setKTX2Loader(ktx2);
+    }
+
     const gltf = await loader.loadAsync(url);
     const root = gltf.scene;
-    const rig = new MorphFaceRig(root);
-    if (rig.boundCount === 0) {
-      // No mouth morphs — keep the procedural head, but tell the caller.
-      return false;
+
+    const morphRig = new MorphFaceRig(root);
+    if (morphRig.boundCount > 0) {
+      this.swapTo(root, morphRig, fitAvatar(root, faceMeshOf(root), null));
+      this.description = `glTF · ${morphRig.boundNames.length} ARKit/viseme morphs`;
+      return { mode: 'morphs', detail: this.description };
     }
+
+    const jawRig = new JawBoneRig(root);
+    if (jawRig.found) {
+      this.swapTo(root, jawRig, fitAvatar(root, null, jawRig.headBone));
+      this.description = `glTF · jaw-bone lipsync (no blendshapes — open/close only)`;
+      return { mode: 'jawbone', detail: this.description };
+    }
+
+    // Frozen face — nothing to animate. Keep whatever avatar we had.
+    return {
+      mode: 'none',
+      detail: 'no facial blendshapes and no jaw bone — this model has a frozen face and cannot lip-sync',
+    };
+  }
+
+  private swapTo(root: THREE.Object3D, rig: FaceRig, fit: { center: THREE.Vector3; height: number }): void {
     this.group.clear();
-    normalizeAvatar(root);
     this.group.add(root);
     this.rig = rig;
     this.current = zeroChannels();
-    this.headCenter = computeHeadCenter(root);
-    this.description = `glTF (${rig.boundNames.length} morphs: ${rig.boundNames.slice(0, 4).join(', ')}…)`;
-    return true;
+    this.headCenter = fit.center;
+    this.headHeight = fit.height;
   }
 
   setEmotion(name: EmotionName, intensity = 1): void {
@@ -144,27 +192,85 @@ function approach(cur: number, target: number, attack: number, release: number):
   return cur + (target - cur) * rate;
 }
 
-function normalizeAvatar(root: THREE.Object3D): void {
-  // Center on origin and scale so the head sits near y=1.6 (standing).
-  const box = new THREE.Box3().setFromObject(root);
-  const size = new THREE.Vector3();
-  const center = new THREE.Vector3();
-  box.getSize(size);
-  box.getCenter(center);
-  const targetHeight = 1.7;
-  const scale = size.y > 0 ? targetHeight / size.y : 1;
-  root.scale.setScalar(scale);
-  root.position.x -= center.x * scale;
-  root.position.z -= center.z * scale;
-  root.position.y -= box.min.y * scale; // feet at 0
+/** The mesh carrying the most morph targets is the face. */
+function faceMeshOf(root: THREE.Object3D): THREE.Mesh | null {
+  let best: THREE.Mesh | null = null;
+  let bestCount = 0;
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    const n = m.isMesh ? Object.keys(m.morphTargetDictionary ?? {}).length : 0;
+    if (n > bestCount) {
+      bestCount = n;
+      best = m;
+    }
+  });
+  return best;
+}
+
+// Scale + position any avatar to a sensible stage size and return the world-space
+// head center for camera framing. `faceMesh` (the morph-bearing mesh) gives an
+// exact head when present; otherwise `headBone` locates the head; otherwise we
+// estimate from the bounding box.
+function fitAvatar(
+  root: THREE.Object3D,
+  faceMesh: THREE.Mesh | null,
+  headBone: THREE.Object3D | null,
+): { center: THREE.Vector3; height: number } {
   root.traverse((o) => {
     o.castShadow = true;
     o.frustumCulled = false;
   });
-}
 
-function computeHeadCenter(root: THREE.Object3D): THREE.Vector3 {
-  const box = new THREE.Box3().setFromObject(root);
-  // Eyes sit roughly 92% up a human figure.
-  return new THREE.Vector3((box.min.x + box.max.x) / 2, box.min.y + (box.max.y - box.min.y) * 0.92, box.max.z);
+  const whole = new THREE.Box3().setFromObject(root);
+  const wholeSize = new THREE.Vector3();
+  whole.getSize(wholeSize);
+
+  // Head-only only when the morph mesh dominates the whole asset (a face scan).
+  let headOnly = false;
+  if (faceMesh) {
+    const fb = new THREE.Box3().setFromObject(faceMesh);
+    const fs = new THREE.Vector3();
+    fb.getSize(fs);
+    headOnly = wholeSize.y > 0 && fs.y / wholeSize.y > 0.6;
+    if (headOnly) {
+      const fc = new THREE.Vector3();
+      fb.getCenter(fc);
+      const scale = fs.y > 0 ? 0.24 / fs.y : 1;
+      root.scale.setScalar(scale);
+      root.position.set(-fc.x * scale, 1.5 - fc.y * scale, -fc.z * scale);
+    }
+  }
+
+  if (!headOnly) {
+    // Full figure: ~1.7m tall, feet on the floor.
+    const scale = wholeSize.y > 0 ? 1.7 / wholeSize.y : 1;
+    root.scale.setScalar(scale);
+    const wc = new THREE.Vector3();
+    whole.getCenter(wc);
+    root.position.set(-wc.x * scale, -whole.min.y * scale, -wc.z * scale);
+  }
+
+  // Resolve the head center + head height in world space after the transform.
+  root.updateWorldMatrix(true, true);
+  const hc = new THREE.Vector3();
+  let height: number;
+  const finalWhole = new THREE.Box3().setFromObject(root);
+  const finalWholeH = finalWhole.max.y - finalWhole.min.y;
+  if (faceMesh) {
+    const fb = new THREE.Box3().setFromObject(faceMesh);
+    fb.getCenter(hc);
+    height = fb.max.y - fb.min.y;
+  } else if (headBone) {
+    headBone.getWorldPosition(hc);
+    hc.y += finalWholeH * 0.05; // bone pivot sits low in the head; raise to eyes
+    height = finalWholeH * 0.13; // a human head is ~13% of standing height
+  } else {
+    hc.set(
+      (finalWhole.min.x + finalWhole.max.x) / 2,
+      finalWhole.min.y + finalWholeH * 0.92,
+      (finalWhole.min.z + finalWhole.max.z) / 2,
+    );
+    height = finalWholeH * 0.13;
+  }
+  return { center: hc, height: Math.max(height, 0.05) };
 }
