@@ -1,6 +1,6 @@
 {
   "label": "MPFB (realistic, CC0)",
-  "description": "MakeHuman/MPFB realistic human with ARKit shapes — CC0",
+  "description": "MakeHuman/MPFB realistic human with ARKit shapes — CC0 (static; MakeHuman rig roll != RPM clips)",
   "model": "model.glb",
   "shot": "medium",
   "bodyAnim": false,
