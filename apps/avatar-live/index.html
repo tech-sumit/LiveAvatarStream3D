@@ -28,6 +28,10 @@
             <button id="stop" disabled>■ Stop</button>
           </div>
           <textarea id="liveLine" rows="1" placeholder="Type a line and press Enter to stream it in live…"></textarea>
+          <p class="hint">Stage directions — put <code>[tags]</code> in the script:
+            gestures <code>[wave] [point] [count] [open_palms] [thumbs_up] [shrug] [hand_to_chest]</code>
+            and emotions <code>[serious] [happy] [excited] [warm] [concerned]</code>.
+            e.g. <em>"[serious] Good evening. [point] Our top story. [excited][wave] Great news!"</em></p>
         </section>
 
         <section>
@@ -107,6 +111,9 @@
             </select>
           </div>
           <input id="headline" type="text" placeholder="Video-wall headline…" />
+          <div class="row">
+            <button id="idleMotionToggle">Idle motion: Off</button>
+          </div>
           <div class="grid2">
             <label class="mini">Key <input id="lightKey" type="range" min="0" max="4" step="0.05" value="1.6" /></label>
             <label class="mini">Fill <input id="lightFill" type="range" min="0" max="3" step="0.05" value="0.35" /></label>

@@ -44,6 +44,7 @@ const pipFrameEl = $<HTMLDivElement>('pipFrame');
 const captureFormatSel = $<HTMLSelectElement>('captureFormat');
 const gateLabelEl = $<HTMLSpanElement>('gateLabel');
 const studioToggle = $<HTMLButtonElement>('studioToggle');
+const idleMotionToggle = $<HTMLButtonElement>('idleMotionToggle');
 const headlineInput = $<HTMLInputElement>('headline');
 const lightPresetSel = $<HTMLSelectElement>('lightPreset');
 const lightKey = $<HTMLInputElement>('lightKey');
@@ -155,7 +156,44 @@ let analyser: AudioAnalyserLipsync | null = null;
 let speaking = false;
 let lastTalkClip = 'idle';
 
+// Synced render state (pre-generated audio → lipsync + motion driven off one clock).
+interface RenderState {
+  ctx: AudioContext;
+  start: number;
+  analyser: AudioAnalyserLipsync;
+  timeline: { t: number; gesture: string; emotion?: string }[];
+  idx: number;
+}
+let render: RenderState | null = null;
+
+const ttsOpts = () => ({
+  voiceId: voiceSel.value || undefined,
+  rate: Number(rateEl.value),
+  pitch: Number(pitchEl.value),
+});
+
 stage.onFrame((dt) => {
+  if (render) {
+    // Drive lipsync + motion from the pre-generated audio's clock — frame-exact
+    // sync with the captured audio, both rendered from the same timeline.
+    const t = render.ctx.currentTime - render.start;
+    if (t >= 0) {
+      avatar.setMouth(render.analyser.sample());
+      avatar.setGazeTarget(stage.cameraWorldPosition());
+      while (render.idx + 1 < render.timeline.length && render.timeline[render.idx + 1].t <= t) {
+        render.idx++;
+        const seg = render.timeline[render.idx];
+        const emo = (seg.emotion as EmotionName) ?? (emotionSel.value as EmotionName);
+        avatar.setEmotion(emo);
+        if (avatar.animationClips.length) {
+          lastTalkClip = selectTalkClip(seg.gesture as Gesture, emo, lastTalkClip);
+          avatar.playClip(lastTalkClip);
+        }
+      }
+    }
+    avatar.update(dt);
+    return;
+  }
   if (speaking) {
     avatar.setMouth(analyser ? analyser.sample() : boundary.sample(performance.now()));
   } else {
@@ -206,7 +244,7 @@ async function populateVoices(): Promise<void> {
 // ── Session ──────────────────────────────────────────────────────────────────
 const session = new RealtimeSession(
   () => activeTts,
-  () => ({ voiceId: voiceSel.value || undefined, rate: Number(rateEl.value), pitch: Number(pitchEl.value) }),
+  ttsOpts,
   {
     onWord: (word, atMs) => {
       speaking = true;
@@ -217,14 +255,13 @@ const session = new RealtimeSession(
       analyser = new AudioAnalyserLipsync(ctx, node);
       speaking = true;
     },
-    onSegmentStart: (_text, gesture) => {
+    onSegmentStart: (_text, gesture, emotion) => {
       speaking = true;
+      // Inline [emotion] directive in the script overrides the dropdown for this segment.
+      const emo = (emotion as EmotionName) ?? (emotionSel.value as EmotionName);
+      if (emotion) avatar.setEmotion(emo);
       if (avatar.animationClips.length) {
-        lastTalkClip = selectTalkClip(
-          (gesture as Gesture) ?? 'explain',
-          emotionSel.value as EmotionName,
-          lastTalkClip,
-        );
+        lastTalkClip = selectTalkClip((gesture as Gesture) ?? 'explain', emo, lastTalkClip);
         avatar.playClip(lastTalkClip);
       }
     },
@@ -369,6 +406,16 @@ headlineInput.addEventListener('input', () => {
   if (v) studio.setHeadline(v);
 });
 
+// Idle motion (breathing/sway) — default OFF so the anchor holds still.
+let idleMotionOn = false;
+avatar.setIdleMotion(false);
+idleMotionToggle.addEventListener('click', () => {
+  idleMotionOn = !idleMotionOn;
+  avatar.setIdleMotion(idleMotionOn);
+  idleMotionToggle.textContent = `Idle motion: ${idleMotionOn ? 'On' : 'Off'}`;
+  idleMotionToggle.classList.toggle('primary', idleMotionOn);
+});
+
 function mixColor(a: number, b: number, t: number): number {
   const ar = (a >> 16) & 255;
   const ag = (a >> 8) & 255;
@@ -461,39 +508,146 @@ glbUrlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') loadUrlBtn.click();
 });
 
-// ── Recording — captures the virtual camera's output canvas at the set capture
-// resolution + the voice (when using ElevenLabs/Web Audio). The editor stays
-// fully interactive during recording.
+// ── Recording / render ───────────────────────────────────────────────────────
+// Synced render (ElevenLabs): synthesize the WHOLE script up front, concatenate
+// into one audio buffer + a motion timeline, then play it once while capturing —
+// lipsync + gestures + audio all driven from a single clock, so the exported
+// video is frame-synced (not audio bolted onto live video). Web Speech (no
+// pre-synthesis) falls back to live capture while you press Speak.
 const recorder = new Recorder(
   () => stage.captureStream(30),
   () => recordDest?.stream.getAudioTracks()[0] ?? null,
 );
-recordBtn.addEventListener('click', async () => {
-  if (!recorder.active) {
-    audioCtx(); // ensure the voice destination track exists before capture starts
+let renderSrc: AudioBufferSourceNode | null = null;
+
+function setRecUi(on: boolean): void {
+  recordBtn.textContent = on ? '■ Stop recording' : '● Record camera';
+  recordBtn.classList.toggle('rec', on);
+  pipFrameEl.classList.toggle('rec', on);
+}
+function downloadClip(url: string, filename: string): void {
+  if (!url) return;
+  downloadEl.href = url;
+  downloadEl.download = filename;
+  downloadEl.textContent = `⬇ Download ${filename}`;
+  downloadEl.hidden = false;
+  downloadEl.click();
+  log(`clip ready — downloading ${filename}`);
+}
+function monoData(b: AudioBuffer): Float32Array {
+  if (b.numberOfChannels === 1) return b.getChannelData(0);
+  const out = new Float32Array(b.length);
+  for (let c = 0; c < b.numberOfChannels; c++) {
+    const d = b.getChannelData(c);
+    for (let i = 0; i < b.length; i++) out[i] += d[i] / b.numberOfChannels;
+  }
+  return out;
+}
+
+async function renderVideo(): Promise<void> {
+  session.stop();
+  const lines = scriptEl.value
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!lines.length) {
+    log('nothing to render — script is empty.');
+    return;
+  }
+  const segs = lines.map(resolveGesture);
+  const ctx = audioCtx();
+  await ctx.resume();
+
+  recordBtn.disabled = true;
+  log(`render: synthesizing ${segs.length} segment(s)…`);
+  const buffers: AudioBuffer[] = [];
+  try {
+    for (const s of segs) buffers.push(await activeTts.synthesize!(s.text, ttsOpts()));
+  } catch (err) {
+    log(`render failed (TTS): ${String(err)}`);
+    recordBtn.disabled = false;
+    return;
+  }
+
+  // Concatenate into one buffer (with a short gap between sentences) + timeline.
+  const sr = buffers[0].sampleRate;
+  const gap = Math.round(sr * 0.18);
+  const total = buffers.reduce((a, b) => a + b.length + gap, 0);
+  const out = ctx.createBuffer(1, total, sr);
+  const od = out.getChannelData(0);
+  const timeline: { t: number; gesture: string; emotion?: string }[] = [];
+  let off = 0;
+  buffers.forEach((b, i) => {
+    od.set(monoData(b), off);
+    timeline.push({ t: off / sr, gesture: segs[i].gesture, emotion: segs[i].emotion });
+    off += b.length + gap;
+  });
+  recordBtn.disabled = false;
+
+  // Audio graph: buffer → gain → speakers + record destination + analyser.
+  const srcNode = ctx.createBufferSource();
+  srcNode.buffer = out;
+  const gain = ctx.createGain();
+  srcNode.connect(gain);
+  gain.connect(ctx.destination);
+  if (recordDest) gain.connect(recordDest);
+  const ana = new AudioAnalyserLipsync(ctx, gain);
+
+  try {
+    recorder.start();
+  } catch (err) {
+    log(`record start failed: ${String(err)}`);
+    return;
+  }
+  setRecUi(true);
+  downloadEl.hidden = true;
+  log(`render: recording ${stage.captureLabel()} · ${(total / sr).toFixed(1)}s …`);
+
+  renderSrc = srcNode;
+  render = { ctx, start: ctx.currentTime + 0.08, analyser: ana, timeline, idx: -1 };
+  srcNode.onended = async () => {
+    render = null;
+    renderSrc = null;
+    avatar.setSilent();
+    avatar.setGazeTarget(null);
+    if (avatar.animationClips.length) avatar.playClip('idle');
+    const { url, filename } = await recorder.stop();
+    setRecUi(false);
+    downloadClip(url, filename);
+  };
+  srcNode.start(render.start);
+}
+
+recordBtn.addEventListener('click', () => {
+  if (render) {
+    try {
+      renderSrc?.stop(); // ends early → onended exports what's captured
+    } catch {
+      /* already stopped */
+    }
+    return;
+  }
+  if (recorder.active) {
+    // live (Web Speech) capture in progress → stop + export
+    void recorder.stop().then(({ url, filename }) => {
+      setRecUi(false);
+      downloadClip(url, filename);
+    });
+    return;
+  }
+  audioCtx();
+  if (activeTts.synthesize) {
+    void renderVideo();
+  } else {
+    // Web Speech fallback: live capture; press Speak to perform, Stop record to save.
     try {
       recorder.start();
+      setRecUi(true);
+      downloadEl.hidden = true;
+      log(`recording live ${stage.captureLabel()} — press Speak to perform.`);
     } catch (err) {
       log(`recording failed to start: ${String(err)}`);
-      return;
-    }
-    recordBtn.textContent = '■ Stop recording';
-    recordBtn.classList.add('rec');
-    pipFrameEl.classList.add('rec');
-    downloadEl.hidden = true;
-    log(`recording ${stage.captureLabel()} (with voice) …`);
-  } else {
-    const { url, filename } = await recorder.stop();
-    recordBtn.textContent = '● Record camera';
-    recordBtn.classList.remove('rec');
-    pipFrameEl.classList.remove('rec');
-    if (url) {
-      downloadEl.href = url;
-      downloadEl.download = filename;
-      downloadEl.textContent = `⬇ Download ${filename}`;
-      downloadEl.hidden = false;
-      downloadEl.click(); // download straight from the portal
-      log(`clip ready — downloading ${filename}`);
     }
   }
 });

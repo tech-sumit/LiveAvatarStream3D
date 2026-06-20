@@ -33,6 +33,20 @@ export class ElevenLabsTts implements TtsSource {
     }
   }
 
+  /** Fetch + decode speech to an AudioBuffer without playing it (for offline
+   *  pre-render: synthesize the whole script, then play it back synced). */
+  async synthesize(text: string, opts: SpeakOpts): Promise<AudioBuffer> {
+    const ctx = this.getCtx ? this.getCtx() : (this.ctx ??= new AudioContext());
+    const voiceId = opts.voiceId || '21m00Tcm4TlvDq8ikWAM';
+    const res = await fetch(`${this.base}/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text, model_id: MODEL_ID, voice_settings: { stability: 0.5, similarity_boost: 0.75 } }),
+    });
+    if (!res.ok) throw new Error(`elevenlabs ${res.status}`);
+    return ctx.decodeAudioData(await res.arrayBuffer());
+  }
+
   async listVoices(): Promise<{ id: string; label: string }[]> {
     const r = await fetch(`${this.base}/voices`);
     if (!r.ok || !(r.headers.get('content-type') ?? '').includes('application/json')) return [];
