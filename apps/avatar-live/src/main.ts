@@ -15,7 +15,7 @@ import { TimelinePlayer } from './timeline/player.js';
 import { TimelineUI } from './timeline/ui.js';
 import { CATALOG, poseToTuple } from './timeline/catalog.js';
 import { cueId, type Cue, type PoseTuple, type Timeline } from './timeline/types.js';
-import { r2Available, r2GetBlob, r2GetJson, r2List, r2PutBlob, r2PutJson, r2Url } from './storage/r2.js';
+import { r2Available, r2GetJson, r2List, r2PutBlob, r2PutJson, r2Url } from './storage/r2.js';
 import type { EmotionName } from './avatar/emotion.js';
 import type { TtsSource } from './tts/types.js';
 
@@ -332,10 +332,13 @@ async function populateVoices(): Promise<void> {
     opt.textContent = v.label;
     voiceSel.appendChild(opt);
   }
-  // For Web Speech, default to an English voice; ElevenLabs voices are all usable.
+  // Default voice: ElevenLabs → "Sarah"; Web Speech → an English voice.
   if (activeTts.kind === 'web-speech') {
     const en = voices.find((v) => /en[-_]/i.test(v.id) || /English/i.test(v.label));
     if (en) voiceSel.value = en.id;
+  } else {
+    const sarah = voices.find((v) => /\bsarah\b/i.test(v.label));
+    if (sarah) voiceSel.value = sarah.id;
   }
   // Apply a voice from a project that loaded before the list was ready.
   if (pendingVoiceId && voiceOptionExists(pendingVoiceId)) {
@@ -1263,8 +1266,21 @@ interface ProjectDoc {
 }
 const PROJECT_PREFIX = 'projects/';
 const LOCAL_INDEX = 'las.projects';
+const SAMPLE_VALUE = '__sample:showcase';
+const SAMPLE_URL = '/samples/showcase.project.json';
 const sanitize = (n: string) => (n.trim() || 'untitled').replace(/[^\w.-]+/g, '_');
 let r2On = false;
+
+// An asset reference is either a direct URL / bundled path (starts with http or
+// "/") or an R2 object key. Resolve it to a fetchable same-origin URL.
+function assetUrl(src: string): string {
+  return /^https?:\/\//.test(src) || src.startsWith('/') ? src : r2Url(src);
+}
+async function fetchAssetBlob(src: string): Promise<Blob> {
+  const r = await fetch(assetUrl(src));
+  if (!r.ok) throw new Error(`asset ${r.status}`);
+  return r.blob();
+}
 
 function listLocal(): string[] {
   try {
@@ -1289,11 +1305,29 @@ async function refreshSavedList(): Promise<void> {
   def.value = '';
   def.textContent = names.length ? `— load saved (${r2On ? 'R2' : 'local'}) —` : `(none saved · ${r2On ? 'R2' : 'local'})`;
   savedListSel.appendChild(def);
+  // Always offer the bundled showcase sample (ships with the app, no R2 needed).
+  const sample = document.createElement('option');
+  sample.value = SAMPLE_VALUE;
+  sample.textContent = '★ Showcase (sample)';
+  savedListSel.appendChild(sample);
   for (const n of names.sort()) {
     const o = document.createElement('option');
     o.value = n;
     o.textContent = n;
     savedListSel.appendChild(o);
+  }
+}
+
+// Load the bundled showcase sample from /public.
+async function loadSample(): Promise<void> {
+  try {
+    const r = await fetch(SAMPLE_URL);
+    if (!r.ok) throw new Error(`${r.status}`);
+    await applyProject((await r.json()) as ProjectDoc);
+    projectNameEl.value = 'showcase';
+    log('loaded the bundled showcase sample — click 🎙 Generate to synthesize narration.');
+  } catch (err) {
+    log(`couldn't load sample: ${String(err)}`);
   }
 }
 
@@ -1460,7 +1494,7 @@ async function applyProject(doc: ProjectDoc): Promise<void> {
       .filter((c) => c.track === 'audio' && c.src)
       .map(async (c) => {
         try {
-          const blob = await r2GetBlob(c.src!);
+          const blob = await fetchAssetBlob(c.src!);
           audioBlobs.set(c.id, blob);
           audioBuffers.set(c.id, await audioCtx().decodeAudioData(await blob.arrayBuffer()));
         } catch {
@@ -1521,7 +1555,8 @@ timelineFileEl.addEventListener('change', async () => {
   timelineFileEl.value = '';
 });
 savedListSel.addEventListener('change', () => {
-  if (savedListSel.value) void loadNamed(savedListSel.value);
+  if (savedListSel.value === SAMPLE_VALUE) void loadSample();
+  else if (savedListSel.value) void loadNamed(savedListSel.value);
 });
 
 // Probe R2 once; populate the saved-projects list from wherever persistence lives.

@@ -1,0 +1,321 @@
+{
+  "version": 2,
+  "name": "showcase",
+  "script": "[warm][wave] Good evening, and welcome to the full feature showcase. [serious] Tonight, every capability of this studio in a single take. [point] Behind me, a live video feed is playing on the wall. [surprised] Watch closely, the camera is about to cut straight to it. [excited][thumbs_up] Background music is mixing underneath my voice right now! [count] There are three things this demo proves. [open_palms] First, narration is generated and lip-synced automatically. [confident] Second, the camera moves, cuts, and follows a recorded path. [hand_to_chest] Third, all of this is rendered live in the browser. [thoughtful] So what does a tool like this make possible? [concerned] Some worry that such realism could be misused. [shrug] But for storytelling, the potential is enormous. [happy][wave] Thanks for watching the showcase, goodnight!",
+  "voiceId": "EXAVITQu4vr4xnSDxMaL",
+  "rate": 1,
+  "pitch": 1,
+  "emotion": "confident",
+  "avatarUrl": "/avatars/avaturn.glb",
+  "shot": "medium",
+  "studioOn": true,
+  "idleMotion": false,
+  "headline": "BREAKING — FULL FEATURE SHOWCASE",
+  "lights": {
+    "key": 2.6,
+    "fill": 0.1,
+    "rim": 1.3,
+    "ambient": 0.1,
+    "exposure": 1,
+    "warmth": 48,
+    "preset": "dramatic"
+  },
+  "backScreen": {
+    "kind": "url",
+    "src": "/samples/showcase-clip.mp4"
+  },
+  "timeline": {
+    "duration": 44,
+    "cues": [
+      {
+        "id": "cue_10",
+        "track": "camera",
+        "type": "cam.enterLeft",
+        "start": 0,
+        "duration": 2.5
+      },
+      {
+        "id": "cue_11",
+        "track": "camera",
+        "type": "cam.anchor",
+        "start": 2.5,
+        "duration": 1.5
+      },
+      {
+        "id": "cue_12",
+        "track": "camera",
+        "type": "cam.close",
+        "start": 6,
+        "duration": 1.5
+      },
+      {
+        "id": "cue_13",
+        "track": "camera",
+        "type": "cam.screen",
+        "start": 9,
+        "duration": 1.8
+      },
+      {
+        "id": "cue_14",
+        "track": "camera",
+        "type": "cam.screenSource",
+        "start": 11,
+        "duration": 5
+      },
+      {
+        "id": "cue_15",
+        "track": "camera",
+        "type": "cam.anchor",
+        "start": 17,
+        "duration": 1.5
+      },
+      {
+        "id": "cue_16",
+        "track": "camera",
+        "type": "cam.custom",
+        "start": 22,
+        "duration": 1.5,
+        "pose": [
+          0.5,
+          1.55,
+          1.6,
+          0,
+          1.5,
+          0,
+          30
+        ]
+      },
+      {
+        "id": "cue_17",
+        "track": "camera",
+        "type": "cam.path",
+        "start": 27,
+        "duration": 4,
+        "path": [
+          {
+            "t": 0,
+            "p": [
+              -1.1,
+              1.6,
+              2.2,
+              0,
+              1.5,
+              0,
+              35
+            ]
+          },
+          {
+            "t": 2,
+            "p": [
+              0,
+              1.5,
+              1.7,
+              0,
+              1.5,
+              0,
+              31
+            ]
+          },
+          {
+            "t": 4,
+            "p": [
+              1.1,
+              1.6,
+              2.2,
+              0,
+              1.5,
+              0,
+              35
+            ]
+          }
+        ]
+      },
+      {
+        "id": "cue_18",
+        "track": "camera",
+        "type": "cam.wide",
+        "start": 33,
+        "duration": 2.5
+      },
+      {
+        "id": "cue_19",
+        "track": "motion",
+        "type": "motion.wave",
+        "start": 0.5,
+        "duration": 1.5
+      },
+      {
+        "id": "cue_20",
+        "track": "motion",
+        "type": "motion.point",
+        "start": 8,
+        "duration": 1.6
+      },
+      {
+        "id": "cue_21",
+        "track": "motion",
+        "type": "motion.turnScreen",
+        "start": 9,
+        "duration": 1
+      },
+      {
+        "id": "cue_22",
+        "track": "motion",
+        "type": "motion.faceFront",
+        "start": 16,
+        "duration": 1
+      },
+      {
+        "id": "cue_23",
+        "track": "motion",
+        "type": "motion.nod",
+        "start": 18,
+        "duration": 1.2
+      },
+      {
+        "id": "cue_24",
+        "track": "motion",
+        "type": "motion.explain",
+        "start": 22,
+        "duration": 2
+      },
+      {
+        "id": "cue_25",
+        "track": "audio",
+        "type": "audio.clip",
+        "start": 0,
+        "duration": 34,
+        "label": "showcase-music",
+        "src": "/samples/showcase-music.mp3",
+        "volume": 0.4,
+        "fadeIn": 2,
+        "fadeOut": 4
+      },
+      {
+        "id": "cue_26",
+        "track": "narration",
+        "type": "narration",
+        "start": 0,
+        "duration": 3.1,
+        "text": "Good evening, and welcome to the full feature showcase.",
+        "gesture": "wave",
+        "emotion": "warm"
+      },
+      {
+        "id": "cue_27",
+        "track": "narration",
+        "type": "narration",
+        "start": 3.2,
+        "duration": 3.7,
+        "text": "Tonight, every capability of this studio in a single take.",
+        "gesture": "point",
+        "emotion": "serious"
+      },
+      {
+        "id": "cue_28",
+        "track": "narration",
+        "type": "narration",
+        "start": 7.1,
+        "duration": 3.1,
+        "text": "Behind me, a live video feed is playing on the wall.",
+        "gesture": "point"
+      },
+      {
+        "id": "cue_29",
+        "track": "narration",
+        "type": "narration",
+        "start": 10.4,
+        "duration": 3.2,
+        "text": "Watch closely, the camera is about to cut straight to it.",
+        "gesture": "explain",
+        "emotion": "surprised"
+      },
+      {
+        "id": "cue_30",
+        "track": "narration",
+        "type": "narration",
+        "start": 13.7,
+        "duration": 3.3,
+        "text": "Background music is mixing underneath my voice right now!",
+        "gesture": "thumbs_up",
+        "emotion": "excited"
+      },
+      {
+        "id": "cue_31",
+        "track": "narration",
+        "type": "narration",
+        "start": 17.2,
+        "duration": 2.1,
+        "text": "There are three things this demo proves.",
+        "gesture": "count"
+      },
+      {
+        "id": "cue_32",
+        "track": "narration",
+        "type": "narration",
+        "start": 19.5,
+        "duration": 3.6,
+        "text": "First, narration is generated and lip-synced automatically.",
+        "gesture": "open_palms"
+      },
+      {
+        "id": "cue_33",
+        "track": "narration",
+        "type": "narration",
+        "start": 23.2,
+        "duration": 3.9,
+        "text": "Second, the camera moves, cuts, and follows a recorded path.",
+        "gesture": "count",
+        "emotion": "confident"
+      },
+      {
+        "id": "cue_34",
+        "track": "narration",
+        "type": "narration",
+        "start": 27.3,
+        "duration": 3.1,
+        "text": "Third, all of this is rendered live in the browser.",
+        "gesture": "hand_to_chest"
+      },
+      {
+        "id": "cue_35",
+        "track": "narration",
+        "type": "narration",
+        "start": 30.6,
+        "duration": 2.6,
+        "text": "So what does a tool like this make possible?",
+        "gesture": "point",
+        "emotion": "thoughtful"
+      },
+      {
+        "id": "cue_36",
+        "track": "narration",
+        "type": "narration",
+        "start": 33.3,
+        "duration": 2.9,
+        "text": "Some worry that such realism could be misused.",
+        "gesture": "point",
+        "emotion": "concerned"
+      },
+      {
+        "id": "cue_37",
+        "track": "narration",
+        "type": "narration",
+        "start": 36.3,
+        "duration": 3.1,
+        "text": "But for storytelling, the potential is enormous.",
+        "gesture": "shrug"
+      },
+      {
+        "id": "cue_38",
+        "track": "narration",
+        "type": "narration",
+        "start": 39.6,
+        "duration": 2.3,
+        "text": "Thanks for watching the showcase, goodnight!",
+        "gesture": "wave",
+        "emotion": "happy"
+      }
+    ]
+  }
+}
