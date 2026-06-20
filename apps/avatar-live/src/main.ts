@@ -15,6 +15,7 @@ import { TimelinePlayer } from './timeline/player.js';
 import { TimelineUI } from './timeline/ui.js';
 import { CATALOG, poseToTuple } from './timeline/catalog.js';
 import { cueId, type Cue, type PoseTuple, type Timeline } from './timeline/types.js';
+import { r2Available, r2GetBlob, r2GetJson, r2List, r2PutBlob, r2PutJson, r2Url } from './storage/r2.js';
 import type { EmotionName } from './avatar/emotion.js';
 import type { TtsSource } from './tts/types.js';
 
@@ -566,6 +567,8 @@ wallVideo.loop = false;
 let wallAudioWired = false;
 let outputScreenOn = false;
 let castStream: MediaStream | null = null;
+// What's on the wall, for project persistence (a live cast can't be persisted).
+let backScreen: { kind: 'url' | 'r2' | 'file'; src: string; blob?: Blob } | null = null;
 
 const screenUrlInput = $<HTMLInputElement>('screenUrl');
 const screenLoadBtn = $<HTMLButtonElement>('screenLoad');
@@ -606,7 +609,9 @@ async function loadWallVideo(src: string, label: string): Promise<void> {
 }
 screenLoadBtn.addEventListener('click', () => {
   const url = screenUrlInput.value.trim();
-  if (url) void loadWallVideo(url, url.split('/').pop() || 'video');
+  if (!url) return;
+  backScreen = { kind: 'url', src: url };
+  void loadWallVideo(url, url.split('/').pop() || 'video');
 });
 screenUrlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') screenLoadBtn.click();
@@ -614,7 +619,9 @@ screenUrlInput.addEventListener('keydown', (e) => {
 screenFileInput.addEventListener('change', () => {
   const file = screenFileInput.files?.[0];
   if (!file) return;
-  void loadWallVideo(URL.createObjectURL(file), file.name);
+  const obj = URL.createObjectURL(file);
+  backScreen = { kind: 'file', src: obj, blob: file };
+  void loadWallVideo(obj, file.name);
   screenFileInput.value = '';
 });
 screenCastBtn.addEventListener('click', async () => {
@@ -626,6 +633,7 @@ screenCastBtn.addEventListener('click', async () => {
   try {
     stopCast();
     castStream = await md.getDisplayMedia({ video: true, audio: true });
+    backScreen = null; // a live cast isn't persistable
     wireWallAudio();
     wallVideo.src = '';
     wallVideo.srcObject = castStream;
@@ -642,6 +650,7 @@ screenCastBtn.addEventListener('click', async () => {
 });
 function revertScreen(): void {
   stopCast();
+  backScreen = null;
   wallVideo.pause();
   wallVideo.srcObject = null;
   wallVideo.src = '';
@@ -898,6 +907,7 @@ function stopPerform(): void {
 
 // ── Background audio lane (music / SFX with volume + fade envelopes) ──────────
 const audioBuffers = new Map<string, AudioBuffer>(); // cue.id → decoded buffer
+const audioBlobs = new Map<string, Blob>(); // cue.id → original bytes (for R2 upload)
 let scheduledAudio: AudioBufferSourceNode[] = [];
 const audioFileEl = $<HTMLInputElement>('audioFile');
 
@@ -914,6 +924,7 @@ audioFileEl.addEventListener('change', async () => {
     const buf = await ctx.decodeAudioData(await file.arrayBuffer());
     const id = cueId();
     audioBuffers.set(id, buf);
+    audioBlobs.set(id, file);
     timeline.cues.push({
       id,
       track: 'audio',
@@ -1178,43 +1189,155 @@ cueDeleteBtn.addEventListener('click', () => {
   if (selectedCue) timelineUI?.removeCue(selectedCue.id);
 });
 
-// ── Timeline save / load ─────────────────────────────────────────────────────
-// Cues are already JSON-safe (pose/path are number tuples). We persist to
-// localStorage (a named index) and also offer a .json file export/import.
-const STORE_INDEX = 'las.timelines';
-const storeKey = (name: string) => `las.timeline.${name}`;
+// ── Project save / load (Cloudflare R2; localStorage fallback) ───────────────
+// A project bundles the editor state + the director timeline; audio/video assets
+// are uploaded to R2 and referenced by key so they survive a reload. When R2
+// isn't configured, state+timeline persist to localStorage (assets are not).
+interface ProjectDoc {
+  version: number;
+  name: string;
+  script: string;
+  voiceId: string;
+  rate: number;
+  pitch: number;
+  emotion: string;
+  avatarUrl: string;
+  shot: string;
+  studioOn: boolean;
+  idleMotion: boolean;
+  headline: string;
+  lights: { key: number; fill: number; rim: number; ambient: number; exposure: number; warmth: number; preset: string };
+  backScreen: { kind: 'url' | 'r2'; src: string } | null;
+  timeline: { duration: number; cues: Cue[] };
+}
+const PROJECT_PREFIX = 'projects/';
+const LOCAL_INDEX = 'las.projects';
+const sanitize = (n: string) => (n.trim() || 'untitled').replace(/[^\w.-]+/g, '_');
+let r2On = false;
 
-function listSaved(): string[] {
+function listLocal(): string[] {
   try {
-    return JSON.parse(localStorage.getItem(STORE_INDEX) || '[]') as string[];
+    return JSON.parse(localStorage.getItem(LOCAL_INDEX) || '[]') as string[];
   } catch {
     return [];
   }
 }
-function refreshSavedList(): void {
-  const names = listSaved();
+async function refreshSavedList(): Promise<void> {
+  let names: string[] = [];
+  if (r2On) {
+    try {
+      names = (await r2List(PROJECT_PREFIX)).filter((k) => k.endsWith('.json')).map((k) => k.slice(PROJECT_PREFIX.length, -5));
+    } catch {
+      names = [];
+    }
+  } else {
+    names = listLocal();
+  }
   savedListSel.innerHTML = '';
   const def = document.createElement('option');
   def.value = '';
-  def.textContent = names.length ? '— load saved —' : '(none saved)';
+  def.textContent = names.length ? `— load saved (${r2On ? 'R2' : 'local'}) —` : `(none saved · ${r2On ? 'R2' : 'local'})`;
   savedListSel.appendChild(def);
-  for (const n of names) {
+  for (const n of names.sort()) {
     const o = document.createElement('option');
     o.value = n;
     o.textContent = n;
     savedListSel.appendChild(o);
   }
 }
-function serializeTimeline(): string {
-  return JSON.stringify({ version: 1, duration: timeline.duration, cues: timeline.cues }, null, 2);
+
+function serializeProject(name: string): ProjectDoc {
+  const bs = backScreen && backScreen.kind !== 'file' ? { kind: backScreen.kind, src: backScreen.src } : null;
+  return {
+    version: 2,
+    name,
+    script: scriptEl.value,
+    voiceId: voiceSel.value,
+    rate: Number(rateEl.value),
+    pitch: Number(pitchEl.value),
+    emotion: emotionSel.value,
+    avatarUrl: avatarSel.value,
+    shot: shotSel.value,
+    studioOn,
+    idleMotion: idleMotionOn,
+    headline: headlineInput.value,
+    lights: {
+      key: Number(lightKey.value),
+      fill: Number(lightFill.value),
+      rim: Number(lightRim.value),
+      ambient: Number(lightAmbient.value),
+      exposure: Number(exposureEl.value),
+      warmth: Number(warmthEl.value),
+      preset: lightPresetSel.value,
+    },
+    backScreen: bs,
+    timeline: { duration: timeline.duration, cues: timeline.cues },
+  };
 }
-function applyTimeline(data: { duration?: number; cues?: Cue[] }): void {
-  if (!data || !Array.isArray(data.cues)) {
-    log('load failed: not a valid timeline file.');
-    return;
+
+// Upload any session-only assets (audio clips, a back-screen file) to R2 and
+// rewrite their references to R2 keys so the saved project is self-contained.
+async function uploadAssets(name: string): Promise<void> {
+  if (!r2On) return;
+  for (const c of timeline.cues) {
+    if (c.track === 'audio' && !c.src) {
+      const blob = audioBlobs.get(c.id);
+      if (blob) {
+        const key = `assets/${name}/${c.id}-${sanitize(c.label ?? 'audio')}`;
+        await r2PutBlob(key, blob);
+        c.src = key;
+      }
+    }
   }
+  if (backScreen?.kind === 'file' && backScreen.blob) {
+    const ext = (backScreen.blob.type.split('/')[1] || 'mp4').replace(/[^\w]+/g, '');
+    const key = `assets/${name}/backscreen.${ext}`;
+    await r2PutBlob(key, backScreen.blob);
+    backScreen = { kind: 'r2', src: key };
+  }
+}
+
+function downloadJson(filename: string, obj: unknown): void {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }));
+  downloadEl.href = url;
+  downloadEl.download = filename;
+  downloadEl.textContent = `⬇ ${filename}`;
+  downloadEl.hidden = false;
+  downloadEl.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+async function saveProject(): Promise<void> {
+  const name = sanitize(projectNameEl.value);
+  saveTimelineBtn.disabled = true;
+  try {
+    await uploadAssets(name);
+    const doc = serializeProject(name);
+    if (r2On) {
+      await r2PutJson(`${PROJECT_PREFIX}${name}.json`, doc);
+      await refreshSavedList();
+      log(`saved project "${name}" to R2 (state + timeline + assets).`);
+    } else {
+      localStorage.setItem(`las.project.${name}`, JSON.stringify(doc));
+      const idx = listLocal();
+      if (!idx.includes(name)) idx.push(name);
+      localStorage.setItem(LOCAL_INDEX, JSON.stringify(idx));
+      await refreshSavedList();
+      log(`saved project "${name}" locally (R2 off — assets not persisted).`);
+    }
+    savedListSel.value = name;
+    downloadJson(`${name}.project.json`, doc);
+  } catch (err) {
+    log(`save failed: ${String(err)}`);
+  } finally {
+    saveTimelineBtn.disabled = false;
+  }
+}
+
+// Apply just the timeline portion (fresh cue ids), reusing it for raw timeline files.
+function applyTimelineDoc(data: { duration?: number; cues?: Cue[] }): void {
   timeline.duration = Math.max(2, Number(data.duration) || 26);
-  timeline.cues = data.cues.map((c) => ({ ...c, id: cueId() })); // fresh ids avoid collisions
+  timeline.cues = (data.cues ?? []).map((c) => ({ ...c, id: cueId() }));
   player.load(timeline);
   buildTimelineUI();
   timelineUI?.reload();
@@ -1222,61 +1345,119 @@ function applyTimeline(data: { duration?: number; cues?: Cue[] }): void {
     appEl.classList.add('tl-open');
     timelineToggle.classList.add('primary');
   }
-  log(`loaded timeline — ${timeline.cues.length} cue(s), ${timeline.duration}s.`);
 }
-saveTimelineBtn.addEventListener('click', () => {
-  const name = (projectNameEl.value.trim() || 'untitled').replace(/[^\w.-]+/g, '_');
-  const json = serializeTimeline();
-  // localStorage (named index)
-  try {
-    localStorage.setItem(storeKey(name), json);
-    const names = listSaved();
-    if (!names.includes(name)) names.push(name);
-    localStorage.setItem(STORE_INDEX, JSON.stringify(names));
-    refreshSavedList();
-    savedListSel.value = name;
-  } catch (err) {
-    log(`couldn't save to browser storage: ${String(err)}`);
+
+async function applyProject(doc: ProjectDoc): Promise<void> {
+  scriptEl.value = doc.script ?? scriptEl.value;
+  narrationAudio = null;
+  rateEl.value = String(doc.rate ?? 1);
+  pitchEl.value = String(doc.pitch ?? 1);
+  boundary.setRate(Number(rateEl.value));
+  emotionSel.value = doc.emotion ?? 'neutral';
+  avatar.setEmotion(emotionSel.value as EmotionName);
+  shotSel.value = doc.shot ?? 'medium';
+  if (doc.voiceId) voiceSel.value = doc.voiceId;
+
+  if (doc.lights) {
+    lightKey.value = String(doc.lights.key);
+    lightFill.value = String(doc.lights.fill);
+    lightRim.value = String(doc.lights.rim);
+    lightAmbient.value = String(doc.lights.ambient);
+    exposureEl.value = String(doc.lights.exposure);
+    warmthEl.value = String(doc.lights.warmth);
+    lightPresetSel.value = doc.lights.preset ?? 'studio';
+    applyLights();
   }
-  // .json file download
-  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-  downloadEl.href = url;
-  downloadEl.download = `${name}.timeline.json`;
-  downloadEl.textContent = `⬇ ${name}.timeline.json`;
-  downloadEl.hidden = false;
-  downloadEl.click();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-  log(`saved timeline "${name}" (browser + .json).`);
-});
+  studioOn = doc.studioOn ?? true;
+  studio.group.visible = studioOn;
+  studioToggle.textContent = `Studio: ${studioOn ? 'On' : 'Off'}`;
+  studioToggle.classList.toggle('primary', studioOn);
+  idleMotionOn = doc.idleMotion ?? false;
+  avatar.setIdleMotion(idleMotionOn);
+  idleMotionToggle.textContent = `Idle motion: ${idleMotionOn ? 'On' : 'Off'}`;
+  idleMotionToggle.classList.toggle('primary', idleMotionOn);
+  if (doc.headline) {
+    headlineInput.value = doc.headline;
+    studio.setHeadline(doc.headline);
+  }
+  if (doc.avatarUrl && doc.avatarUrl !== avatarSel.value) {
+    avatarSel.value = doc.avatarUrl;
+    await loadAvatar(doc.avatarUrl, doc.avatarUrl.split('/').pop() || 'avatar');
+  }
+
+  applyTimelineDoc(doc.timeline);
+
+  // Re-fetch + decode audio assets (cue ids were regenerated above).
+  for (const c of timeline.cues) {
+    if (c.track === 'audio' && c.src) {
+      try {
+        const blob = await r2GetBlob(c.src);
+        audioBlobs.set(c.id, blob);
+        audioBuffers.set(c.id, await audioCtx().decodeAudioData(await blob.arrayBuffer()));
+      } catch {
+        log(`audio asset missing: ${c.src}`);
+      }
+    }
+  }
+  // Restore the back-screen video.
+  revertScreen();
+  if (doc.backScreen) {
+    const src = doc.backScreen.kind === 'r2' ? r2Url(doc.backScreen.src) : doc.backScreen.src;
+    backScreen = { kind: doc.backScreen.kind, src: doc.backScreen.src };
+    void loadWallVideo(src, 'back screen');
+  }
+  log(`loaded project "${doc.name}" — ${timeline.cues.length} cue(s).`);
+}
+
+async function loadNamed(name: string): Promise<void> {
+  try {
+    let doc: ProjectDoc;
+    if (r2On) {
+      doc = await r2GetJson<ProjectDoc>(`${PROJECT_PREFIX}${name}.json`);
+    } else {
+      const json = localStorage.getItem(`las.project.${name}`);
+      if (!json) throw new Error('not found');
+      doc = JSON.parse(json) as ProjectDoc;
+    }
+    await applyProject(doc);
+    projectNameEl.value = name;
+  } catch (err) {
+    log(`load "${name}" failed: ${String(err)}`);
+    void refreshSavedList();
+  }
+}
+
+saveTimelineBtn.addEventListener('click', () => void saveProject());
 loadTimelineBtn.addEventListener('click', () => timelineFileEl.click());
 timelineFileEl.addEventListener('change', async () => {
   const file = timelineFileEl.files?.[0];
   if (!file) return;
   try {
-    applyTimeline(JSON.parse(await file.text()));
-    projectNameEl.value = file.name.replace(/\.timeline\.json$|\.json$/i, '');
+    const data = JSON.parse(await file.text());
+    if (data && (data.script !== undefined || data.timeline)) {
+      await applyProject(data as ProjectDoc); // full project file
+    } else if (data && Array.isArray(data.cues)) {
+      applyTimelineDoc(data); // raw timeline file
+      log(`loaded timeline — ${timeline.cues.length} cue(s).`);
+    } else {
+      log('load failed: unrecognized file.');
+    }
+    projectNameEl.value = file.name.replace(/\.(project|timeline)\.json$|\.json$/i, '');
   } catch (err) {
     log(`load failed: ${String(err)}`);
   }
   timelineFileEl.value = '';
 });
 savedListSel.addEventListener('change', () => {
-  const name = savedListSel.value;
-  if (!name) return;
-  const json = localStorage.getItem(storeKey(name));
-  if (!json) {
-    log(`"${name}" not found in browser storage.`);
-    refreshSavedList();
-    return;
-  }
-  try {
-    applyTimeline(JSON.parse(json));
-    projectNameEl.value = name;
-  } catch (err) {
-    log(`load failed: ${String(err)}`);
-  }
+  if (savedListSel.value) void loadNamed(savedListSel.value);
 });
-refreshSavedList();
+
+// Probe R2 once; populate the saved-projects list from wherever persistence lives.
+void (async () => {
+  r2On = await r2Available();
+  log(r2On ? 'persistence: Cloudflare R2.' : 'persistence: browser localStorage (set R2_* in .env for R2).');
+  await refreshSavedList();
+})();
 
 log(`ready · avatar: ${avatar.description}`);
 
