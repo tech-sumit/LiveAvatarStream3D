@@ -131,6 +131,28 @@ export class Stage {
     return this.camera.position.clone();
   }
 
+  /** Current camera framing — for capturing a pose / recording a path. */
+  getCameraPose(): { pos: THREE.Vector3; target: THREE.Vector3; fov: number } {
+    return { pos: this.camera.position.clone(), target: this.controls.target.clone(), fov: this.camera.fov };
+  }
+
+  /** Nudge the camera (arrow-key navigation). truck = strafe, pedestal = up/down,
+   *  dolly>0 = move closer. Keeps the OrbitControls offset consistent. */
+  nudgeCamera(truck: number, pedestal: number, dolly: number): void {
+    const fwd = new THREE.Vector3();
+    this.camera.getWorldDirection(fwd);
+    const right = new THREE.Vector3().crossVectors(fwd, this.camera.up).normalize();
+    const pan = right.multiplyScalar(truck).add(new THREE.Vector3(0, pedestal, 0));
+    this.camera.position.add(pan);
+    this.controls.target.add(pan);
+    if (dolly !== 0) {
+      const off = this.camera.position.clone().sub(this.controls.target);
+      off.setLength(Math.max(0.2, off.length() - dolly));
+      this.camera.position.copy(this.controls.target).add(off);
+    }
+    this.controls.update();
+  }
+
   /** Timeline director takes/releases the camera (OrbitControls paused while on). */
   setDirector(on: boolean): void {
     this.directorActive = on;

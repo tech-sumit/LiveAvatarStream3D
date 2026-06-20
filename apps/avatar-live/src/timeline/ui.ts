@@ -10,6 +10,8 @@ export interface TimelineUIHooks {
   onPreview(): void;
   onStop(): void;
   onSeek(t: number): void;
+  onCapturePose(): void; // add a Custom-view camera cue from the live camera
+  onRecordPath(): void; // toggle recording a free camera move
 }
 
 const LANES: { kind: TrackKind; name: string }[] = [
@@ -52,6 +54,19 @@ export class TimelineUI {
     this.root.querySelector('#tlPlay')!.textContent = on ? '■ Stop' : '▶ Preview';
   }
 
+  setRecording(on: boolean): void {
+    const b = this.root.querySelector('#tlRec') as HTMLElement | null;
+    if (b) {
+      b.textContent = on ? '■ Stop rec' : '● Rec cam';
+      b.classList.toggle('tl-recording', on);
+    }
+  }
+
+  /** Re-render after the host adds a cue (capture / recorded path). */
+  refresh(): void {
+    this.render();
+  }
+
   setPlayhead(t: number): void {
     const x = LABEL_W + t * this.pxPerSec;
     this.playheadEl.style.left = `${x}px`;
@@ -87,6 +102,17 @@ export class TimelineUI {
       this.hooks.onChange();
     };
 
+    const capture = el('button', 'tl-btn');
+    capture.textContent = '⌖ Capture view';
+    capture.title = 'Add a camera cue from the current view';
+    capture.onclick = () => this.hooks.onCapturePose();
+
+    const rec = el('button', 'tl-btn');
+    rec.id = 'tlRec';
+    rec.textContent = '● Rec cam';
+    rec.title = 'Record a free camera move (orbit / arrow keys), then Stop';
+    rec.onclick = () => this.hooks.onRecordPath();
+
     const clear = el('button', 'tl-btn');
     clear.textContent = 'Clear';
     clear.onclick = () => {
@@ -96,7 +122,20 @@ export class TimelineUI {
       this.hooks.onChange();
     };
 
-    bar.append(play, this.timeLabel, sep(), addCam, addMotion, sep(), durLabel, dur, sep(), clear);
+    bar.append(
+      play,
+      this.timeLabel,
+      sep(),
+      addCam,
+      addMotion,
+      capture,
+      rec,
+      sep(),
+      durLabel,
+      dur,
+      sep(),
+      clear,
+    );
 
     // Body: fixed labels + scrollable track area
     const body = el('div', 'tl-body');

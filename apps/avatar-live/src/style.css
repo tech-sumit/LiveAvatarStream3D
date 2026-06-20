@@ -71,6 +71,11 @@ body {
 #pipFrame.rec {
   border-color: var(--rec);
 }
+/* keep the OUTPUT preview visible above the director timeline panel */
+#stage.tl-open #pipFrame {
+  bottom: 198px;
+  width: 18%;
+}
 #pipFrame canvas {
   width: 100%;
   height: 100%;
@@ -135,6 +140,11 @@ body {
 }
 .tl-btn:hover {
   border-color: var(--accent);
+}
+.tl-btn.tl-recording {
+  background: var(--rec);
+  border-color: var(--rec);
+  color: #fff;
 }
 .tl-add {
   background: var(--panel2);
