@@ -26,6 +26,8 @@ export class Stage {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.el.appendChild(this.renderer.domElement);
@@ -51,14 +53,26 @@ export class Stage {
     this.updaters.push(fn);
   }
 
-  /** Aim the camera at a head center and choose a framing distance. */
-  frame(headCenter: THREE.Vector3, shot: Shot = this.shot): void {
+  /**
+   * Aim the camera at a head center and choose a framing distance proportional
+   * to the head height (so any avatar scale frames consistently). `snap` jumps
+   * the camera immediately instead of easing — used for the initial framing and
+   * when a tab is backgrounded (rAF throttled), where easing would never finish.
+   */
+  frame(headCenter: THREE.Vector3, headHeight: number, shot: Shot = this.shot, snap = true): void {
     this.shot = shot;
     this.camTarget.copy(headCenter);
-    const dist = shot === 'close' ? 0.85 : shot === 'medium' ? 1.7 : 3.0;
-    const height = shot === 'close' ? headCenter.y + 0.02 : headCenter.y - 0.05;
-    this.camDesired.set(headCenter.x, height, headCenter.z + dist);
+    const factor = shot === 'close' ? 2.0 : shot === 'medium' ? 3.4 : 6.5;
+    const dist = headHeight * factor;
+    const yOff = shot === 'close' ? headHeight * 0.04 : -headHeight * 0.08;
+    this.camDesired.set(headCenter.x, headCenter.y + yOff, headCenter.z + dist);
     this.lookDesired.set(headCenter.x, headCenter.y, headCenter.z);
+    if (snap) {
+      this.camPos.copy(this.camDesired);
+      this.camLook.copy(this.lookDesired);
+      this.camera.position.copy(this.camPos);
+      this.camera.lookAt(this.camLook);
+    }
   }
 
   captureStream(fps = 30): MediaStream {
@@ -82,23 +96,26 @@ export class Stage {
   }
 
   private setupLights(): void {
-    const key = new THREE.DirectionalLight(0xfff2e6, 2.2);
-    key.position.set(2.5, 4, 3);
+    // Soft three-point studio. Warm key, gentle neutral fill, cool rim — tuned
+    // so real skin textures read naturally rather than blowing out to white.
+    const key = new THREE.DirectionalLight(0xfff1e0, 1.6);
+    key.position.set(1.8, 2.6, 2.4);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.near = 0.5;
     key.shadow.camera.far = 20;
+    key.shadow.bias = -0.0004;
     this.scene.add(key);
 
-    const fill = new THREE.DirectionalLight(0x88aaff, 0.7);
-    fill.position.set(-3, 1.5, 2);
+    const fill = new THREE.DirectionalLight(0xdfe6ff, 0.35);
+    fill.position.set(-2.4, 1.2, 1.6);
     this.scene.add(fill);
 
-    const rim = new THREE.DirectionalLight(0xffffff, 1.1);
-    rim.position.set(-1, 3, -3);
+    const rim = new THREE.DirectionalLight(0xcfe0ff, 0.6);
+    rim.position.set(-1, 2.4, -2.6);
     this.scene.add(rim);
 
-    this.scene.add(new THREE.HemisphereLight(0x9fb4ff, 0x202028, 0.5));
+    this.scene.add(new THREE.HemisphereLight(0xbcc8e6, 0x20242e, 0.45));
   }
 
   private setupBackdrop(): void {

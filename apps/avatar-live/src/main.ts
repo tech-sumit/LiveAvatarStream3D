@@ -22,6 +22,8 @@ const pitchEl = $<HTMLInputElement>('pitch');
 const emotionSel = $<HTMLSelectElement>('emotion');
 const shotSel = $<HTMLSelectElement>('shot');
 const glbInput = $<HTMLInputElement>('glb');
+const glbUrlInput = $<HTMLInputElement>('glbUrl');
+const loadUrlBtn = $<HTMLButtonElement>('loadUrl');
 const recordBtn = $<HTMLButtonElement>('record');
 const downloadEl = $<HTMLAnchorElement>('download');
 const statusEl = $<HTMLSpanElement>('avatarStatus');
@@ -35,9 +37,32 @@ function log(msg: string): void {
 // ── Scene + avatar ───────────────────────────────────────────────────────────
 const stage = new Stage(stageEl);
 const avatar = new AvatarController();
+avatar.setRenderer(stage.renderer);
 stage.add(avatar.group);
-stage.frame(avatar.headCenter, shotSel.value as Shot);
+stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot);
 statusEl.textContent = avatar.description;
+
+// Shared loader for the default avatar, file uploads, and URL loads.
+async function loadAvatar(url: string, label: string): Promise<void> {
+  log(`loading ${label}…`);
+  try {
+    const res = await avatar.loadGltf(url);
+    if (res.mode === 'none') {
+      log(`⚠ ${label}: ${res.detail}. Use an ARKit/Oculus-blendshape avatar (e.g. Ready Player Me).`);
+      return;
+    }
+    stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot);
+    statusEl.textContent = avatar.description;
+    log(`loaded ${label} — ${res.detail}`);
+    if (res.mode === 'jawbone') log('note: jaw-bone lipsync is open/close only (no visemes/expression).');
+  } catch (err) {
+    log(`failed to load ${label}: ${String(err)}`);
+  }
+}
+
+// Default: the realistic human face (facecap — a real captured head with the
+// full ARKit blendshape set).
+void loadAvatar('/avatars/human.glb', 'realistic face (facecap)');
 
 // ── Lipsync state ────────────────────────────────────────────────────────────
 const boundary = new BoundaryLipsync(Number(rateEl.value));
@@ -140,28 +165,26 @@ emotionSel.addEventListener('change', () => {
 });
 avatar.setEmotion(emotionSel.value as EmotionName);
 
-shotSel.addEventListener('change', () => stage.frame(avatar.headCenter, shotSel.value as Shot));
+shotSel.addEventListener('change', () => stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot));
 rateEl.addEventListener('input', () => boundary.setRate(Number(rateEl.value)));
 
 glbInput.addEventListener('change', async () => {
   const file = glbInput.files?.[0];
   if (!file) return;
   const url = URL.createObjectURL(file);
-  log(`loading ${file.name}…`);
   try {
-    const ok = await avatar.loadGltf(url);
-    if (ok) {
-      stage.frame(avatar.headCenter, shotSel.value as Shot);
-      statusEl.textContent = avatar.description;
-      log(`loaded ${file.name}: ${avatar.description}`);
-    } else {
-      log(`${file.name} has no mouth blendshapes — keeping procedural head.`);
-    }
-  } catch (err) {
-    log(`failed to load ${file.name}: ${String(err)}`);
+    await loadAvatar(url, file.name);
   } finally {
     URL.revokeObjectURL(url);
   }
+});
+
+loadUrlBtn.addEventListener('click', () => {
+  const url = glbUrlInput.value.trim();
+  if (url) void loadAvatar(url, url.split('/').pop() || 'url');
+});
+glbUrlInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') loadUrlBtn.click();
 });
 
 // ── Recording (virtual camera capture) ───────────────────────────────────────
@@ -192,3 +215,6 @@ function setSpeakingUi(on: boolean): void {
 }
 
 log(`ready · TTS: ${tts.kind} · avatar: ${avatar.description}`);
+
+// Debug handle for inspecting the scene/camera from the console.
+(window as unknown as { __las: unknown }).__las = { stage, avatar };

@@ -49,12 +49,44 @@ script text ──► RealtimeSession ──► TtsSource ──► (audio)
   back-to-back, supports live `enqueue()` (stream lines in) and `stop()`
   (barge-in).
 
-## Using a real metahuman avatar
+## Avatars & lip-sync requirements
 
-Drop a glTF/GLB with **ARKit or Oculus (Ready Player Me) blendshapes** into
-`public/avatars/` (or use **Load .glb** in the UI). `MorphFaceRig` auto-binds
-whatever mouth morphs it finds; if there are none it keeps the procedural head
-and logs a notice. Ready Player Me avatars work out of the box.
+The default avatar is **facecap** (`public/avatars/human.glb`) — a real captured
+human face with the full 52-shape ARKit blendshape set. It has realistic
+geometry but matte "clay" shading (no photoreal skin texture).
+
+**A model can only lip-sync if its face is animatable.** Loading an external
+`.glb` resolves to one of three outcomes (shown in the log):
+
+| The model has… | Result | Lip-sync quality |
+|---|---|---|
+| ARKit / Oculus **facial blendshapes** | `MorphFaceRig` | Full visemes + expression |
+| A **jaw bone** (no blendshapes) | `JawBoneRig` | Open/close only |
+| Neither (frozen face) | rejected, keeps current avatar | None — cannot talk |
+
+Most generic imports — **Mixamo characters, Sketchfab/photogrammetry scans,
+baked-animation captures** — have a *frozen face*: no jaw bone and no
+blendshapes, so nothing can move the mouth. They will be rejected with an
+explanation. (Mixamo rigs stop at a `Head` bone — there is no jaw.)
+
+### Getting a realistic, lip-sync-ready avatar
+
+Load via **Load .glb** (file) or paste a URL into the **Load** field:
+
+- **Ready Player Me** — free, photoreal-ish, made from a selfie; export with
+  `?morphTargets=ARKit,Oculus Visemes`. Has proper skin textures.
+- **Avaturn** — photoreal avatar from a selfie, ARKit blendshapes.
+- **Character Creator 4 / iClone**, **Apple ARKit-rigged heads**,
+  **MetaHuman** exported to glTF (via Blender) with ARKit shape keys.
+
+### Adding lip-sync to a model that lacks it
+
+It's a content-pipeline step, not runtime: open the model in **Blender** and add
+ARKit shape keys (manually or with an add-on like FaceIt), or bake facial
+animation with **NVIDIA Audio2Face**, then export glTF **with morph targets**.
+
+> Compressed avatars work out of the box — the loader wires Draco, meshopt, and
+> KTX2/basis decoders (served from `public/decoders/`).
 
 ## Cloned voice (production path)
 

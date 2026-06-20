@@ -85,6 +85,22 @@ label {
   gap: 6px;
   font-size: 11px;
 }
+.hint {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+input[type='text'] {
+  width: 100%;
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+}
 
 textarea,
 select {

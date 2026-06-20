@@ -5,28 +5,42 @@ import type { FaceChannels, FaceRig } from './face.js';
 // pipelines name their blendshapes differently (ARKit, Oculus/Ready Player Me,
 // custom), so each channel lists candidate morph names and we bind whatever the
 // mesh actually has. This is the browser sibling of engine-three's morphApply.ts.
+// Candidates span three conventions: ARKit camelCase (RPM: mouthSmileLeft),
+// ARKit underscore (facecap: mouthSmile_L), and Oculus visemes (viseme_aa).
 const CHANNEL_CANDIDATES: Record<keyof FaceChannels, string[]> = {
-  // jaw / overall openness — ARKit jawOpen, Oculus viseme_aa, generic mouthOpen
+  // jaw / overall openness
   jawOpen: ['jawOpen', 'JawOpen', 'mouthOpen', 'viseme_aa', 'viseme_AA', 'MouthOpen'],
-  // wide / spread — smiles + close front vowels
+  // wide / spread — smiles + stretch + close front vowels
   mouthWide: [
     'mouthSmileLeft',
     'mouthSmileRight',
+    'mouthSmile_L',
+    'mouthSmile_R',
     'mouthSmile',
-    'viseme_E',
-    'viseme_I',
     'mouthStretchLeft',
     'mouthStretchRight',
+    'mouthStretch_L',
+    'mouthStretch_R',
+    'viseme_E',
+    'viseme_I',
   ],
   // rounded — funnel / pucker + back vowels
   mouthRound: ['mouthFunnel', 'mouthPucker', 'viseme_O', 'viseme_U', 'MouthPucker'],
   // bilabial closure
-  mouthClose: ['mouthClose', 'viseme_PP', 'mouthPressLeft', 'mouthPressRight', 'viseme_sil'],
+  mouthClose: [
+    'mouthClose',
+    'viseme_PP',
+    'mouthPressLeft',
+    'mouthPressRight',
+    'mouthPress_L',
+    'mouthPress_R',
+    'viseme_sil',
+  ],
   // emotion
-  smile: ['mouthSmileLeft', 'mouthSmileRight', 'mouthSmile', 'cheekSquintLeft', 'cheekSquintRight'],
-  frown: ['mouthFrownLeft', 'mouthFrownRight', 'mouthFrown'],
-  browRaise: ['browInnerUp', 'browOuterUpLeft', 'browOuterUpRight', 'BrowsU_C'],
-  blink: ['eyeBlinkLeft', 'eyeBlinkRight', 'eyesClosed', 'blink', 'EyeBlink_L', 'EyeBlink_R'],
+  smile: ['mouthSmileLeft', 'mouthSmileRight', 'mouthSmile_L', 'mouthSmile_R', 'mouthSmile'],
+  frown: ['mouthFrownLeft', 'mouthFrownRight', 'mouthFrown_L', 'mouthFrown_R', 'mouthFrown'],
+  browRaise: ['browInnerUp', 'browOuterUpLeft', 'browOuterUpRight', 'browOuterUp_L', 'browOuterUp_R', 'BrowsU_C'],
+  blink: ['eyeBlinkLeft', 'eyeBlinkRight', 'eyeBlink_L', 'eyeBlink_R', 'eyesClosed', 'blink'],
 };
 
 interface Binding {
