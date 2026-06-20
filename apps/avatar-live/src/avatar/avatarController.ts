@@ -166,9 +166,14 @@ export class AvatarController {
     this.mixer = null;
     this.actions = {};
     this.currentClip = '';
+    // Only TRUE Ready Player Me avatars (Wolf3D_* meshes) get the RPM body-anim
+    // clips. The old "|| Armature" check wrongly matched MakeHuman/MPFB/VRoid
+    // exports (every Blender rig is named "Armature"), and binding RPM clips to a
+    // non-RPM bind pose flings limbs / displaces the avatar. Non-RPM avatars stay
+    // a stable, still talking head (lip-sync + expression still work).
     let rpm = false;
     root.traverse((o) => {
-      if (/^Wolf3D/i.test(o.name) || o.name === 'Armature') rpm = true;
+      if (/^Wolf3D/i.test(o.name)) rpm = true;
     });
     this.isReadyPlayerMe = rpm;
   }
@@ -194,7 +199,13 @@ export class AvatarController {
         const gltf = await loader.loadAsync(c.url);
         const clip = gltf.animations[0];
         if (!clip) continue;
-        clip.tracks = clip.tracks.filter((t) => nodeNames.has(t.name.split('.')[0]));
+        // Keep only tracks whose bone exists, and drop ALL position tracks:
+        // a standing anchor shouldn't translate, and a clip's hip-position track
+        // applied to a differently-scaled skeleton (e.g. MPFB) would displace /
+        // balloon the whole avatar. Rotation-only retargeting is robust.
+        clip.tracks = clip.tracks.filter(
+          (t) => nodeNames.has(t.name.split('.')[0]) && !t.name.endsWith('.position'),
+        );
         const action = this.mixer.clipAction(clip, this.animRoot as THREE.Object3D);
         action.setLoop(THREE.LoopRepeat, Infinity);
         this.actions[c.name] = action;
@@ -439,6 +450,15 @@ function fitAvatar(root: THREE.Object3D, faceMesh: THREE.Mesh | null): { center:
   const headBone = findHeadBone(root);
 
   const whole = new THREE.Box3().setFromObject(root);
+  // Box3.setFromObject ignores skinning, so a skinned mesh whose geometry is
+  // authored small but scaled up by its armature (MakeHuman/MPFB) reports a tiny
+  // box → fitAvatar would scale it up enormously. Expand the box by the skeleton's
+  // bone world positions so the measured height matches the actual rendered figure.
+  root.updateWorldMatrix(true, true);
+  const _bp = new THREE.Vector3();
+  root.traverse((o) => {
+    if ((o as THREE.Bone).isBone) whole.expandByPoint(o.getWorldPosition(_bp));
+  });
   const wholeSize = new THREE.Vector3();
   whole.getSize(wholeSize);
 
@@ -470,28 +490,46 @@ function fitAvatar(root: THREE.Object3D, faceMesh: THREE.Mesh | null): { center:
   }
 
   // Resolve the head center + height in world space after the transform.
+  // Bone-expanded again (same reason as above) so the figure height is correct
+  // for skinned meshes whose un-posed geometry box understates the real size.
   root.updateWorldMatrix(true, true);
   const finalWhole = new THREE.Box3().setFromObject(root);
+  root.traverse((o) => {
+    if ((o as THREE.Bone).isBone) finalWhole.expandByPoint(o.getWorldPosition(_bp));
+  });
   const finalWholeH = finalWhole.max.y - finalWhole.min.y;
   const hc = new THREE.Vector3();
-  let height: number;
+  let height = 0;
 
-  if (headOnly && faceMesh) {
-    const fb = new THREE.Box3().setFromObject(faceMesh);
-    fb.getCenter(hc);
-    height = fb.max.y - fb.min.y;
-  } else if (headBone) {
-    // Most reliable for skinned avatars: the head bone marks the head.
-    headBone.getWorldPosition(hc);
-    hc.y += finalWholeH * 0.045; // bone pivot is low in the head; raise to eyes
-    height = finalWholeH * 0.13; // a human head is ~13% of standing height
-  } else {
+  // Box estimate: head ~ top of the figure. Used when there's no head bone, or
+  // when the head bone is bogus (e.g. MakeHuman/MPFB armatures whose bone scale
+  // doesn't match the mesh, putting the "head" bone metres above the body).
+  const boxEstimate = (): void => {
     hc.set(
       (finalWhole.min.x + finalWhole.max.x) / 2,
       finalWhole.min.y + finalWholeH * 0.9,
       (finalWhole.min.z + finalWhole.max.z) / 2,
     );
     height = finalWholeH * 0.13;
+  };
+
+  if (headOnly && faceMesh) {
+    const fb = new THREE.Box3().setFromObject(faceMesh);
+    fb.getCenter(hc);
+    height = fb.max.y - fb.min.y;
+  } else if (headBone) {
+    const hb = new THREE.Vector3();
+    headBone.getWorldPosition(hb);
+    // Trust the bone only if it sits within the figure's vertical extent.
+    if (hb.y > finalWhole.min.y && hb.y < finalWhole.max.y + finalWholeH * 0.1) {
+      hc.copy(hb);
+      hc.y += finalWholeH * 0.045; // bone pivot is low in the head; raise to eyes
+      height = finalWholeH * 0.13; // a human head is ~13% of standing height
+    } else {
+      boxEstimate();
+    }
+  } else {
+    boxEstimate();
   }
   return { center: hc, height: Math.max(height, 0.05) };
 }

@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
-# Fetch photoreal avatars into their per-avatar folders (public/<id>-model/model.glb).
+# Fetch avatars into their per-avatar folders (public/<id>-model/model.glb).
 #
-# Sourced from the MIT-licensed met4citizen/talkinghead repo. These avatars are
-# generated (Avaturn / Avatar SDK) and kept out of git (size + generated-asset
-# terms), so they're fetched on demand. brunette-model + facecap-model ship their
-# model.glb committed as always-available fallbacks; every avatar's config.json is
-# committed too, so the dropdown lists all of them and a fresh checkout still works.
+# All from the MIT-licensed met4citizen/talkinghead repo (avatars are generated /
+# large, kept out of git, fetched on demand). Each folder's config.json IS
+# committed, so the dropdown lists every avatar and a fresh checkout works on the
+# two committed models (brunette-model, facecap-model) before fetching.
 #
-# Add your own avatar: drop a folder public/<name>-model/ with model.glb +
-# config.json — it's auto-discovered (see AVATARS.md), no code change needed.
+# Add your own: drop public/<name>-model/{model.glb,config.json} — auto-discovered
+# (see AVATARS.md). Avaturn exports must be Type-2 (T2) or they have no blendshapes.
 set -euo pipefail
 cd "$(dirname "$0")/../public"
 base="https://raw.githubusercontent.com/met4citizen/talkinghead/main/avatars"
-mkdir -p avaturn-model avatarsdk-model
-curl -fsSL -o avaturn-model/model.glb   "$base/avaturn.glb"
-curl -fsSL -o avatarsdk-model/model.glb "$base/avatarsdk.glb"
-echo "Fetched avaturn-model/model.glb + avatarsdk-model/model.glb into $(pwd)"
+fetch() { mkdir -p "$1-model"; echo "→ $1"; curl -fsSL -o "$1-model/model.glb" "$base/$2"; }
+fetch avaturn     avaturn.glb      # photoreal (T2)
+fetch avatarsdk   avatarsdk.glb    # photoreal
+fetch mpfb        mpfb.glb         # realistic, CC0 (large, ~36MB)
+fetch vroid       vroid.glb        # stylized
+fetch brunette-t  brunette-t.glb   # RPM lite variant
+echo "Fetched avatars into $(pwd)"
