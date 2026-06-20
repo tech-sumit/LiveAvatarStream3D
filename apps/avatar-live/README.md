@@ -91,20 +91,27 @@ It's a content-pipeline step, not runtime: open the model in **Blender** and add
 ARKit shape keys (manually or with an add-on like FaceIt), or bake facial
 animation with **NVIDIA Audio2Face**, then export glTF **with morph targets**.
 
-### Higher-quality lip-sync engines (server-side)
+## Audio2Face-3D lip-sync (full-face ARKit)
 
-The current in-browser lip-sync is amplitude/word-boundary based. For
-broadcast-grade accuracy, generate an ARKit-blendshape *timeline* on the server
-and stream it to the browser (the avatar already exposes ARKit morphs):
+The app can drive the avatar's **entire face** (jaw, visemes, brows, blinks,
+emotion) from an ARKit blendshape timeline — the output format of NVIDIA
+**Audio2Face-3D**. Pipeline: `audio → A2F client → BlendshapeTimeline →
+BlendshapeTimelineLipsync → MorphFaceRig.applyNamed()`, synced to audio playback.
 
-- **[NVIDIA Audio2Face-3D](https://github.com/NVIDIA/Audio2Face-3D-Samples)** —
-  audio → 52 ARKit blendshape coefficients via a GPU NIM microservice. The
-  samples repo provides the gRPC client + example audio (the A2F-3D *models*
-  require NVIDIA NIM/NGC access; check that repo's license for terms). This is
-  the production path; `services/engine-three/src/face/a2f.ts` already calls A2F
-  for the offline renderer.
-- **talkinghead's** text→phoneme→Oculus-viseme timing is a lighter, no-GPU
-  alternative worth porting for crisper consonants.
+- **A2F demo (sample audio)** button — runs the bundled `Claire_neutral.wav`
+  through the A2F client and animates the avatar in sync. **A2F audio…** does the
+  same for any audio file you pick.
+- **Two clients** (`src/a2f/`): `LocalA2FClient` is a GPU-free stand-in that emits
+  the *same timeline format* (so the consumer is identical) for offline testing;
+  `ServerA2FClient` posts audio to a real A2F-3D NIM wrapper. The "Lip-sync
+  engine" badge shows which is active.
+- **Server**: set `VITE_A2F_URL` to the wrapper in
+  [`services/gpu/a2f`](../../services/gpu/a2f) (FastAPI → A2F-3D NIM over gRPC).
+  The A2F-3D *models* require NVIDIA NIM/NGC access — see that README.
+
+> The sample audio is from the Apache-2.0 NVIDIA/Audio2Face-3D-Samples repo.
+> A lighter no-GPU alternative for crisper consonants is porting talkinghead's
+> text→phoneme→Oculus-viseme timing.
 
 > Compressed avatars work out of the box — the loader wires Draco, meshopt, and
 > KTX2/basis decoders (served from `public/decoders/`).

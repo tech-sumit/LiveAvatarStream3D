@@ -38,6 +38,7 @@ export class AvatarController {
   private rig: FaceRig;
   private current: FaceChannels = zeroChannels();
   private mouthTarget: MouthCue = { ...SILENT };
+  private namedFace: Record<string, number> | null = null;
   private emotion: EmotionName = 'neutral';
   private emotionIntensity = 1;
   private speaking = false;
@@ -135,7 +136,28 @@ export class AvatarController {
     this.speaking = false;
   }
 
+  /**
+   * Drive the full face from an ARKit name→weight frame (Audio2Face-3D). Pass
+   * null to return to channel-based (amplitude/viseme) lip-sync.
+   */
+  setNamedFace(weights: Record<string, number> | null): void {
+    this.namedFace = weights;
+    this.speaking = weights !== null;
+  }
+
+  get supportsNamedFace(): boolean {
+    return typeof this.rig.applyNamed === 'function';
+  }
+
   update(dt: number): void {
+    // A2F-3D / ARKit full-face path: the timeline already carries jaw, visemes,
+    // brows, blinks and emotion, so apply it directly and only add idle motion.
+    if (this.namedFace && this.rig.applyNamed) {
+      this.updateIdle(dt);
+      this.rig.applyNamed(this.namedFace);
+      return;
+    }
+
     // Smooth mouth toward target. Jaw attacks fast, releases a touch slower so
     // closures read crisply but don't chatter.
     const attack = 1 - Math.exp(-dt / 0.035);

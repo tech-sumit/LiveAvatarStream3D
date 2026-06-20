@@ -64,6 +64,11 @@ export class MorphFaceRig implements FaceRig {
   readonly boundCount: number;
   readonly boundNames: string[];
 
+  // Every morph keyed by a normalized name, so an external ARKit-named timeline
+  // (e.g. Audio2Face-3D output) can drive the full face regardless of whether the
+  // mesh uses `mouthSmileLeft` (RPM) or `mouthSmile_L` (facecap) conventions.
+  private named = new Map<string, Binding[]>();
+
   constructor(root: THREE.Object3D) {
     const found = new Set<string>();
     const meshes: THREE.Mesh[] = [];
@@ -71,6 +76,16 @@ export class MorphFaceRig implements FaceRig {
       const m = o as THREE.Mesh;
       if (m.isMesh && m.morphTargetDictionary && m.morphTargetInfluences) meshes.push(m);
     });
+
+    for (const mesh of meshes) {
+      for (const [name, idx] of Object.entries(mesh.morphTargetDictionary!)) {
+        if (!mesh.morphTargetInfluences) continue;
+        const key = normalizeMorphName(name);
+        const list = this.named.get(key) ?? [];
+        list.push({ influences: mesh.morphTargetInfluences, index: idx });
+        this.named.set(key, list);
+      }
+    }
 
     for (const channel of Object.keys(CHANNEL_CANDIDATES) as (keyof FaceChannels)[]) {
       for (const name of CHANNEL_CANDIDATES[channel]) {
@@ -104,8 +119,35 @@ export class MorphFaceRig implements FaceRig {
     const v = clamp01(value);
     for (const b of this.bindings[channel]) b.influences[b.index] = v;
   }
+
+  /**
+   * Drive the full face from a name→weight map (an A2F-3D / ARKit frame). Zeroes
+   * all managed morphs first so shapes absent from the frame relax to neutral.
+   */
+  applyNamed(weights: Record<string, number>): void {
+    for (const list of this.named.values()) {
+      for (const b of list) b.influences[b.index] = 0;
+    }
+    for (const [name, w] of Object.entries(weights)) {
+      const list = this.named.get(normalizeMorphName(name));
+      if (!list) continue;
+      const v = clamp01(w);
+      for (const b of list) b.influences[b.index] = v;
+    }
+  }
 }
 
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+// Canonicalize a blendshape name so ARKit conventions match: lowercase, drop
+// separators, and fold Left/Right ↔ _L/_R. e.g. "mouthSmileLeft", "mouthSmile_L",
+// and "MouthSmile.L" all map to "mouthsmilel".
+function normalizeMorphName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[_\s.]+/g, '')
+    .replace(/left$/, 'l')
+    .replace(/right$/, 'r');
 }

@@ -6,6 +6,10 @@ import { WebSpeechTts } from './tts/webSpeech.js';
 import { ServerTts } from './tts/serverTts.js';
 import { RealtimeSession } from './session/realtimeSession.js';
 import { Recorder } from './capture/recorder.js';
+import { BlendshapeTimelineLipsync } from './lipsync/blendshapeTimeline.js';
+import { LocalA2FClient } from './a2f/localA2F.js';
+import { ServerA2FClient } from './a2f/serverA2F.js';
+import type { A2FClient } from './a2f/types.js';
 import type { EmotionName } from './avatar/emotion.js';
 import type { TtsSource } from './tts/types.js';
 
@@ -26,6 +30,9 @@ const glbUrlInput = $<HTMLInputElement>('glbUrl');
 const loadUrlBtn = $<HTMLButtonElement>('loadUrl');
 const recordBtn = $<HTMLButtonElement>('record');
 const downloadEl = $<HTMLAnchorElement>('download');
+const a2fDemoBtn = $<HTMLButtonElement>('a2fDemo');
+const a2fAudioInput = $<HTMLInputElement>('a2fAudio');
+const a2fModeEl = $<HTMLSpanElement>('a2fMode');
 const statusEl = $<HTMLSpanElement>('avatarStatus');
 const logEl = $<HTMLPreElement>('log');
 
@@ -76,14 +83,76 @@ const boundary = new BoundaryLipsync(Number(rateEl.value));
 let analyser: AudioAnalyserLipsync | null = null;
 let speaking = false;
 
+// Audio2Face-3D playback state (full-face ARKit timeline driven by an audio clock).
+const a2fUrl = import.meta.env.VITE_A2F_URL as string | undefined;
+const a2fClient: A2FClient = a2fUrl ? new ServerA2FClient(a2fUrl) : new LocalA2FClient();
+a2fModeEl.textContent = a2fClient.kind === 'server' ? 'NIM' : 'local stand-in';
+let a2fCtx: AudioContext | null = null;
+let a2fLip: BlendshapeTimelineLipsync | null = null;
+let a2fSrc: AudioBufferSourceNode | null = null;
+let a2fStart = 0;
+
 stage.onFrame((dt) => {
-  if (speaking) {
+  if (a2fLip && a2fCtx) {
+    const t = a2fCtx.currentTime - a2fStart;
+    avatar.setNamedFace(a2fLip.sampleAt(t));
+  } else if (speaking) {
     avatar.setMouth(analyser ? analyser.sample() : boundary.sample(performance.now()));
   } else {
     avatar.setSilent();
   }
   avatar.update(dt);
 });
+
+function stopA2F(): void {
+  try {
+    a2fSrc?.stop();
+  } catch {
+    /* already stopped */
+  }
+  a2fSrc = null;
+  a2fLip = null;
+  avatar.setNamedFace(null);
+}
+
+// Analyze audio → ARKit blendshape timeline, then play audio + drive the face.
+async function runA2F(buffer: AudioBuffer, label: string): Promise<void> {
+  if (!avatar.supportsNamedFace) {
+    log('⚠ current avatar has no blendshapes — A2F needs an ARKit/Oculus avatar.');
+    return;
+  }
+  stopA2F();
+  session.stop();
+  log(`A2F (${a2fClient.kind}): analyzing ${label}…`);
+  const timeline = await a2fClient.analyze(buffer);
+  log(`A2F: ${timeline.frames.length} frames × ${timeline.names.length} shapes; playing…`);
+  const ctx = (a2fCtx ??= new AudioContext());
+  await ctx.resume();
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(ctx.destination);
+  a2fLip = new BlendshapeTimelineLipsync(timeline);
+  a2fStart = ctx.currentTime;
+  a2fSrc = src;
+  src.onended = () => {
+    stopA2F();
+    setSpeakingUi(false);
+    log('A2F playback done.');
+  };
+  src.start();
+  setSpeakingUi(true);
+}
+
+async function loadAndRunA2F(url: string, label: string): Promise<void> {
+  try {
+    const ctx = (a2fCtx ??= new AudioContext());
+    const bytes = await (await fetch(url)).arrayBuffer();
+    const buffer = await ctx.decodeAudioData(bytes);
+    await runA2F(buffer, label);
+  } catch (err) {
+    log(`A2F failed for ${label}: ${String(err)}`);
+  }
+}
 
 // ── TTS source selection ─────────────────────────────────────────────────────
 const serverTtsUrl = import.meta.env.VITE_TTS_URL as string | undefined;
@@ -148,10 +217,17 @@ speakBtn.addEventListener('click', () => {
 });
 stopBtn.addEventListener('click', () => {
   session.stop();
+  stopA2F();
   speaking = false;
   analyser = null;
   setSpeakingUi(false);
   log('stopped (barge-in)');
+});
+
+a2fDemoBtn.addEventListener('click', () => void loadAndRunA2F('/audio/sample.wav', 'sample (Claire_neutral)'));
+a2fAudioInput.addEventListener('change', () => {
+  const file = a2fAudioInput.files?.[0];
+  if (file) void loadAndRunA2F(URL.createObjectURL(file), file.name);
 });
 liveEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
