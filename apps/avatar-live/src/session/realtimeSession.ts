@@ -8,15 +8,15 @@ import type { SpeakHandle, SpeakOpts, TtsSource } from '../tts/types.js';
 export interface SessionHooks {
   onWord?(word: string, atMs: number): void;
   onAudioNode?(ctx: AudioContext, node: AudioNode): void;
-  onSegmentStart?(text: string, gesture?: string): void;
+  onSegmentStart?(text: string, gesture?: string, emotion?: string): void;
   onSegmentEnd?(): void;
   onIdle?(): void;
   onStatus?(msg: string): void;
 }
 
-/** Resolves a DSL gesture for a raw segment and returns the spoken text with any
- *  inline `[gesture]` tags stripped. */
-export type GestureResolver = (raw: string) => { text: string; gesture: string };
+/** Resolves inline stage directions for a raw segment and returns the spoken text
+ *  with the directive tags stripped. */
+export type GestureResolver = (raw: string) => { text: string; gesture: string; emotion?: string };
 
 export class RealtimeSession {
   private queue: string[] = [];
@@ -68,9 +68,9 @@ export class RealtimeSession {
     try {
       while (!this.stopped && this.queue.length) {
         const raw = this.queue.shift()!;
-        const { text, gesture } = this.resolveGesture?.(raw) ?? { text: raw, gesture: 'explain' };
+        const { text, gesture, emotion } = this.resolveGesture?.(raw) ?? { text: raw, gesture: 'explain' };
         if (!text) continue;
-        this.hooks.onSegmentStart?.(text, gesture);
+        this.hooks.onSegmentStart?.(text, gesture, emotion);
         const handle = this.getTts().speak(text, this.getOpts(), {
           onStart: () => this.hooks.onStatus?.(`speaking: "${truncate(text)}"`),
           onWord: this.hooks.onWord,

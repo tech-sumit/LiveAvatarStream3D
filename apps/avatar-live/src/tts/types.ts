@@ -29,4 +29,6 @@ export interface TtsSource {
   readonly kind: 'web-speech' | 'server';
   speak(text: string, opts: SpeakOpts, hooks: SpeakHooks): SpeakHandle;
   listVoices?(): Promise<{ id: string; label: string }[]>;
+  /** Optional: synthesize to an AudioBuffer without playing (for synced render). */
+  synthesize?(text: string, opts: SpeakOpts): Promise<AudioBuffer>;
 }

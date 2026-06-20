@@ -72,6 +72,8 @@ export class AvatarController {
 
   // idle motion
   private idleClock = 0;
+  private idleMotion = false; // default: avatar holds still (no breathing/sway)
+  private idleHoldT = 0; // time spent settling the current pose before freezing
 
   // Renderer is needed for KTX2 transcoder support detection.
   private renderer: THREE.WebGLRenderer | null = null;
@@ -206,6 +208,13 @@ export class AvatarController {
     next.reset().setEffectiveWeight(1).fadeIn(fade).play();
     if (prev) prev.fadeOut(fade);
     this.currentClip = name;
+    this.idleHoldT = 0; // re-settle the new pose before freezing (idle-motion off)
+  }
+
+  /** Idle breathing/sway. Off → the avatar settles into a still standing pose. */
+  setIdleMotion(on: boolean): void {
+    this.idleMotion = on;
+    if (on) this.idleHoldT = 0;
   }
 
   get animationClips(): string[] {
@@ -292,9 +301,15 @@ export class AvatarController {
   }
 
   update(dt: number): void {
-    // Advance skeletal body animation (if any). This drives the whole skeleton
-    // including the head bone; our face channels run on top via morph targets.
-    this.mixer?.update(dt);
+    // Advance skeletal body animation. With idle motion OFF, let the current clip
+    // settle into a still pose then freeze it (no breathing/weight-shift) — but
+    // always animate while speaking so gestures play.
+    let adv = dt;
+    if (!this.idleMotion && !this.speaking) {
+      if (this.idleHoldT < 1.6) this.idleHoldT += dt;
+      else adv = 0; // hold the settled pose
+    }
+    this.mixer?.update(adv);
 
     // A2F-3D / ARKit full-face path: the timeline already carries jaw, visemes,
     // brows, blinks and emotion, so apply it directly and only add idle motion.
@@ -346,14 +361,20 @@ export class AvatarController {
   }
 
   private updateIdle(dt: number): void {
+    if (!this.idleMotion) {
+      // Hold perfectly still (skeletal idle clip is frozen separately in update()).
+      this.motion.position.y = 0;
+      this.motion.rotation.set(0, 0, 0);
+      return;
+    }
     this.idleClock += dt;
     const t = this.idleClock;
     // Subtle breathing + sway on the inner group (so the X/Y/Z offset on the
-    // outer group is preserved). A little more alive while speaking.
-    const amp = this.speaking ? 1.4 : 1;
-    this.motion.position.y = Math.sin(t * 1.6) * 0.006 * amp;
-    this.motion.rotation.y = Math.sin(t * 0.5) * 0.03 * amp + Math.sin(t * 0.23) * 0.015;
-    this.motion.rotation.x = Math.sin(t * 0.7) * 0.012 * amp;
+    // outer group is preserved).
+    const amp = this.speaking ? 1.2 : 1;
+    this.motion.position.y = Math.sin(t * 1.6) * 0.005 * amp;
+    this.motion.rotation.y = Math.sin(t * 0.5) * 0.02 * amp + Math.sin(t * 0.23) * 0.01;
+    this.motion.rotation.x = Math.sin(t * 0.7) * 0.008 * amp;
   }
 }
 

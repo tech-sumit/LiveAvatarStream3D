@@ -94,17 +94,34 @@ export function selectTalkClip(gesture: Gesture, emotion: EmotionName, lastClip:
   return pick;
 }
 
+// Emotion directive vocabulary (mirrors EmotionName / DSL emotions).
+const EMOTIONS = new Set<string>([
+  'neutral',
+  'warm',
+  'happy',
+  'excited',
+  'serious',
+  'concerned',
+  'sad',
+  'confident',
+  'thoughtful',
+  'surprised',
+]);
+
 /**
- * Resolve a gesture for a raw script line and return the spoken text with inline
- * `[gesture]` tags removed. Explicit tags win; otherwise keywords; otherwise a
- * neutral talking gesture.
+ * Parse inline stage directions from a script line and return the spoken text
+ * with the directive tags removed. Supports gesture AND emotion tags, e.g.:
+ *   "[serious] Good evening. [point] Tonight's lead story."
+ *   "[excited][wave] And finally, great news!"
+ * Explicit tags win; if no gesture tag, a gesture is inferred from keywords.
  */
-export function resolveGesture(raw: string): { text: string; gesture: Gesture } {
+export function resolveGesture(raw: string): { text: string; gesture: Gesture; emotion?: EmotionName } {
   let gesture: Gesture | null = null;
-  // Explicit [tag] anywhere in the line (first valid one wins).
-  const tagMatch = raw.match(/\[([a-z_]+)\]/i);
-  if (tagMatch && GESTURES.has(tagMatch[1].toLowerCase())) {
-    gesture = tagMatch[1].toLowerCase() as Gesture;
+  let emotion: EmotionName | undefined;
+  for (const tag of raw.match(/\[([a-z_]+)\]/gi) ?? []) {
+    const name = tag.slice(1, -1).toLowerCase();
+    if (!gesture && GESTURES.has(name)) gesture = name as Gesture;
+    else if (!emotion && EMOTIONS.has(name)) emotion = name as EmotionName;
   }
   const text = raw.replace(/\[[a-z_]+\]/gi, '').replace(/\s+/g, ' ').trim();
 
@@ -116,5 +133,5 @@ export function resolveGesture(raw: string): { text: string; gesture: Gesture } 
       }
     }
   }
-  return { text, gesture: gesture ?? 'explain' };
+  return { text, gesture: gesture ?? 'explain', emotion };
 }
