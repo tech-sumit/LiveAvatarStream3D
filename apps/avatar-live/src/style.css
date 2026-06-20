@@ -159,6 +159,15 @@ label {
   line-height: 1.4;
   color: var(--muted);
 }
+input[type='color'] {
+  width: 32px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel2);
+  padding: 1px;
+  cursor: pointer;
+}
 input[type='text'] {
   width: 100%;
   background: var(--panel2);

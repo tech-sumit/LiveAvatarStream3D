@@ -94,6 +94,22 @@
             virtual-camera output at the chosen size; the editor stays usable.</p>
         </section>
 
+        <section>
+          <label>Studio &amp; lighting</label>
+          <label class="mini"><input id="studioToggle" type="checkbox" checked /> News studio set</label>
+          <div class="grid2">
+            <label class="mini">Key <input id="lightKey" type="range" min="0" max="4" step="0.05" value="1.6" /></label>
+            <label class="mini">Fill <input id="lightFill" type="range" min="0" max="3" step="0.05" value="0.35" /></label>
+            <label class="mini">Rim <input id="lightRim" type="range" min="0" max="3" step="0.05" value="0.6" /></label>
+            <label class="mini">Ambient <input id="lightAmbient" type="range" min="0" max="2" step="0.05" value="0.45" /></label>
+          </div>
+          <label class="mini">Warm ↔ Cool <input id="lightTemp" type="range" min="0" max="1" step="0.02" value="0.4" /></label>
+          <div class="grid2">
+            <label class="mini">Accent <input id="accentColor" type="color" value="#3a6df0" /></label>
+            <label class="mini">Screen <input id="screenColor" type="color" value="#1b3a7a" /></label>
+          </div>
+        </section>
+
         <pre id="log" aria-live="polite"></pre>
       </aside>
     </div>

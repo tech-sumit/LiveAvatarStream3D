@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createStudio, type Studio } from './studio.js';
 
 export type Shot = 'close' | 'medium' | 'wide';
 
@@ -23,6 +24,11 @@ export class Stage {
 
   private outputRenderer: THREE.WebGLRenderer;
   private outputCanvas: HTMLCanvasElement;
+  private keyLight!: THREE.DirectionalLight;
+  private fillLight!: THREE.DirectionalLight;
+  private rimLight!: THREE.DirectionalLight;
+  private hemiLight!: THREE.HemisphereLight;
+  private studio!: Studio;
   private capture: CaptureFormat = { name: '16:9 · 720p', w: 1280, h: 720 };
   private hideInOutput: THREE.Object3D[] = [];
 
@@ -60,8 +66,8 @@ export class Stage {
     this.outputRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.getElementById('pipFrame')?.appendChild(this.outputCanvas);
 
-    this.scene.background = new THREE.Color(0x12161f);
-    this.scene.fog = new THREE.Fog(0x12161f, 6, 14);
+    this.scene.background = new THREE.Color(0x0a0e16);
+    this.scene.fog = new THREE.Fog(0x0a0e16, 12, 30);
 
     this.camera = new THREE.PerspectiveCamera(35, this.capture.w / this.capture.h, 0.1, 100);
     this.camera.position.set(0, 1.5, 2);
@@ -74,7 +80,8 @@ export class Stage {
     this.controls.maxDistance = 8;
 
     this.setupLights();
-    this.setupBackdrop();
+    this.studio = createStudio();
+    this.scene.add(this.studio.group);
     this.setCaptureFormat(this.capture);
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -157,34 +164,50 @@ export class Stage {
   }
 
   private setupLights(): void {
-    const key = new THREE.DirectionalLight(0xfff1e0, 1.6);
-    key.position.set(1.8, 2.6, 2.4);
-    key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    key.shadow.camera.near = 0.5;
-    key.shadow.camera.far = 20;
-    key.shadow.bias = -0.0004;
-    this.scene.add(key);
+    this.keyLight = new THREE.DirectionalLight(0xfff1e0, 1.6);
+    this.keyLight.position.set(1.8, 2.6, 2.4);
+    this.keyLight.castShadow = true;
+    this.keyLight.shadow.mapSize.set(2048, 2048);
+    this.keyLight.shadow.camera.near = 0.5;
+    this.keyLight.shadow.camera.far = 20;
+    this.keyLight.shadow.bias = -0.0004;
+    this.scene.add(this.keyLight);
 
-    const fill = new THREE.DirectionalLight(0xdfe6ff, 0.35);
-    fill.position.set(-2.4, 1.2, 1.6);
-    this.scene.add(fill);
+    this.fillLight = new THREE.DirectionalLight(0xdfe6ff, 0.35);
+    this.fillLight.position.set(-2.4, 1.2, 1.6);
+    this.scene.add(this.fillLight);
 
-    const rim = new THREE.DirectionalLight(0xcfe0ff, 0.6);
-    rim.position.set(-1, 2.4, -2.6);
-    this.scene.add(rim);
+    this.rimLight = new THREE.DirectionalLight(0xcfe0ff, 0.6);
+    this.rimLight.position.set(-1, 2.4, -2.6);
+    this.scene.add(this.rimLight);
 
-    this.scene.add(new THREE.HemisphereLight(0xbcc8e6, 0x20242e, 0.45));
+    this.hemiLight = new THREE.HemisphereLight(0xbcc8e6, 0x20242e, 0.45);
+    this.scene.add(this.hemiLight);
   }
 
-  private setupBackdrop(): void {
-    const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(8, 48),
-      new THREE.MeshStandardMaterial({ color: 0x1b2130, roughness: 1 }),
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    this.scene.add(floor);
+  // ── Lighting + studio controls (driven by the sidebar) ─────────────────────
+  setLightIntensity(which: 'key' | 'fill' | 'rim' | 'ambient', v: number): void {
+    const light = { key: this.keyLight, fill: this.fillLight, rim: this.rimLight, ambient: this.hemiLight }[which];
+    light.intensity = v;
+  }
+
+  /** Key-light colour temperature: 0 = warm (3200K-ish) … 1 = cool (6500K+). */
+  setKeyTemperature(t: number): void {
+    const warm = new THREE.Color(0xffd9a8);
+    const cool = new THREE.Color(0xdfeaff);
+    this.keyLight.color.copy(warm).lerp(cool, clamp01(t));
+  }
+
+  setStudioVisible(on: boolean): void {
+    this.studio.group.visible = on;
+  }
+
+  setStudioAccent(hex: number): void {
+    this.studio.setAccent(hex);
+  }
+
+  setStudioScreen(hex: number): void {
+    this.studio.setScreen(hex);
   }
 
   private resize(): void {
@@ -218,4 +241,8 @@ export class Stage {
       this.gateEl.style.height = `${gh}px`;
     }
   }
+}
+
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
 }
