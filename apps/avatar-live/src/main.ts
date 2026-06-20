@@ -69,6 +69,10 @@ const cueStartEl = $<HTMLInputElement>('cueStart');
 const cueDurEl = $<HTMLInputElement>('cueDur');
 const cueSetViewBtn = $<HTMLButtonElement>('cueSetView');
 const cueDeleteBtn = $<HTMLButtonElement>('cueDelete');
+const cueAudioEl = $<HTMLDivElement>('cueAudio');
+const cueVolEl = $<HTMLInputElement>('cueVol');
+const cueFadeInEl = $<HTMLInputElement>('cueFadeIn');
+const cueFadeOutEl = $<HTMLInputElement>('cueFadeOut');
 
 function log(msg: string): void {
   const ts = new Date().toLocaleTimeString();
@@ -784,10 +788,78 @@ function stopPerform(): void {
   }
 }
 
-// ── Background audio (filled in by Phase 2) ──────────────────────────────────
+// ── Background audio lane (music / SFX with volume + fade envelopes) ──────────
+const audioBuffers = new Map<string, AudioBuffer>(); // cue.id → decoded buffer
 let scheduledAudio: AudioBufferSourceNode[] = [];
-function scheduleAudioCues(_ctx: AudioContext, _startAt: number): void {
-  /* phase 2: schedule background-audio cues with fades */
+const audioFileEl = $<HTMLInputElement>('audioFile');
+
+// "+ Audio": pick a file, decode it, drop a clip on the Audio lane at the playhead.
+function addAudioClip(): void {
+  audioFileEl.click();
+}
+audioFileEl.addEventListener('change', async () => {
+  const file = audioFileEl.files?.[0];
+  audioFileEl.value = '';
+  if (!file) return;
+  try {
+    const ctx = audioCtx();
+    const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+    const id = cueId();
+    audioBuffers.set(id, buf);
+    timeline.cues.push({
+      id,
+      track: 'audio',
+      type: 'audio.clip',
+      start: Math.round(playheadT * 10) / 10,
+      duration: Math.round(buf.duration * 10) / 10,
+      label: file.name.replace(/\.[^.]+$/, ''),
+      volume: 0.8,
+      fadeIn: 0,
+      fadeOut: 1.0,
+    });
+    player.load(timeline);
+    timelineUI?.refresh();
+    log(`added audio "${file.name}" (${buf.duration.toFixed(1)}s) @ ${playheadT.toFixed(1)}s.`);
+  } catch (err) {
+    log(`couldn't load audio: ${String(err)}`);
+  }
+});
+
+// Schedule every audio cue against the performance clock with a gain envelope
+// (fade in / out), mixed into both the speakers and the recording.
+function scheduleAudioCues(ctx: AudioContext, startAt: number): void {
+  for (const c of timeline.cues) {
+    if (c.track !== 'audio') continue;
+    const buf = audioBuffers.get(c.id);
+    if (!buf) continue; // file not loaded this session (e.g. after a reload)
+    const vol = c.volume ?? 0.8;
+    const fi = Math.max(0, c.fadeIn ?? 0);
+    const fo = Math.max(0, c.fadeOut ?? 1);
+    const len = Math.min(buf.duration, c.duration);
+    const t0 = startAt + c.start;
+    const tEnd = t0 + len;
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = ctx.createGain();
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    if (recordDest) gain.connect(recordDest);
+
+    const g = gain.gain;
+    if (fi > 0) {
+      g.setValueAtTime(0.0001, t0);
+      g.linearRampToValueAtTime(vol, t0 + Math.min(fi, len));
+    } else {
+      g.setValueAtTime(vol, t0);
+    }
+    if (fo > 0) {
+      g.setValueAtTime(vol, Math.max(t0 + fi, tEnd - fo));
+      g.linearRampToValueAtTime(0.0001, tEnd);
+    }
+    src.start(t0, 0, len);
+    scheduledAudio.push(src);
+  }
 }
 function stopAudioCues(): void {
   for (const s of scheduledAudio) {
@@ -798,9 +870,6 @@ function stopAudioCues(): void {
     }
   }
   scheduledAudio = [];
-}
-function addAudioClip(): void {
-  log('background audio — adding in the next step.');
 }
 
 recordBtn.addEventListener('click', () => {
@@ -957,11 +1026,19 @@ function showCueInspector(cue: Cue | null): void {
   selectedCue = cue;
   cueInspectorEl.hidden = !cue;
   if (!cue) return;
-  cueTypeEl.textContent = `${cue.track} · ${CATALOG[cue.type]?.label ?? cue.type}`;
+  const name = cue.track === 'audio' ? (cue.label ?? 'audio') : cue.track === 'narration' ? (cue.text ?? '') : CATALOG[cue.type]?.label ?? cue.type;
+  cueTypeEl.textContent = `${cue.track} · ${name}`;
   cueStartEl.value = cue.start.toFixed(1);
   cueDurEl.value = cue.duration.toFixed(1);
   // "Set to current view" only makes sense for posed camera cues (not preset / path).
   cueSetViewBtn.hidden = cue.track !== 'camera' || !!cue.path;
+  // Audio-only fields (volume + fade envelope).
+  cueAudioEl.hidden = cue.track !== 'audio';
+  if (cue.track === 'audio') {
+    cueVolEl.value = String(cue.volume ?? 0.8);
+    cueFadeInEl.value = String(cue.fadeIn ?? 0);
+    cueFadeOutEl.value = String(cue.fadeOut ?? 1);
+  }
 }
 function commitCueEdit(): void {
   if (!selectedCue) return;
@@ -972,6 +1049,13 @@ function commitCueEdit(): void {
 }
 cueStartEl.addEventListener('input', commitCueEdit);
 cueDurEl.addEventListener('input', commitCueEdit);
+function commitAudioEdit(): void {
+  if (!selectedCue || selectedCue.track !== 'audio') return;
+  selectedCue.volume = Math.max(0, Math.min(1, Number(cueVolEl.value)));
+  selectedCue.fadeIn = Math.max(0, Number(cueFadeInEl.value) || 0);
+  selectedCue.fadeOut = Math.max(0, Number(cueFadeOutEl.value) || 0);
+}
+[cueVolEl, cueFadeInEl, cueFadeOutEl].forEach((el) => el.addEventListener('input', commitAudioEdit));
 cueSetViewBtn.addEventListener('click', () => {
   if (!selectedCue) return;
   selectedCue.pose = poseToTuple(stage.getCameraPose());
