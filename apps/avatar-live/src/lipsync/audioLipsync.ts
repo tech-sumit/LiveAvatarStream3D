@@ -13,7 +13,9 @@ export class AudioAnalyserLipsync {
   constructor(ctx: AudioContext, source: AudioNode) {
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 1024;
-    this.analyser.smoothingTimeConstant = 0.6;
+    // Low smoothing so the loudness envelope tracks syllables (dips between
+    // sounds) instead of staying high → the mouth actually closes while talking.
+    this.analyser.smoothingTimeConstant = 0.2;
     source.connect(this.analyser);
     this.time = new Uint8Array(this.analyser.fftSize);
     this.freq = new Uint8Array(this.analyser.frequencyBinCount);
@@ -23,19 +25,24 @@ export class AudioAnalyserLipsync {
     this.analyser.getByteTimeDomainData(this.time);
     this.analyser.getByteFrequencyData(this.freq);
 
-    // RMS loudness → jaw (with a noise gate and perceptual curve).
+    // RMS loudness.
     let sum = 0;
     for (let i = 0; i < this.time.length; i++) {
       const v = (this.time[i] - 128) / 128;
       sum += v * v;
     }
     const rms = Math.sqrt(sum / this.time.length);
-    const gated = rms < 0.02 ? 0 : Math.min(1, (rms - 0.02) * 4.5);
-    const target = Math.pow(gated, 0.7);
-    // Light smoothing so the jaw doesn't buzz.
-    this.jaw += (target - this.jaw) * 0.5;
 
-    // Spectral centroid → vowel color.
+    // Calibrated jaw: noise-gated so quiet gaps close the mouth; gamma>1 keeps
+    // soft consonants low and only vowels open wide. ~0 at rms .045, ~1 at .22.
+    const norm = clamp01((rms - 0.045) / 0.175);
+    const target = Math.pow(norm, 1.3);
+    // Asymmetric smoothing: open fast, close fast so lips meet between syllables.
+    const k = target > this.jaw ? 0.6 : 0.5;
+    this.jaw += (target - this.jaw) * k;
+    if (this.jaw < 0.05) this.jaw = 0; // fully closed when quiet
+
+    // Spectral centroid → vowel color, scaled by how open the mouth is.
     let num = 0;
     let den = 0;
     for (let i = 0; i < this.freq.length; i++) {
@@ -45,9 +52,8 @@ export class AudioAnalyserLipsync {
     const centroid = den > 0 ? num / den / this.freq.length : 0; // 0..1
     const wide = clamp01((centroid - 0.35) * 2.2) * this.jaw;
     const round = clamp01((0.35 - centroid) * 2.2) * this.jaw;
-    const close = this.jaw < 0.08 ? 0.3 : 0;
 
-    return { jawOpen: this.jaw, mouthWide: wide, mouthRound: round, mouthClose: close };
+    return { jawOpen: this.jaw, mouthWide: wide, mouthRound: round, mouthClose: 0 };
   }
 }
 

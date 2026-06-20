@@ -88,13 +88,13 @@ function charShape(ch: string): Shape | null {
     case 'm':
     case 'b':
     case 'p':
-      return { jawOpen: 0.05, mouthWide: 0, mouthRound: 0, mouthClose: 0.9 };
+      return { jawOpen: 0.04, mouthWide: 0, mouthRound: 0, mouthClose: 0.5 };
     case 'f':
     case 'v':
-      return { jawOpen: 0.15, mouthWide: 0.25, mouthRound: 0, mouthClose: 0.5 };
+      return { jawOpen: 0.12, mouthWide: 0.2, mouthRound: 0, mouthClose: 0.3 };
     default:
-      // generic consonant
-      if (/[a-z]/.test(ch)) return { jawOpen: 0.28, mouthWide: 0.2, mouthRound: 0.05, mouthClose: 0.15 };
+      // generic consonant — let the jaw carry it; no forced lip closure.
+      if (/[a-z]/.test(ch)) return { jawOpen: 0.26, mouthWide: 0.18, mouthRound: 0.05, mouthClose: 0 };
       return null;
   }
 }

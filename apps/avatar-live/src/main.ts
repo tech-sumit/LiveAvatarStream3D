@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { Stage, type Shot } from './scene/stage.js';
 import { AvatarController } from './avatar/avatarController.js';
 import { BoundaryLipsync } from './lipsync/boundaryLipsync.js';
@@ -7,11 +9,7 @@ import { ServerTts } from './tts/serverTts.js';
 import { ElevenLabsTts } from './tts/elevenLabs.js';
 import { RealtimeSession } from './session/realtimeSession.js';
 import { Recorder } from './capture/recorder.js';
-import { BlendshapeTimelineLipsync } from './lipsync/blendshapeTimeline.js';
-import { LocalA2FClient } from './a2f/localA2F.js';
-import { ServerA2FClient } from './a2f/serverA2F.js';
-import type { A2FClient } from './a2f/types.js';
-import { resolveGesture, GESTURE_CLIPS, type Gesture } from './avatar/gestures.js';
+import { resolveGesture, selectTalkClip, type Gesture } from './avatar/gestures.js';
 import type { EmotionName } from './avatar/emotion.js';
 import type { TtsSource } from './tts/types.js';
 
@@ -35,15 +33,15 @@ const posY = $<HTMLInputElement>('posY');
 const posZ = $<HTMLInputElement>('posZ');
 const resetViewBtn = $<HTMLButtonElement>('resetView');
 const centerAvatarBtn = $<HTMLButtonElement>('centerAvatar');
+const gizmoBtn = $<HTMLButtonElement>('gizmoBtn');
 const loadUrlBtn = $<HTMLButtonElement>('loadUrl');
 const recordBtn = $<HTMLButtonElement>('record');
 const downloadEl = $<HTMLAnchorElement>('download');
-const a2fDemoBtn = $<HTMLButtonElement>('a2fDemo');
-const a2fAudioInput = $<HTMLInputElement>('a2fAudio');
-const a2fModeEl = $<HTMLSpanElement>('a2fMode');
 const statusEl = $<HTMLSpanElement>('avatarStatus');
 const logEl = $<HTMLPreElement>('log');
 const pipFrameEl = $<HTMLDivElement>('pipFrame');
+const captureFormatSel = $<HTMLSelectElement>('captureFormat');
+const gateLabelEl = $<HTMLSpanElement>('gateLabel');
 
 function log(msg: string): void {
   const ts = new Date().toLocaleTimeString();
@@ -57,6 +55,18 @@ avatar.setRenderer(stage.renderer);
 stage.add(avatar.group);
 stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot);
 statusEl.textContent = avatar.description;
+
+// Shared AudioContext + a MediaStream destination so the voice (Web Audio) can
+// be mixed into recordings. Created on the first user gesture (autoplay policy).
+let sharedCtx: AudioContext | null = null;
+let recordDest: MediaStreamAudioDestinationNode | null = null;
+function audioCtx(): AudioContext {
+  if (!sharedCtx) {
+    sharedCtx = new AudioContext();
+    recordDest = sharedCtx.createMediaStreamDestination();
+  }
+  return sharedCtx;
+}
 
 // Shared loader for the default avatar, file uploads, and URL loads.
 async function loadAvatar(url: string, label: string): Promise<boolean> {
@@ -110,6 +120,9 @@ async function setupBodyAnimation(): Promise<void> {
 // met4citizen/talkinghead repo) with full ARKit + Oculus viseme blendshapes.
 // Falls back to the facecap head scan, then the procedural head.
 void (async () => {
+  // Avaturn (photoreal) is the default — ideal for the head-and-shoulders anchor
+  // framing. Its bind pose differs slightly from the RPM animation clips, so for
+  // full-body wide shots brunette (RPM) retargets more cleanly; both selectable.
   const order: [string, string][] = [
     ['/avatars/avaturn.glb', 'Avaturn (photoreal)'],
     ['/avatars/brunette.glb', 'Ready Player Me'],
@@ -128,79 +141,17 @@ void (async () => {
 const boundary = new BoundaryLipsync(Number(rateEl.value));
 let analyser: AudioAnalyserLipsync | null = null;
 let speaking = false;
-
-// Audio2Face-3D playback state (full-face ARKit timeline driven by an audio clock).
-const a2fUrl = import.meta.env.VITE_A2F_URL as string | undefined;
-const a2fClient: A2FClient = a2fUrl ? new ServerA2FClient(a2fUrl) : new LocalA2FClient();
-a2fModeEl.textContent = a2fClient.kind === 'server' ? 'NIM' : 'local stand-in';
-let a2fCtx: AudioContext | null = null;
-let a2fLip: BlendshapeTimelineLipsync | null = null;
-let a2fSrc: AudioBufferSourceNode | null = null;
-let a2fStart = 0;
+let lastTalkClip = 'idle';
 
 stage.onFrame((dt) => {
-  if (a2fLip && a2fCtx) {
-    const t = a2fCtx.currentTime - a2fStart;
-    avatar.setNamedFace(a2fLip.sampleAt(t));
-  } else if (speaking) {
+  if (speaking) {
     avatar.setMouth(analyser ? analyser.sample() : boundary.sample(performance.now()));
   } else {
     avatar.setSilent();
   }
+  avatar.setGazeTarget(speaking ? stage.cameraWorldPosition() : null);
   avatar.update(dt);
 });
-
-function stopA2F(): void {
-  try {
-    a2fSrc?.stop();
-  } catch {
-    /* already stopped */
-  }
-  a2fSrc = null;
-  a2fLip = null;
-  avatar.setNamedFace(null);
-}
-
-// Analyze audio → ARKit blendshape timeline, then play audio + drive the face.
-async function runA2F(buffer: AudioBuffer, label: string): Promise<void> {
-  if (!avatar.supportsNamedFace) {
-    log('⚠ current avatar has no blendshapes — A2F needs an ARKit/Oculus avatar.');
-    return;
-  }
-  stopA2F();
-  session.stop();
-  log(`A2F (${a2fClient.kind}): analyzing ${label}…`);
-  const timeline = await a2fClient.analyze(buffer);
-  log(`A2F: ${timeline.frames.length} frames × ${timeline.names.length} shapes; playing…`);
-  const ctx = (a2fCtx ??= new AudioContext());
-  await ctx.resume();
-  const src = ctx.createBufferSource();
-  src.buffer = buffer;
-  src.connect(ctx.destination);
-  a2fLip = new BlendshapeTimelineLipsync(timeline);
-  a2fStart = ctx.currentTime;
-  a2fSrc = src;
-  src.onended = () => {
-    stopA2F();
-    if (avatar.animationClips.length) avatar.playClip('idle');
-    setSpeakingUi(false);
-    log('A2F playback done.');
-  };
-  src.start();
-  if (avatar.animationClips.length) avatar.playClip('talk1');
-  setSpeakingUi(true);
-}
-
-async function loadAndRunA2F(url: string, label: string): Promise<void> {
-  try {
-    const ctx = (a2fCtx ??= new AudioContext());
-    const bytes = await (await fetch(url)).arrayBuffer();
-    const buffer = await ctx.decodeAudioData(bytes);
-    await runA2F(buffer, label);
-  } catch (err) {
-    log(`A2F failed for ${label}: ${String(err)}`);
-  }
-}
 
 // ── TTS source selection ─────────────────────────────────────────────────────
 // Default to browser Web Speech; asynchronously upgrade to ElevenLabs if the
@@ -215,7 +166,7 @@ let activeTts: TtsSource = WebSpeechTts.supported()
 
 void (async () => {
   if (await ElevenLabsTts.available()) {
-    activeTts = new ElevenLabsTts();
+    activeTts = new ElevenLabsTts('/eleven', audioCtx, () => recordDest);
     log('voice: ElevenLabs (real TTS) — lip-sync from the actual waveform');
   } else {
     log('voice: browser (Web Speech). Add ELEVENLABS_API_KEY to apps/avatar-live/.env for ElevenLabs.');
@@ -256,8 +207,13 @@ const session = new RealtimeSession(
     },
     onSegmentStart: (_text, gesture) => {
       speaking = true;
-      if (avatar.animationClips.length && gesture) {
-        avatar.playClip(GESTURE_CLIPS[gesture as Gesture] ?? 'talk1');
+      if (avatar.animationClips.length) {
+        lastTalkClip = selectTalkClip(
+          (gesture as Gesture) ?? 'explain',
+          emotionSel.value as EmotionName,
+          lastTalkClip,
+        );
+        avatar.playClip(lastTalkClip);
       }
     },
     onIdle: () => {
@@ -280,17 +236,10 @@ speakBtn.addEventListener('click', () => {
 });
 stopBtn.addEventListener('click', () => {
   session.stop();
-  stopA2F();
   speaking = false;
   analyser = null;
   setSpeakingUi(false);
   log('stopped (barge-in)');
-});
-
-a2fDemoBtn.addEventListener('click', () => void loadAndRunA2F('/audio/sample.wav', 'sample (Claire_neutral)'));
-a2fAudioInput.addEventListener('change', () => {
-  const file = a2fAudioInput.files?.[0];
-  if (file) void loadAndRunA2F(URL.createObjectURL(file), file.name);
 });
 liveEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -323,7 +272,70 @@ resetViewBtn.addEventListener('click', () =>
 centerAvatarBtn.addEventListener('click', () => {
   posX.value = posY.value = posZ.value = '0';
   applyPos();
+  syncGizmoToAvatar();
 });
+
+// TransformControls gizmo — drag the avatar directly in 3D. The handle sits at a
+// proxy placed at chest height (the avatar's own origin is at the feet, off-
+// screen); dragging the proxy translates the avatar by the same delta. Disables
+// orbit while dragging and keeps the X/Y/Z sliders in sync.
+const gizmoProxy = new THREE.Object3D();
+stage.add(gizmoProxy);
+let chestY = 1.15;
+function syncGizmoToAvatar(): void {
+  chestY = Math.max(0.5, avatar.headCenter.y - 0.45); // upper chest — clear of the face
+  gizmoProxy.position.set(avatar.group.position.x, avatar.group.position.y + chestY, avatar.group.position.z);
+}
+
+const gizmo = new TransformControls(stage.camera, stage.renderer.domElement);
+gizmo.setMode('translate');
+gizmo.setSpace('world');
+gizmo.setSize(1.8);
+gizmo.attach(gizmoProxy);
+gizmo.visible = false;
+gizmo.enabled = false;
+stage.add(gizmo);
+gizmo.addEventListener('dragging-changed', (e) => {
+  stage.controls.enabled = !(e as unknown as { value: boolean }).value;
+});
+gizmo.addEventListener('objectChange', () => {
+  avatar.setPosition(gizmoProxy.position.x, gizmoProxy.position.y - chestY, gizmoProxy.position.z);
+  posX.value = avatar.group.position.x.toFixed(2);
+  posY.value = avatar.group.position.y.toFixed(2);
+  posZ.value = avatar.group.position.z.toFixed(2);
+});
+stage.excludeFromCapture(gizmo); // keep the XYZ handles out of the recorded output
+let gizmoOn = false;
+gizmoBtn.addEventListener('click', () => {
+  gizmoOn = !gizmoOn;
+  if (gizmoOn) syncGizmoToAvatar();
+  gizmo.visible = gizmoOn;
+  gizmo.enabled = gizmoOn;
+  gizmoBtn.classList.toggle('primary', gizmoOn);
+});
+
+// ── Capture format (recording size) ──────────────────────────────────────────
+const CAPTURE_FORMATS = [
+  { name: '1080p (16:9)', w: 1920, h: 1080 },
+  { name: '1440p (16:9)', w: 2560, h: 1440 },
+  { name: '4K UHD (16:9)', w: 3840, h: 2160 },
+  { name: '720p (16:9)', w: 1280, h: 720 },
+  { name: 'vertical 1080×1920 (9:16)', w: 1080, h: 1920 },
+  { name: 'square 1080 (1:1)', w: 1080, h: 1080 },
+];
+CAPTURE_FORMATS.forEach((f, i) => {
+  const o = document.createElement('option');
+  o.value = String(i);
+  o.textContent = `${f.name} — ${f.w}×${f.h}`;
+  captureFormatSel.appendChild(o);
+});
+function applyCaptureFormat(): void {
+  const f = CAPTURE_FORMATS[Number(captureFormatSel.value)] ?? CAPTURE_FORMATS[0];
+  stage.setCaptureFormat(f);
+  gateLabelEl.textContent = `${f.w}×${f.h}`;
+}
+captureFormatSel.addEventListener('change', applyCaptureFormat);
+applyCaptureFormat();
 
 glbInput.addEventListener('change', async () => {
   const file = glbInput.files?.[0];
@@ -348,28 +360,39 @@ glbUrlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') loadUrlBtn.click();
 });
 
-// ── Recording (virtual camera capture) ───────────────────────────────────────
-const recorder = new Recorder(() => stage.captureStream(30));
+// ── Recording — captures the virtual camera's output canvas at the set capture
+// resolution + the voice (when using ElevenLabs/Web Audio). The editor stays
+// fully interactive during recording.
+const recorder = new Recorder(
+  () => stage.captureStream(30),
+  () => recordDest?.stream.getAudioTracks()[0] ?? null,
+);
 recordBtn.addEventListener('click', async () => {
   if (!recorder.active) {
-    stage.setPip(false); // keep the inset out of the recording
-    pipFrameEl.style.display = 'none';
-    recorder.start();
+    audioCtx(); // ensure the voice destination track exists before capture starts
+    try {
+      recorder.start();
+    } catch (err) {
+      log(`recording failed to start: ${String(err)}`);
+      return;
+    }
     recordBtn.textContent = '■ Stop recording';
     recordBtn.classList.add('rec');
+    pipFrameEl.classList.add('rec');
     downloadEl.hidden = true;
-    log('recording camera…');
+    log(`recording ${stage.captureLabel()} (with voice) …`);
   } else {
     const { url, filename } = await recorder.stop();
-    stage.setPip(true);
-    pipFrameEl.style.display = '';
     recordBtn.textContent = '● Record camera';
     recordBtn.classList.remove('rec');
+    pipFrameEl.classList.remove('rec');
     if (url) {
       downloadEl.href = url;
       downloadEl.download = filename;
+      downloadEl.textContent = `⬇ Download ${filename}`;
       downloadEl.hidden = false;
-      log(`clip ready: ${filename} (video only — Web Speech audio isn't capturable)`);
+      downloadEl.click(); // download straight from the portal
+      log(`clip ready — downloading ${filename}`);
     }
   }
 });

@@ -9,7 +9,8 @@
   <body>
     <div id="app">
       <div id="stage">
-        <div id="pipFrame"><span>● VIRTUAL CAM</span></div>
+        <div id="cameraGate"><span id="gateLabel"></span></div>
+        <div id="pipFrame"><span>● OUTPUT</span></div>
         <div id="viewHint">drag&nbsp;rotate · scroll&nbsp;zoom · right-drag&nbsp;pan</div>
       </div>
 
@@ -52,9 +53,9 @@
         <section>
           <label>Avatar &amp; camera</label>
           <select id="avatarSel">
-            <option value="/avatars/avaturn.glb">Avaturn (photoreal)</option>
-            <option value="/avatars/avatarsdk.glb">Avatar SDK (photoreal)</option>
-            <option value="/avatars/brunette.glb">Ready Player Me (stylized)</option>
+            <option value="/avatars/brunette.glb">Ready Player Me (body anim ✓)</option>
+            <option value="/avatars/avaturn.glb">Avaturn (photoreal · head shots)</option>
+            <option value="/avatars/avatarsdk.glb">Avatar SDK (photoreal · head shots)</option>
             <option value="/avatars/human.glb">facecap (face scan)</option>
           </select>
           <div class="row">
@@ -80,23 +81,18 @@
             <button id="resetView">Reset camera</button>
             <button id="centerAvatar">Center avatar</button>
           </div>
+          <button id="gizmoBtn">⊹ Drag avatar in 3D</button>
           <p class="hint">Needs facial blendshapes (ARKit/Oculus) or a jaw bone to lip-sync.
             Plain Mixamo / Sketchfab / scanned models have a frozen face.</p>
+
+          <label for="captureFormat">Capture (recording size)</label>
+          <select id="captureFormat"></select>
           <div class="row">
             <button id="record">● Record camera</button>
             <a id="download" hidden>⬇ Save clip</a>
           </div>
-        </section>
-
-        <section>
-          <label>Lip-sync engine — NVIDIA Audio2Face-3D <span id="a2fMode" class="badge">local</span></label>
-          <div class="row">
-            <button id="a2fDemo">▶ A2F demo (sample audio)</button>
-            <label class="filebtn">A2F audio…<input id="a2fAudio" type="file" accept="audio/*" hidden /></label>
-          </div>
-          <p class="hint">Audio → full-face ARKit blendshapes, synced to playback. Set
-            <code>VITE_A2F_URL</code> to use a real A2F-3D NIM; otherwise a GPU-free
-            stand-in produces the same timeline format.</p>
+          <p class="hint">The frame outline is the capture area. Recording saves the
+            virtual-camera output at the chosen size; the editor stays usable.</p>
         </section>
 
         <pre id="log" aria-live="polite"></pre>

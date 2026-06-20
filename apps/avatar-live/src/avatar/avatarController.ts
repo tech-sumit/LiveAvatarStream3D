@@ -29,6 +29,25 @@ export interface MouthCue {
 
 const SILENT: MouthCue = { jawOpen: 0, mouthWide: 0, mouthRound: 0, mouthClose: 0 };
 
+// scratch objects for gaze math (avoid per-frame allocation)
+const _v1 = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+const _fwd = new THREE.Vector3();
+const _up = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+
+const EYE_LOOK = [
+  'eyeLookInLeft',
+  'eyeLookOutLeft',
+  'eyeLookUpLeft',
+  'eyeLookDownLeft',
+  'eyeLookInRight',
+  'eyeLookOutRight',
+  'eyeLookUpRight',
+  'eyeLookDownRight',
+] as const;
+
 export class AvatarController {
   readonly group = new THREE.Group(); // outer: user X/Y/Z offset (sliders)
   private motion = new THREE.Group(); // inner: idle sway/breathing; holds avatar
@@ -40,6 +59,8 @@ export class AvatarController {
   private current: FaceChannels = zeroChannels();
   private mouthTarget: MouthCue = { ...SILENT };
   private namedFace: Record<string, number> | null = null;
+  private gazeTarget: THREE.Vector3 | null = null;
+  private gazeWeights: Record<string, number> = {};
   private emotion: EmotionName = 'neutral';
   private emotionIntensity = 1;
   private speaking = false;
@@ -154,12 +175,18 @@ export class AvatarController {
     if (!this.animRoot || !this.isReadyPlayerMe) return [];
     const loader = new GLTFLoader();
     this.mixer = new THREE.AnimationMixer(this.animRoot);
+    // Names of nodes that actually exist, to drop tracks for bones this skeleton
+    // lacks (e.g. Avaturn has no fingertip bones) — avoids noisy PropertyBinding
+    // warnings while still animating every bone that's present.
+    const nodeNames = new Set<string>();
+    this.animRoot.traverse((o) => o.name && nodeNames.add(o.name));
     const loaded: string[] = [];
     for (const c of clips) {
       try {
         const gltf = await loader.loadAsync(c.url);
         const clip = gltf.animations[0];
         if (!clip) continue;
+        clip.tracks = clip.tracks.filter((t) => nodeNames.has(t.name.split('.')[0]));
         const action = this.mixer.clipAction(clip, this.animRoot as THREE.Object3D);
         action.setLoop(THREE.LoopRepeat, Infinity);
         this.actions[c.name] = action;
@@ -214,6 +241,56 @@ export class AvatarController {
     return typeof this.rig.applyNamed === 'function';
   }
 
+  /** Make the eyes look at a world point (e.g. the camera). null → look ahead. */
+  setGazeTarget(target: THREE.Vector3 | null): void {
+    this.gazeTarget = target;
+  }
+
+  // Drive ARKit eyeLook* morphs so the gaze tracks `gazeTarget`, smoothed.
+  private applyGaze(dt: number): void {
+    if (!this.rig.applyExtra) return;
+    const target: Record<string, number> = {};
+    for (const e of EYE_LOOK) target[e] = 0;
+
+    if (this.gazeTarget) {
+      const eyeWorld = _v1.copy(this.headCenter).add(this.group.position);
+      const dir = _v2.subVectors(this.gazeTarget, eyeWorld).normalize();
+      this.group.getWorldQuaternion(_q);
+      const fwd = _fwd.set(0, 0, 1).applyQuaternion(_q);
+      const up = _up.set(0, 1, 0).applyQuaternion(_q);
+      const right = _right.set(1, 0, 0).applyQuaternion(_q);
+      const f = dir.dot(fwd);
+      if (f > 0.05) {
+        const hA = Math.atan2(dir.dot(right), f);
+        const vA = Math.atan2(dir.dot(up), f);
+        const maxA = 0.5; // ~28° max eye travel
+        const hw = Math.min(1, Math.abs(hA) / maxA) * 0.85;
+        const vw = Math.min(1, Math.abs(vA) / maxA) * 0.85;
+        if (hA > 0) {
+          target.eyeLookInLeft = hw;
+          target.eyeLookOutRight = hw;
+        } else {
+          target.eyeLookOutLeft = hw;
+          target.eyeLookInRight = hw;
+        }
+        if (vA > 0) {
+          target.eyeLookUpLeft = vw;
+          target.eyeLookUpRight = vw;
+        } else {
+          target.eyeLookDownLeft = vw;
+          target.eyeLookDownRight = vw;
+        }
+      }
+    }
+
+    const rate = 1 - Math.exp(-dt / 0.12);
+    for (const e of EYE_LOOK) {
+      const cur = this.gazeWeights[e] ?? 0;
+      this.gazeWeights[e] = cur + (target[e] - cur) * rate;
+    }
+    this.rig.applyExtra(this.gazeWeights);
+  }
+
   update(dt: number): void {
     // Advance skeletal body animation (if any). This drives the whole skeleton
     // including the head bone; our face channels run on top via morph targets.
@@ -247,6 +324,7 @@ export class AvatarController {
     this.updateIdle(dt);
 
     this.rig.apply(this.current);
+    this.applyGaze(dt); // eyeLook morphs layered on top (no zeroing)
   }
 
   private updateBlink(dt: number): void {

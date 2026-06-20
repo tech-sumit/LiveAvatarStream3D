@@ -31,4 +31,6 @@ export interface FaceRig {
   apply(c: FaceChannels): void;
   /** Optional: drive the full face from an ARKit name→weight map (A2F-3D output). */
   applyNamed?(weights: Record<string, number>): void;
+  /** Optional: set specific named morphs without zeroing others (e.g. eye gaze). */
+  applyExtra?(weights: Record<string, number>): void;
 }

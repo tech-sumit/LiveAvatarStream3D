@@ -20,8 +20,22 @@ export class Recorder {
     const audio = this.getAudioTrack?.();
     if (audio) stream.addTrack(audio);
     const mime = pickMime();
+
+    // High bitrate from the actual capture resolution — the browser default
+    // (~2.5 Mbps) is what makes clips look blocky. ~0.13 bits/pixel/frame ≈
+    // 1080p→8Mbps, 1440p→15Mbps, 4K→32Mbps.
+    const track = stream.getVideoTracks()[0];
+    const s = track?.getSettings?.() ?? {};
+    const w = s.width ?? 1920;
+    const h = s.height ?? 1080;
+    const videoBitsPerSecond = Math.round(w * h * 30 * 0.13);
+
     this.chunks = [];
-    this.rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    this.rec = new MediaRecorder(stream, {
+      ...(mime ? { mimeType: mime } : {}),
+      videoBitsPerSecond,
+      audioBitsPerSecond: 128_000,
+    });
     this.rec.ondataavailable = (e) => {
       if (e.data.size) this.chunks.push(e.data);
     };
