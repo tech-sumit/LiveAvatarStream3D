@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "import-avatar": "node scripts/import-avatar.mjs"
   },
   "dependencies": {
     "three": "0.152.2"

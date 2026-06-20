@@ -521,8 +521,10 @@ function fitAvatar(root: THREE.Object3D, faceMesh: THREE.Mesh | null): { center:
   } else if (headBone) {
     const hb = new THREE.Vector3();
     headBone.getWorldPosition(hb);
-    // Trust the bone only if it sits within the figure's vertical extent.
-    if (hb.y > finalWhole.min.y && hb.y < finalWhole.max.y + finalWholeH * 0.1) {
+    // Trust the bone only if it sits in the upper part of the figure (a real
+    // head). A mis-named/mis-placed "head" bone low in the body → box estimate.
+    // (finalWhole is bone-expanded, so an absolute-extent check would be a no-op.)
+    if (hb.y > finalWhole.min.y + finalWholeH * 0.55) {
       hc.copy(hb);
       hc.y += finalWholeH * 0.045; // bone pivot is low in the head; raise to eyes
       height = finalWholeH * 0.13; // a human head is ~13% of standing height
