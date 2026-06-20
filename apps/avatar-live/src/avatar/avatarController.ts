@@ -166,26 +166,27 @@ export class AvatarController {
     this.mixer = null;
     this.actions = {};
     this.currentClip = '';
-    // Only TRUE Ready Player Me avatars (Wolf3D_* meshes) get the RPM body-anim
-    // clips. The old "|| Armature" check wrongly matched MakeHuman/MPFB/VRoid
-    // exports (every Blender rig is named "Armature"), and binding RPM clips to a
-    // non-RPM bind pose flings limbs / displaces the avatar. Non-RPM avatars stay
-    // a stable, still talking head (lip-sync + expression still work).
-    let rpm = false;
+    // Auto-detect a retargetable humanoid: the core RPM/Mixamo bones the body
+    // clips target. Used for ad-hoc (file/URL) loads; discovered avatars override
+    // this via config.bodyAnim, because identical bone names don't guarantee a
+    // compatible bind pose (MPFB/MakeHuman + VRoid share the names but their rest
+    // pose distorts under RPM clips, so their config sets bodyAnim:false).
+    const bones = new Set<string>();
     root.traverse((o) => {
-      if (/^Wolf3D/i.test(o.name)) rpm = true;
+      if ((o as THREE.Bone).isBone) bones.add(o.name);
     });
-    this.isReadyPlayerMe = rpm;
+    this.isReadyPlayerMe = bones.has('Hips') && bones.has('Head') && (bones.has('LeftArm') || bones.has('RightArm'));
   }
 
   /**
    * Load skeletal body-animation clips (one AnimationClip per glb) and bind them
    * to the avatar's skeleton by bone name. RPM-skeleton clips bind directly.
-   * Returns the names that bound. No-op unless the avatar is Ready Player Me
-   * (the RPM animation library is licensed for use with RPM avatars only).
+   * Returns the names that bound. The CALLER gates this (a discovered avatar's
+   * config.bodyAnim, else the humanoid auto-detect) — the RPM animation library
+   * is licensed for use with RPM-compatible avatars.
    */
   async loadAnimations(clips: { name: string; url: string }[]): Promise<string[]> {
-    if (!this.animRoot || !this.isReadyPlayerMe) return [];
+    if (!this.animRoot) return [];
     const loader = new GLTFLoader();
     this.mixer = new THREE.AnimationMixer(this.animRoot);
     // Names of nodes that actually exist, to drop tracks for bones this skeleton

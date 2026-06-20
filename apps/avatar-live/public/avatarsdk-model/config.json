@@ -3,5 +3,12 @@
   "description": "Photoreal head-from-photo avatar",
   "model": "model.glb",
   "shot": "medium",
-  "lipsync": { "gain": 1.0, "jaw": 1.0, "wide": 1.0, "round": 1.0, "smoothing": 0.2 }
+  "bodyAnim": true,
+  "lipsync": {
+    "gain": 1,
+    "jaw": 1,
+    "wide": 1,
+    "round": 1,
+    "smoothing": 0.2
+  }
 }

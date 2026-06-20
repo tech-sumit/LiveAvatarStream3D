@@ -3,6 +3,7 @@
   "description": "MakeHuman/MPFB realistic human with ARKit shapes — CC0",
   "model": "model.glb",
   "shot": "medium",
+  "bodyAnim": false,
   "lipsync": {
     "gain": 1,
     "jaw": 1,
