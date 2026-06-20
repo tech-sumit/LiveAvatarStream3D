@@ -35,6 +35,14 @@ const shotSel = $<HTMLSelectElement>('shot');
 const glbInput = $<HTMLInputElement>('glb');
 const avatarSel = $<HTMLSelectElement>('avatarSel');
 const glbUrlInput = $<HTMLInputElement>('glbUrl');
+const lipGainEl = $<HTMLInputElement>('lipGain');
+const lipJawEl = $<HTMLInputElement>('lipJaw');
+const lipWideEl = $<HTMLInputElement>('lipWide');
+const lipRoundEl = $<HTMLInputElement>('lipRound');
+const lipSmoothEl = $<HTMLInputElement>('lipSmooth');
+const lipTestBtn = $<HTMLButtonElement>('lipTest');
+const lipSaveBtn = $<HTMLButtonElement>('lipSave');
+const lipDimEl = $<HTMLDivElement>('lipDim');
 const resetViewBtn = $<HTMLButtonElement>('resetView');
 const centerAvatarBtn = $<HTMLButtonElement>('centerAvatar');
 const gizmoBtn = $<HTMLButtonElement>('gizmoBtn');
@@ -150,25 +158,90 @@ async function setupBodyAnimation(): Promise<void> {
   );
 }
 
-// Default avatar: a textured Ready Player Me human (from the MIT-licensed
-// met4citizen/talkinghead repo) with full ARKit + Oculus viseme blendshapes.
-// Falls back to the facecap head scan, then the procedural head.
+// ── Avatar discovery (public/<id>-model/{model.glb,config.json}) ──────────────
+// Folders are auto-indexed by the Vite avatar plugin (→ /avatars.json). Each
+// avatar carries its own lip-sync config so "how much the lips move" is per-model.
+interface AvatarConfig {
+  id: string;
+  label: string;
+  description?: string;
+  model: string; // filename inside the folder
+  shot?: Shot;
+  lipsync: { gain: number; jaw: number; wide: number; round: number; smoothing: number };
+}
+const DEFAULT_LIP = { gain: 1, jaw: 1, wide: 1, round: 1, smoothing: 0.2 };
+const avatarConfigs = new Map<string, AvatarConfig>();
+let currentAvatarId: string | null = null; // null = a file/URL-loaded avatar (not a folder)
+let lipCfg = { ...DEFAULT_LIP }; // active lip-sync config (drives setLipsync + analyser smoothing)
+
+async function discoverAvatars(): Promise<void> {
+  let ids: string[] = [];
+  try {
+    ids = (await (await fetch('/avatars.json')).json()) as string[];
+  } catch {
+    ids = [];
+  }
+  avatarSel.innerHTML = '';
+  for (const id of ids) {
+    try {
+      const c = (await (await fetch(`/${id}/config.json`)).json()) as Partial<AvatarConfig>;
+      const cfg: AvatarConfig = {
+        id,
+        label: c.label || id,
+        description: c.description,
+        model: c.model || 'model.glb',
+        shot: c.shot,
+        lipsync: { ...DEFAULT_LIP, ...(c.lipsync || {}) },
+      };
+      avatarConfigs.set(id, cfg);
+      const o = document.createElement('option');
+      o.value = id;
+      o.textContent = cfg.label;
+      avatarSel.appendChild(o);
+    } catch {
+      /* skip a malformed avatar folder */
+    }
+  }
+  log(`avatars: discovered ${avatarConfigs.size} (${[...avatarConfigs.keys()].join(', ') || 'none'})`);
+}
+
+// Reflect a lip-sync config into the active avatar + the calibration sliders.
+function applyLipCfg(c: Partial<typeof DEFAULT_LIP>): void {
+  lipCfg = { ...DEFAULT_LIP, ...c };
+  avatar.setLipsync(lipCfg);
+  lipGainEl.value = String(lipCfg.gain);
+  lipJawEl.value = String(lipCfg.jaw);
+  lipWideEl.value = String(lipCfg.wide);
+  lipRoundEl.value = String(lipCfg.round);
+  lipSmoothEl.value = String(lipCfg.smoothing);
+}
+
+async function loadAvatarById(id: string): Promise<boolean> {
+  const cfg = avatarConfigs.get(id);
+  if (!cfg) return false;
+  if (cfg.shot) shotSel.value = cfg.shot;
+  applyLipCfg(cfg.lipsync);
+  const ok = await loadAvatar(`/${id}/${cfg.model}`, cfg.label);
+  if (ok) {
+    currentAvatarId = id;
+    lipSaveBtn.disabled = false;
+    lipDimEl.textContent = `calibrating ${cfg.label} — saves to ${id}/config.json`;
+  }
+  return ok;
+}
+
 void (async () => {
-  // Avaturn (photoreal) is the default — ideal for the head-and-shoulders anchor
-  // framing. Its bind pose differs slightly from the RPM animation clips, so for
-  // full-body wide shots brunette (RPM) retargets more cleanly; both selectable.
-  const order: [string, string][] = [
-    ['/avatars/avaturn.glb', 'Avaturn (photoreal)'],
-    ['/avatars/brunette.glb', 'Ready Player Me'],
-    ['/avatars/human.glb', 'facecap'],
-  ];
-  for (const [url, label] of order) {
-    if (await loadAvatar(url, label)) {
-      avatarSel.value = url;
+  await discoverAvatars();
+  const ids = [...avatarConfigs.keys()];
+  // Prefer the photoreal Avaturn anchor; else the first discovered avatar.
+  const order = ['avaturn-model', ...ids.filter((i) => i !== 'avaturn-model')];
+  for (const id of order) {
+    if (avatarConfigs.has(id) && (await loadAvatarById(id))) {
+      avatarSel.value = id;
       return;
     }
   }
-  log('using procedural head — run scripts/fetch-avatars.sh for photoreal avatars.');
+  log('using procedural head — drop a blendshape GLB in public/<name>-model/model.glb.');
 })();
 
 // ── Lipsync state ────────────────────────────────────────────────────────────
@@ -365,7 +438,7 @@ const session = new RealtimeSession(
     },
     onAudioNode: (ctx, node) => {
       // Cloned-voice path: drive lipsync from the real waveform.
-      analyser = new AudioAnalyserLipsync(ctx, node);
+      analyser = new AudioAnalyserLipsync(ctx, node, lipCfg.smoothing);
       speaking = true;
     },
     onSegmentStart: (_text, gesture, emotion) => {
@@ -744,27 +817,75 @@ function applyCaptureFormat(): void {
 captureFormatSel.addEventListener('change', applyCaptureFormat);
 applyCaptureFormat();
 
+// A file/URL-loaded avatar isn't a discovered folder, so it can't save config.
+function loadAdHocAvatar(url: string, label: string): Promise<boolean> {
+  currentAvatarId = null;
+  lipSaveBtn.disabled = true;
+  applyLipCfg(DEFAULT_LIP);
+  return loadAvatar(url, label);
+}
 glbInput.addEventListener('change', async () => {
   const file = glbInput.files?.[0];
   if (!file) return;
   const url = URL.createObjectURL(file);
   try {
-    await loadAvatar(url, file.name);
+    await loadAdHocAvatar(url, file.name);
   } finally {
     URL.revokeObjectURL(url);
   }
 });
 
 avatarSel.addEventListener('change', () => {
-  void loadAvatar(avatarSel.value, avatarSel.selectedOptions[0]?.text ?? 'avatar');
+  void loadAvatarById(avatarSel.value);
 });
 
 loadUrlBtn.addEventListener('click', () => {
   const url = glbUrlInput.value.trim();
-  if (url) void loadAvatar(url, url.split('/').pop() || 'url');
+  if (url) void loadAdHocAvatar(url, url.split('/').pop() || 'url');
 });
 glbUrlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') loadUrlBtn.click();
+});
+
+// ── Lip-sync calibration ─────────────────────────────────────────────────────
+function readLipSliders(): typeof DEFAULT_LIP {
+  return {
+    gain: Number(lipGainEl.value),
+    jaw: Number(lipJawEl.value),
+    wide: Number(lipWideEl.value),
+    round: Number(lipRoundEl.value),
+    smoothing: Number(lipSmoothEl.value),
+  };
+}
+function onLipSlider(): void {
+  lipCfg = readLipSliders();
+  avatar.setLipsync(lipCfg); // gain/jaw/wide/round apply live; smoothing on next utterance
+}
+[lipGainEl, lipJawEl, lipWideEl, lipRoundEl, lipSmoothEl].forEach((el) => el.addEventListener('input', onLipSlider));
+lipTestBtn.addEventListener('click', () => {
+  audioCtx();
+  session.start('Lip sync calibration test. Watch how much the lips are moving as I speak.');
+  setSpeakingUi(true);
+});
+lipSaveBtn.addEventListener('click', async () => {
+  if (!currentAvatarId) {
+    log('select a discovered avatar (not a file/URL load) to save its lip-sync config.');
+    return;
+  }
+  const cfg = avatarConfigs.get(currentAvatarId);
+  if (!cfg) return;
+  cfg.lipsync = readLipSliders();
+  const doc = { label: cfg.label, description: cfg.description, model: cfg.model, shot: cfg.shot, lipsync: cfg.lipsync };
+  try {
+    const r = await fetch(`/avatar-config/${currentAvatarId}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(doc),
+    });
+    log(r.ok ? `saved lip-sync config → ${currentAvatarId}/config.json` : `save failed (${r.status})`);
+  } catch (err) {
+    log(`save failed: ${String(err)}`);
+  }
 });
 
 // ── Recording / render ───────────────────────────────────────────────────────
@@ -904,7 +1025,7 @@ async function perform(record: boolean): Promise<void> {
   srcNode.connect(gain);
   gain.connect(ctx.destination);
   if (recordDest) gain.connect(recordDest);
-  const ana = new AudioAnalyserLipsync(ctx, gain);
+  const ana = new AudioAnalyserLipsync(ctx, gain, lipCfg.smoothing);
 
   if (record) {
     try {
@@ -1364,7 +1485,7 @@ function serializeProject(name: string): ProjectDoc {
     rate: Number(rateEl.value),
     pitch: Number(pitchEl.value),
     emotion: emotionSel.value,
-    avatarUrl: avatarSel.value,
+    avatarUrl: currentAvatarId ?? '', // store the discovered-avatar id (empty for ad-hoc loads)
     shot: shotSel.value,
     studioOn,
     idleMotion: idleMotionOn,
@@ -1504,9 +1625,16 @@ async function applyProject(doc: ProjectDoc): Promise<void> {
     headlineInput.value = doc.headline;
     studio.setHeadline(doc.headline);
   }
-  if (doc.avatarUrl && doc.avatarUrl !== avatarSel.value) {
-    avatarSel.value = doc.avatarUrl;
-    await loadAvatar(doc.avatarUrl, doc.avatarUrl.split('/').pop() || 'avatar');
+  // Restore the avatar: a discovered-avatar id (preferred) or a raw path/URL.
+  if (doc.avatarUrl) {
+    if (avatarConfigs.has(doc.avatarUrl)) {
+      if (doc.avatarUrl !== currentAvatarId) {
+        avatarSel.value = doc.avatarUrl;
+        await loadAvatarById(doc.avatarUrl);
+      }
+    } else if (/^(https?:|\/)/.test(doc.avatarUrl)) {
+      await loadAdHocAvatar(doc.avatarUrl, doc.avatarUrl.split('/').pop() || 'avatar');
+    }
   }
 
   applyTimelineDoc(doc.timeline);

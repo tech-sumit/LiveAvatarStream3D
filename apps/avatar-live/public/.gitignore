@@ -1,0 +1,7 @@
+# generated avatar index
+avatars.json
+# large avatar models (fetch / drop in locally — don't bloat the repo)
+avaturn-model/model.glb
+avaturn-model/animation.glb
+avaturn-model/*.hdr
+avatarsdk-model/model.glb
