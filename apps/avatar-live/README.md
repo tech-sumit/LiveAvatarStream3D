@@ -66,33 +66,46 @@ For production, front the API with an equivalent proxy/Worker.
 
 ## Body & gesture animation
 
-Ready Player Me avatars are full-body rigged, so they get **skeletal body
-motion**: an idle stance, switching to talking gestures while speaking
-(`AvatarController` runs a `THREE.AnimationMixer`; the app crossfades idle↔talk
-on speech start/stop). Pick a wider camera **shot** to see the gestures.
+Full-body rigged avatars (RPM, Avaturn, Avatar SDK — they share an RPM-compatible
+skeleton) get **skeletal body motion**: an idle stance and per-segment gesture
+clips while speaking (`AvatarController` runs a `THREE.AnimationMixer`, crossfading
+between clips). Pick a wider camera **shot** to see the gestures.
 
-Clips come from the Ready Player Me animation library and are **fetched, not
-committed** (their license allows free use *with RPM avatars* but forbids
-redistribution):
+**DSL gesture mapping** (`src/avatar/gestures.ts`): each spoken segment resolves a
+gesture → clip via `GESTURE_CLIPS`. Gestures come from:
+
+- **Inline tags** in the script: `[wave] Hello! [point] Look here. [count] Three things.`
+- **Keyword inference** otherwise (e.g. "hello"→wave, "look/this"→point,
+  "first/three"→count, "I think"→hand_to_chest), defaulting to a talking gesture.
+
+The DSL vocabulary mirrors `packages/protocol` (`wave, point, open_palms, count,
+thumbs_up, nod, shrug, hand_to_chest, explain`). The RPM library has no literal
+wave/point clips, so some map to distinct expressive-talking approximations.
+
+Clips are **fetched, not committed** (RPM animation-library license: free use
+*with RPM avatars*, no redistribution):
 
 ```bash
-apps/avatar-live/scripts/fetch-animations.sh   # → public/animations/{idle,talk1..3}.glb
+apps/avatar-live/scripts/fetch-animations.sh   # → public/animations/{idle,idle_calm,talk1..5}.glb
 ```
-
-Body animation is **RPM-only** (the avatar must be a Ready Player Me model);
-non-RPM avatars (facecap, etc.) keep face + idle head motion only.
 
 ## Avatars & lip-sync requirements
 
-The default avatar is **brunette** (`public/avatars/brunette.glb`) — a textured
-Ready Player Me human (skin, hair, clothing) with the full ARKit + Oculus viseme
-blendshape set, from the MIT-licensed [met4citizen/talkinghead](https://github.com/met4citizen/talkinghead)
-project. A bundled fallback, **facecap** (`public/avatars/human.glb`), is a real
-captured face scan (52 ARKit shapes) with matte "clay" shading.
+Use the **avatar dropdown** to switch between:
 
-> Avatar credit: `brunette.glb` (and the Ready Player Me / Avaturn format) from
-> met4citizen/talkinghead (MIT). Ready Player Me avatars are subject to RPM's own
-> terms for production use.
+- **Avaturn / Avatar SDK** — *photoreal* humans (realistic skin/hair/eyes), full
+  ARKit + Oculus viseme blendshapes + RPM-compatible skeleton (lip-sync **and**
+  body animation). **Fetched, not committed** (size + generated-asset terms):
+  ```bash
+  apps/avatar-live/scripts/fetch-avatars.sh   # → public/avatars/{avaturn,avatarsdk}.glb
+  ```
+- **Ready Player Me (brunette)** — stylized textured human (committed fallback).
+- **facecap** — a real captured face scan, 52 ARKit shapes, matte shading (committed).
+
+The app defaults to Avaturn when present, else brunette, else facecap. All avatar
+assets originate from the MIT-licensed [met4citizen/talkinghead](https://github.com/met4citizen/talkinghead)
+repo; the generated avatars (RPM/Avaturn/Avatar SDK) are subject to those
+vendors' own terms for production use.
 
 **A model can only lip-sync if its face is animatable.** Loading an external
 `.glb` resolves to one of three outcomes (shown in the log):
