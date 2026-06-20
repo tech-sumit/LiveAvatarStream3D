@@ -50,23 +50,29 @@ export function tupleToPose(t: PoseTuple): CameraPose {
 
 // Resolve a camera preset to a concrete pose around the anchor head (hc) sized by
 // the head height (hh). The studio video wall sits behind the anchor (~z −2.55).
+//
+// Every framing keeps the camera at the model's face height (eye = hc.y) and
+// looks at the face, so all presets are consistently aligned regardless of how
+// tall the loaded avatar is. Wider shots only pull back / drop the *target*
+// slightly to reveal the body — the camera itself stays level with the face.
 export function poseFor(type: string, hc: THREE.Vector3, hh: number): CameraPose {
   const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  const eye = hc.y;
   switch (type) {
     case 'cam.close':
-      return { pos: v(hc.x, hc.y + hh * 0.02, hc.z + hh * 2.2), target: v(hc.x, hc.y, hc.z), fov: 30 };
+      return { pos: v(hc.x, eye, hc.z + hh * 2.2), target: v(hc.x, eye, hc.z), fov: 30 };
     case 'cam.wide':
-      return { pos: v(hc.x, hc.y - hh * 1.4, hc.z + hh * 8.5), target: v(hc.x, hc.y - hh * 2.2, hc.z), fov: 40 };
+      return { pos: v(hc.x, eye, hc.z + hh * 8.5), target: v(hc.x, eye - hh * 0.7, hc.z), fov: 40 };
     case 'cam.screen':
       // angled two-shot showing the anchor (right) and the video wall (left/back)
-      return { pos: v(hc.x + hh * 2.2, hc.y + hh * 0.4, hc.z + hh * 7), target: v(hc.x - hh * 1.5, 2.0, hc.z - 1.4), fov: 42 };
+      return { pos: v(hc.x + hh * 2.2, eye, hc.z + hh * 7), target: v(hc.x - hh * 1.5, eye + hh * 0.2, hc.z - 1.4), fov: 42 };
     case 'cam.enterLeft':
-      return { pos: v(hc.x - hh * 10, hc.y - hh * 0.2, hc.z + hh * 4.5), target: v(hc.x, hc.y, hc.z), fov: 36 };
+      return { pos: v(hc.x - hh * 10, eye, hc.z + hh * 4.5), target: v(hc.x, eye, hc.z), fov: 36 };
     case 'cam.orbit':
-      return { pos: v(hc.x - hh * 3.5, hc.y, hc.z + hh * 4.5), target: v(hc.x, hc.y, hc.z), fov: 36 };
+      return { pos: v(hc.x - hh * 3.5, eye, hc.z + hh * 4.5), target: v(hc.x, eye, hc.z), fov: 36 };
     case 'cam.anchor':
     default:
-      return { pos: v(hc.x, hc.y - hh * 0.08, hc.z + hh * 3.6), target: v(hc.x, hc.y - hh * 0.1, hc.z), fov: 35 };
+      return { pos: v(hc.x, eye, hc.z + hh * 3.6), target: v(hc.x, eye, hc.z), fov: 35 };
   }
 }
 
