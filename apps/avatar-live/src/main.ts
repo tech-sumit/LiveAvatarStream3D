@@ -432,6 +432,31 @@ function setSpeakingUi(on: boolean): void {
   stopBtn.disabled = !on;
 }
 
+// ── Studio & lighting controls ───────────────────────────────────────────────
+const hex = (v: string) => parseInt(v.replace('#', ''), 16);
+$<HTMLInputElement>('studioToggle').addEventListener('change', (e) =>
+  stage.setStudioVisible((e.target as HTMLInputElement).checked),
+);
+const lightBind: [string, 'key' | 'fill' | 'rim' | 'ambient'][] = [
+  ['lightKey', 'key'],
+  ['lightFill', 'fill'],
+  ['lightRim', 'rim'],
+  ['lightAmbient', 'ambient'],
+];
+for (const [id, which] of lightBind) {
+  const el = $<HTMLInputElement>(id);
+  el.addEventListener('input', () => stage.setLightIntensity(which, Number(el.value)));
+}
+const tempEl = $<HTMLInputElement>('lightTemp');
+tempEl.addEventListener('input', () => stage.setKeyTemperature(Number(tempEl.value)));
+stage.setKeyTemperature(Number(tempEl.value));
+$<HTMLInputElement>('accentColor').addEventListener('input', (e) =>
+  stage.setStudioAccent(hex((e.target as HTMLInputElement).value)),
+);
+$<HTMLInputElement>('screenColor').addEventListener('input', (e) =>
+  stage.setStudioScreen(hex((e.target as HTMLInputElement).value)),
+);
+
 log(`ready · avatar: ${avatar.description}`);
 
 // Debug handle for inspecting the scene/camera from the console.
