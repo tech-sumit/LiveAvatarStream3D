@@ -1,126 +1,169 @@
 import * as THREE from 'three';
 
-// A stylized, fully procedural news studio built around an anchor standing at the
-// origin facing +Z (toward the camera). No external assets. Returns the group +
-// setters so the UI can recolor the accent (light strips) and the video wall.
-export interface Studio {
+// A procedural news-studio set built around an anchor standing at the origin
+// (facing +Z, toward the camera). Everything is generated (no downloaded assets)
+// so it works offline. Returned as one Group you can toggle with `.visible`.
+export interface NewsStudio {
   group: THREE.Group;
-  setAccent(hex: number): void;
-  setScreen(hex: number): void;
+  /** Update the big video wall's headline text. */
+  setHeadline(title: string, kicker?: string): void;
 }
 
-export function createStudio(): Studio {
+export function buildNewsStudio(): NewsStudio {
   const group = new THREE.Group();
-  const accentMats: THREE.MeshBasicMaterial[] = [];
+  group.name = 'NewsStudio';
 
-  // Floor — dark, slightly glossy.
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(40, 40),
-    new THREE.MeshStandardMaterial({ color: 0x0c111c, roughness: 0.45, metalness: 0.5 }),
+  // (Floor is provided by the Stage so it persists when the studio is hidden.)
+
+  // ── Curved backdrop wall behind the anchor ──────────────────────────────────
+  const backdrop = new THREE.Mesh(
+    new THREE.CylinderGeometry(5, 5, 6, 48, 1, true, Math.PI * 0.75, Math.PI * 1.5),
+    new THREE.MeshStandardMaterial({ color: 0x10182b, roughness: 0.9, side: THREE.BackSide }),
   );
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  group.add(floor);
+  backdrop.position.set(0, 3, -1.2);
+  backdrop.receiveShadow = true;
+  group.add(backdrop);
 
-  // Curved cyclorama wall enclosing the set.
-  const wall = new THREE.Mesh(
-    new THREE.CylinderGeometry(7, 7, 7, 48, 1, true),
-    new THREE.MeshStandardMaterial({ color: 0x161d2e, roughness: 0.95, side: THREE.BackSide }),
+  // ── Big video wall (emissive, canvas headline) ──────────────────────────────
+  const screenCanvas = document.createElement('canvas');
+  screenCanvas.width = 1024;
+  screenCanvas.height = 576;
+  const screenTex = new THREE.CanvasTexture(screenCanvas);
+  screenTex.colorSpace = THREE.SRGBColorSpace;
+  const screen = new THREE.Mesh(
+    new THREE.PlaneGeometry(4.2, 2.36),
+    new THREE.MeshBasicMaterial({ map: screenTex, toneMapped: false }),
   );
-  wall.position.y = 3.4;
-  wall.receiveShadow = true;
-  group.add(wall);
-
-  // Video wall behind the anchor (emissive panel + dark bezel).
+  screen.position.set(0, 1.95, -2.55);
+  group.add(screen);
+  // thin bezel
   const bezel = new THREE.Mesh(
-    new THREE.PlaneGeometry(5.0, 2.7),
-    new THREE.MeshStandardMaterial({ color: 0x070b14, roughness: 0.6 }),
+    new THREE.PlaneGeometry(4.4, 2.56),
+    new THREE.MeshStandardMaterial({ color: 0x05080f, roughness: 0.6 }),
   );
-  bezel.position.set(0, 1.75, -3.25);
+  bezel.position.set(0, 1.95, -2.57);
   group.add(bezel);
 
-  const screenTex = makeScreenTexture();
-  const screenMat = new THREE.MeshStandardMaterial({
-    color: 0x0a1228,
-    map: screenTex,
-    emissive: 0x6f9bff,
-    emissiveMap: screenTex,
-    emissiveIntensity: 0.85,
-    roughness: 0.5,
-  });
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 2.3), screenMat);
-  screen.position.set(0, 1.75, -3.2);
-  group.add(screen);
+  // ── Two angled accent side panels with glowing edge strips ─────────────────
+  for (const side of [-1, 1]) {
+    const panel = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.2, 3.4),
+      new THREE.MeshStandardMaterial({ color: 0x121c30, roughness: 0.85, side: THREE.DoubleSide }),
+    );
+    panel.position.set(side * 3.1, 1.7, -1.6);
+    panel.rotation.y = side * -0.5;
+    group.add(panel);
 
-  // Vertical accent light strips flanking the screen.
-  for (const x of [-3.1, 3.1]) {
-    const mat = new THREE.MeshBasicMaterial({ color: 0x3a6df0 });
-    accentMats.push(mat);
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.07, 3.4, 0.07), mat);
-    bar.position.set(x, 2.0, -2.7);
-    group.add(bar);
-  }
-  // Horizontal accent strip across the floor in front of the backdrop.
-  {
-    const mat = new THREE.MeshBasicMaterial({ color: 0x3a6df0 });
-    accentMats.push(mat);
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.04, 0.06), mat);
-    strip.position.set(0, 0.02, -2.0);
+    const strip = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.06, 3.4),
+      new THREE.MeshBasicMaterial({ color: 0x2f6bff, toneMapped: false }),
+    );
+    strip.position.set(side * 2.0, 1.7, -1.55);
+    strip.rotation.y = side * -0.5;
     group.add(strip);
   }
 
-  // Anchor desk in front of the avatar (between it and the camera).
-  const deskMat = new THREE.MeshStandardMaterial({ color: 0x121826, roughness: 0.5, metalness: 0.3 });
-  const deskTop = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 0.62), deskMat);
-  deskTop.position.set(0, 0.96, 0.62);
-  deskTop.castShadow = true;
-  deskTop.receiveShadow = true;
-  group.add(deskTop);
+  // ── Anchor desk in front of the avatar ──────────────────────────────────────
+  const desk = new THREE.Group();
+  const deskBody = new THREE.Mesh(
+    new THREE.BoxGeometry(2.4, 1.0, 0.7),
+    new THREE.MeshStandardMaterial({ color: 0x16203a, roughness: 0.5, metalness: 0.3 }),
+  );
+  deskBody.position.y = 0.5;
+  deskBody.castShadow = true;
+  deskBody.receiveShadow = true;
+  desk.add(deskBody);
+  const deskTop = new THREE.Mesh(
+    new THREE.BoxGeometry(2.6, 0.06, 0.8),
+    new THREE.MeshStandardMaterial({ color: 0x0c1322, roughness: 0.25, metalness: 0.6 }),
+  );
+  deskTop.position.y = 1.0;
+  desk.add(deskTop);
+  // glowing front accent
+  const deskGlow = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.4, 0.12),
+    new THREE.MeshBasicMaterial({ color: 0x2f6bff, toneMapped: false }),
+  );
+  deskGlow.position.set(0, 0.62, 0.351);
+  desk.add(deskGlow);
+  desk.position.set(0, 0, 0.75); // just in front of the anchor
+  group.add(desk);
 
-  const deskFront = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.92, 0.06), deskMat);
-  deskFront.position.set(0, 0.5, 0.92);
-  group.add(deskFront);
-
-  // Lit accent band on the desk front.
-  {
-    const mat = new THREE.MeshBasicMaterial({ color: 0x3a6df0 });
-    accentMats.push(mat);
-    const band = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.07, 0.07), mat);
-    band.position.set(0, 0.74, 0.95);
-    group.add(band);
+  // ── Ceiling light bars (emissive, for ambiance in wide shots) ──────────────
+  for (let i = -1; i <= 1; i++) {
+    const bar = new THREE.Mesh(
+      new THREE.BoxGeometry(2.6, 0.05, 0.16),
+      new THREE.MeshBasicMaterial({ color: 0x6f86c9, toneMapped: false }),
+    );
+    bar.position.set(i * 1.7, 3.4, -0.5);
+    bar.rotation.x = 0.25;
+    group.add(bar);
   }
 
-  return {
-    group,
-    setAccent(hex: number) {
-      for (const m of accentMats) m.color.setHex(hex);
-    },
-    setScreen(hex: number) {
-      screenMat.emissive.setHex(hex); // tints the gradient on the video wall
-    },
-  };
+  function setHeadline(title: string, kicker = 'LIVE'): void {
+    drawScreen(screenCanvas, title, kicker);
+    screenTex.needsUpdate = true;
+  }
+  setHeadline('LIVE AVATAR STREAM 3D', 'LIVE');
+
+  return { group, setHeadline };
 }
 
-// A studio video-wall texture: vertical gradient + center glow + faint scanlines.
-function makeScreenTexture(): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 256;
-  const g = c.getContext('2d')!;
-  const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#0a1730');
-  grad.addColorStop(0.5, '#1b3a7a');
-  grad.addColorStop(1, '#0a1730');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 512, 256);
-  const glow = g.createRadialGradient(256, 128, 20, 256, 128, 280);
-  glow.addColorStop(0, 'rgba(120,170,255,0.4)');
-  glow.addColorStop(1, 'rgba(0,0,0,0)');
-  g.fillStyle = glow;
-  g.fillRect(0, 0, 512, 256);
-  g.fillStyle = 'rgba(120,160,255,0.06)';
-  for (let y = 0; y < 256; y += 6) g.fillRect(0, y, 512, 2);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+// Draws the video-wall content: dark gradient, red LIVE chip, headline, ticker.
+function drawScreen(canvas: HTMLCanvasElement, title: string, kicker: string): void {
+  const c = canvas.getContext('2d');
+  if (!c) return;
+  const { width: w, height: h } = canvas;
+  const g = c.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, '#0a1a3a');
+  g.addColorStop(1, '#06101f');
+  c.fillStyle = g;
+  c.fillRect(0, 0, w, h);
+
+  // subtle grid
+  c.strokeStyle = 'rgba(80,120,220,0.10)';
+  c.lineWidth = 2;
+  for (let x = 0; x < w; x += 64) {
+    c.beginPath();
+    c.moveTo(x, 0);
+    c.lineTo(x, h);
+    c.stroke();
+  }
+
+  // LIVE chip
+  c.fillStyle = '#ff3b3b';
+  c.fillRect(60, 70, 150, 56);
+  c.fillStyle = '#fff';
+  c.font = 'bold 34px system-ui, sans-serif';
+  c.textBaseline = 'middle';
+  c.fillText(kicker, 84, 99);
+
+  // headline
+  c.fillStyle = '#eaf0ff';
+  c.font = 'bold 64px system-ui, sans-serif';
+  wrap(c, title.toUpperCase(), 60, 230, w - 120, 70);
+
+  // lower ticker bar
+  c.fillStyle = '#2f6bff';
+  c.fillRect(0, h - 70, w, 70);
+  c.fillStyle = '#fff';
+  c.font = '28px system-ui, sans-serif';
+  c.fillText('BREAKING  ·  REALTIME 3D ANCHOR  ·  BROWSER-RENDERED  ·  LIP-SYNCED', 30, h - 35);
+}
+
+function wrap(c: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lh: number): void {
+  const words = text.split(' ');
+  let line = '';
+  let yy = y;
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (c.measureText(test).width > maxW && line) {
+      c.fillText(line, x, yy);
+      line = word;
+      yy += lh;
+    } else {
+      line = test;
+    }
+  }
+  if (line) c.fillText(line, x, yy);
 }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { Stage, type Shot } from './scene/stage.js';
+import { buildNewsStudio } from './scene/studio.js';
 import { AvatarController } from './avatar/avatarController.js';
 import { BoundaryLipsync } from './lipsync/boundaryLipsync.js';
 import { AudioAnalyserLipsync } from './lipsync/audioLipsync.js';
@@ -42,6 +43,15 @@ const logEl = $<HTMLPreElement>('log');
 const pipFrameEl = $<HTMLDivElement>('pipFrame');
 const captureFormatSel = $<HTMLSelectElement>('captureFormat');
 const gateLabelEl = $<HTMLSpanElement>('gateLabel');
+const studioToggle = $<HTMLButtonElement>('studioToggle');
+const headlineInput = $<HTMLInputElement>('headline');
+const lightPresetSel = $<HTMLSelectElement>('lightPreset');
+const lightKey = $<HTMLInputElement>('lightKey');
+const lightFill = $<HTMLInputElement>('lightFill');
+const lightRim = $<HTMLInputElement>('lightRim');
+const lightAmbient = $<HTMLInputElement>('lightAmbient');
+const exposureEl = $<HTMLInputElement>('exposure');
+const warmthEl = $<HTMLInputElement>('warmth');
 
 function log(msg: string): void {
   const ts = new Date().toLocaleTimeString();
@@ -50,6 +60,8 @@ function log(msg: string): void {
 
 // ── Scene + avatar ───────────────────────────────────────────────────────────
 const stage = new Stage(stageEl);
+const studio = buildNewsStudio();
+stage.add(studio.group);
 const avatar = new AvatarController();
 avatar.setRenderer(stage.renderer);
 stage.add(avatar.group);
@@ -344,6 +356,65 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// ── News studio & lighting ───────────────────────────────────────────────────
+let studioOn = true;
+studioToggle.addEventListener('click', () => {
+  studioOn = !studioOn;
+  studio.group.visible = studioOn;
+  studioToggle.textContent = `Studio: ${studioOn ? 'On' : 'Off'}`;
+  studioToggle.classList.toggle('primary', studioOn);
+});
+headlineInput.addEventListener('input', () => {
+  const v = headlineInput.value.trim();
+  if (v) studio.setHeadline(v);
+});
+
+function mixColor(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 255;
+  const ag = (a >> 8) & 255;
+  const ab = a & 255;
+  const br = (b >> 16) & 255;
+  const bg = (b >> 8) & 255;
+  const bb = b & 255;
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bl = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (g << 8) | bl;
+}
+function applyLights(): void {
+  stage.setLightIntensity('key', Number(lightKey.value));
+  stage.setLightIntensity('fill', Number(lightFill.value));
+  stage.setLightIntensity('rim', Number(lightRim.value));
+  stage.setLightIntensity('ambient', Number(lightAmbient.value));
+  stage.setExposure(Number(exposureEl.value));
+  // Warmth 0 (cool blue) → 100 (warm amber) on the key light.
+  stage.setLightColor('key', mixColor(0xcfe0ff, 0xffcf8e, Number(warmthEl.value) / 100));
+}
+[lightKey, lightFill, lightRim, lightAmbient, exposureEl, warmthEl].forEach((el) =>
+  el.addEventListener('input', applyLights),
+);
+
+const LIGHT_PRESETS: Record<string, { key: number; fill: number; rim: number; amb: number; exp: number; warm: number }> = {
+  studio: { key: 1.6, fill: 0.35, rim: 0.6, amb: 0.45, exp: 1.05, warm: 55 },
+  soft: { key: 1.0, fill: 0.9, rim: 0.3, amb: 0.85, exp: 1.1, warm: 50 },
+  dramatic: { key: 2.6, fill: 0.08, rim: 1.3, amb: 0.12, exp: 1.0, warm: 48 },
+  warm: { key: 1.8, fill: 0.4, rim: 0.5, amb: 0.5, exp: 1.05, warm: 82 },
+  cool: { key: 1.6, fill: 0.4, rim: 0.7, amb: 0.5, exp: 1.0, warm: 18 },
+};
+lightPresetSel.addEventListener('change', () => {
+  const p = LIGHT_PRESETS[lightPresetSel.value];
+  if (!p) return;
+  lightKey.value = String(p.key);
+  lightFill.value = String(p.fill);
+  lightRim.value = String(p.rim);
+  lightAmbient.value = String(p.amb);
+  exposureEl.value = String(p.exp);
+  warmthEl.value = String(p.warm);
+  applyLights();
+  log(`light preset: ${lightPresetSel.value}`);
+});
+applyLights();
+
 // ── Capture format (recording size) ──────────────────────────────────────────
 const CAPTURE_FORMATS = [
   { name: '1080p (16:9)', w: 1920, h: 1080 },
@@ -431,31 +502,6 @@ function setSpeakingUi(on: boolean): void {
   speakBtn.disabled = on;
   stopBtn.disabled = !on;
 }
-
-// ── Studio & lighting controls ───────────────────────────────────────────────
-const hex = (v: string) => parseInt(v.replace('#', ''), 16);
-$<HTMLInputElement>('studioToggle').addEventListener('change', (e) =>
-  stage.setStudioVisible((e.target as HTMLInputElement).checked),
-);
-const lightBind: [string, 'key' | 'fill' | 'rim' | 'ambient'][] = [
-  ['lightKey', 'key'],
-  ['lightFill', 'fill'],
-  ['lightRim', 'rim'],
-  ['lightAmbient', 'ambient'],
-];
-for (const [id, which] of lightBind) {
-  const el = $<HTMLInputElement>(id);
-  el.addEventListener('input', () => stage.setLightIntensity(which, Number(el.value)));
-}
-const tempEl = $<HTMLInputElement>('lightTemp');
-tempEl.addEventListener('input', () => stage.setKeyTemperature(Number(tempEl.value)));
-stage.setKeyTemperature(Number(tempEl.value));
-$<HTMLInputElement>('accentColor').addEventListener('input', (e) =>
-  stage.setStudioAccent(hex((e.target as HTMLInputElement).value)),
-);
-$<HTMLInputElement>('screenColor').addEventListener('input', (e) =>
-  stage.setStudioScreen(hex((e.target as HTMLInputElement).value)),
-);
 
 log(`ready · avatar: ${avatar.description}`);
 
