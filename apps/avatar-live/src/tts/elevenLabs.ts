@@ -11,7 +11,16 @@ export class ElevenLabsTts implements TtsSource {
   readonly kind = 'server' as const;
   private ctx: AudioContext | null = null;
 
-  constructor(private base = '/eleven') {}
+  /**
+   * @param getCtx  optional shared AudioContext (so its output can be recorded)
+   * @param getTap  optional extra node to also route audio into (e.g. a
+   *                MediaStreamAudioDestinationNode for capturing voice in clips)
+   */
+  constructor(
+    private base = '/eleven',
+    private getCtx?: () => AudioContext,
+    private getTap?: () => AudioNode | null,
+  ) {}
 
   static async available(base = '/eleven'): Promise<boolean> {
     try {
@@ -32,7 +41,7 @@ export class ElevenLabsTts implements TtsSource {
   }
 
   speak(text: string, opts: SpeakOpts, hooks: SpeakHooks): SpeakHandle {
-    const ctx = (this.ctx ??= new AudioContext());
+    const ctx = this.getCtx ? this.getCtx() : (this.ctx ??= new AudioContext());
     const controller = new AbortController();
     let src: AudioBufferSourceNode | null = null;
     let settle!: () => void;
@@ -67,7 +76,10 @@ export class ElevenLabsTts implements TtsSource {
         src = ctx.createBufferSource();
         src.buffer = audio;
         const gain = ctx.createGain();
-        src.connect(gain).connect(ctx.destination);
+        src.connect(gain);
+        gain.connect(ctx.destination); // speakers
+        const tap = this.getTap?.();
+        if (tap) gain.connect(tap); // also into the recording's audio stream
         hooks.onAudioNode?.(ctx, gain); // analyser lip-sync taps here
         hooks.onStart?.();
         src.onended = finish;

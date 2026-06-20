@@ -1,3 +1,5 @@
+import type { EmotionName } from './emotion.js';
+
 // DSL gesture vocabulary (mirrors packages/protocol dsl.ts) and how each maps to
 // a body-animation clip + how to infer one from a line of script.
 export type Gesture =
@@ -40,6 +42,57 @@ const KEYWORDS: [RegExp, Gesture][] = [
   [/\b(maybe|not sure|perhaps|who knows|whatever|i guess|don'?t know)\b/i, 'shrug'],
   [/\b(i think|i believe|honestly|personally|i feel|in my view|i'?m)\b/i, 'hand_to_chest'],
 ];
+
+// ── Talk-animation selection ─────────────────────────────────────────────────
+// Specific gestures play their dedicated clip; otherwise we choose a talking
+// variation from an energy bucket driven by the segment's emotion, rotating so
+// consecutive segments don't reuse the same clip (avoids a robotic loop).
+const SPECIFIC = new Set<Gesture>([
+  'wave',
+  'point',
+  'open_palms',
+  'count',
+  'thumbs_up',
+  'shrug',
+  'hand_to_chest',
+  'nod',
+]);
+
+const ENERGY: Record<EmotionName, 'low' | 'med' | 'high'> = {
+  neutral: 'med',
+  warm: 'med',
+  confident: 'med',
+  happy: 'high',
+  excited: 'high',
+  surprised: 'high',
+  serious: 'low',
+  concerned: 'low',
+  sad: 'low',
+  thoughtful: 'low',
+};
+
+// Talking-variation clips grouped by how animated they are.
+const BUCKETS: Record<'low' | 'med' | 'high', string[]> = {
+  low: ['idle_calm', 'talk1'],
+  med: ['talk1', 'talk2', 'talk3'],
+  high: ['talk3', 'talk4', 'talk5'],
+};
+
+let rotation = 0;
+
+/**
+ * Pick the body clip for a spoken segment. An explicit/inferred gesture plays its
+ * mapped clip; plain talking picks a variation by emotional energy, skipping the
+ * last clip so it visibly varies.
+ */
+export function selectTalkClip(gesture: Gesture, emotion: EmotionName, lastClip: string): string {
+  if (SPECIFIC.has(gesture)) return GESTURE_CLIPS[gesture];
+  const bucket = BUCKETS[ENERGY[emotion] ?? 'med'];
+  const choices = bucket.filter((c) => c !== lastClip);
+  const pick = (choices.length ? choices : bucket)[rotation % (choices.length || bucket.length)];
+  rotation++;
+  return pick;
+}
 
 /**
  * Resolve a gesture for a raw script line and return the spoken text with inline

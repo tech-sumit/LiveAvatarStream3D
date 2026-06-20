@@ -37,27 +37,57 @@ body {
   height: 100%;
 }
 
-/* PiP "virtual camera" frame overlay — matches the renderer's bottom-left inset
-   (left/bottom 16px, width 24%, 4:5). Purely cosmetic; clicks pass through. */
+/* Capture-area frame ("virtual lines") — JS sizes it to the camera's letterbox. */
+#cameraGate {
+  position: absolute;
+  border: 1px dashed rgba(91, 140, 255, 0.7);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+#cameraGate span {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 10px;
+  color: var(--accent);
+  background: rgba(10, 13, 20, 0.55);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* Bottom-left OUTPUT monitor — holds the clean capture canvas (what's recorded). */
 #pipFrame {
   position: absolute;
   left: 16px;
   bottom: 16px;
   width: 24%;
-  aspect-ratio: 4 / 5;
+  aspect-ratio: 16 / 9;
   border: 1px solid var(--accent);
   border-radius: 6px;
+  overflow: hidden;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
   pointer-events: none;
+}
+#pipFrame.rec {
+  border-color: var(--rec);
+}
+#pipFrame canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 #pipFrame span {
   position: absolute;
   top: 5px;
   left: 7px;
+  z-index: 1;
   font-size: 9px;
   letter-spacing: 0.5px;
   color: var(--accent);
   text-shadow: 0 1px 2px #000;
+}
+#pipFrame.rec span {
+  color: var(--rec);
 }
 #viewHint {
   position: absolute;
@@ -75,7 +105,10 @@ body {
   background: var(--panel);
   border-left: 1px solid var(--line);
   padding: 16px;
+  height: 100vh;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -108,6 +141,7 @@ section {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex-shrink: 0;
 }
 label {
   font-size: 12px;
@@ -222,7 +256,7 @@ a#download {
 
 #log {
   margin: 0;
-  margin-top: auto;
+  flex-shrink: 0;
   background: #0a0d14;
   border: 1px solid var(--line);
   border-radius: 8px;
