@@ -11,6 +11,9 @@ import { ElevenLabsTts } from './tts/elevenLabs.js';
 import { RealtimeSession } from './session/realtimeSession.js';
 import { Recorder } from './capture/recorder.js';
 import { resolveGesture, selectTalkClip, type Gesture } from './avatar/gestures.js';
+import { TimelinePlayer } from './timeline/player.js';
+import { TimelineUI } from './timeline/ui.js';
+import { cueId, type Timeline } from './timeline/types.js';
 import type { EmotionName } from './avatar/emotion.js';
 import type { TtsSource } from './tts/types.js';
 
@@ -166,6 +169,42 @@ interface RenderState {
 }
 let render: RenderState | null = null;
 
+// ── Director timeline (camera + motion choreography) ─────────────────────────
+function demoTimeline(): Timeline {
+  const c = (track: 'camera' | 'motion', type: string, start: number, duration: number) => ({
+    id: cueId(),
+    track,
+    type,
+    start,
+    duration,
+  });
+  return {
+    duration: 26,
+    cues: [
+      c('camera', 'cam.enterLeft', 0, 0.1),
+      c('camera', 'cam.anchor', 0.3, 2.6),
+      c('camera', 'cam.close', 6, 1.5),
+      c('camera', 'cam.screen', 10, 1.8),
+      c('motion', 'motion.turnScreen', 10, 1),
+      c('motion', 'motion.point', 11, 1.6),
+      c('motion', 'motion.faceFront', 16, 1),
+      c('camera', 'cam.anchor', 16, 1.8),
+      c('camera', 'cam.wide', 22, 2.6),
+    ],
+  };
+}
+const timeline = demoTimeline();
+const player = new TimelinePlayer(stage, avatar);
+player.setClipPlayer((name) => {
+  if (avatar.animationClips.length) {
+    lastTalkClip = name;
+    avatar.playClip(name);
+  }
+});
+player.load(timeline);
+let timelineUI: TimelineUI | null = null;
+let previewStart: number | null = null;
+
 const ttsOpts = () => ({
   voiceId: voiceSel.value || undefined,
   rate: Number(rateEl.value),
@@ -173,11 +212,27 @@ const ttsOpts = () => ({
 });
 
 stage.onFrame((dt) => {
+  // Timeline preview (no audio): play the camera/motion choreography.
+  if (previewStart != null) {
+    const t = performance.now() / 1000 - previewStart;
+    if (t >= timeline.duration) {
+      stopPreview();
+    } else {
+      player.update(t);
+      timelineUI?.setPlayhead(t);
+      avatar.setSilent();
+      avatar.setGazeTarget(stage.cameraWorldPosition());
+      avatar.update(dt);
+      return;
+    }
+  }
+
   if (render) {
     // Drive lipsync + motion from the pre-generated audio's clock — frame-exact
     // sync with the captured audio, both rendered from the same timeline.
     const t = render.ctx.currentTime - render.start;
     if (t >= 0) {
+      if (player.hasCameraCues()) player.update(t); // director camera + motion, synced
       avatar.setMouth(render.analyser.sample());
       avatar.setGazeTarget(stage.cameraWorldPosition());
       while (render.idx + 1 < render.timeline.length && render.timeline[render.idx + 1].t <= t) {
@@ -576,11 +631,11 @@ async function renderVideo(): Promise<void> {
   const total = buffers.reduce((a, b) => a + b.length + gap, 0);
   const out = ctx.createBuffer(1, total, sr);
   const od = out.getChannelData(0);
-  const timeline: { t: number; gesture: string; emotion?: string }[] = [];
+  const segTimeline: { t: number; gesture: string; emotion?: string }[] = [];
   let off = 0;
   buffers.forEach((b, i) => {
     od.set(monoData(b), off);
-    timeline.push({ t: off / sr, gesture: segs[i].gesture, emotion: segs[i].emotion });
+    segTimeline.push({ t: off / sr, gesture: segs[i].gesture, emotion: segs[i].emotion });
     off += b.length + gap;
   });
   recordBtn.disabled = false;
@@ -605,10 +660,13 @@ async function renderVideo(): Promise<void> {
   log(`render: recording ${stage.captureLabel()} · ${(total / sr).toFixed(1)}s …`);
 
   renderSrc = srcNode;
-  render = { ctx, start: ctx.currentTime + 0.08, analyser: ana, timeline, idx: -1 };
+  render = { ctx, start: ctx.currentTime + 0.08, analyser: ana, timeline: segTimeline, idx: -1 };
+  const directing = player.hasCameraCues();
+  if (directing) player.begin(); // camera/motion choreography, synced + captured
   srcNode.onended = async () => {
     render = null;
     renderSrc = null;
+    if (directing) player.end();
     avatar.setSilent();
     avatar.setGazeTarget(null);
     if (avatar.animationClips.length) avatar.playClip('idle');
@@ -655,6 +713,45 @@ recordBtn.addEventListener('click', () => {
 function setSpeakingUi(on: boolean): void {
   speakBtn.disabled = on;
   stopBtn.disabled = !on;
+}
+
+// ── Director timeline UI + preview ───────────────────────────────────────────
+const timelineEl = $<HTMLDivElement>('timeline');
+const timelineToggle = $<HTMLButtonElement>('timelineToggle');
+timelineToggle.addEventListener('click', () => {
+  const open = timelineEl.classList.toggle('open');
+  if (open && !timelineUI) {
+    timelineUI = new TimelineUI(timelineEl, timeline, {
+      onChange: () => player.load(timeline),
+      onPreview: togglePreview,
+      onStop: stopPreview,
+      onSeek: seekPreview,
+    });
+  }
+  timelineToggle.classList.toggle('primary', open);
+  if (!open) stopPreview();
+});
+
+function startPreview(): void {
+  if (previewStart != null) return;
+  player.begin();
+  previewStart = performance.now() / 1000;
+  timelineUI?.setPlaying(true);
+}
+function stopPreview(): void {
+  if (previewStart == null) return;
+  previewStart = null;
+  player.end();
+  timelineUI?.setPlaying(false);
+  timelineUI?.setPlayhead(0);
+}
+function togglePreview(): void {
+  if (previewStart != null) stopPreview();
+  else startPreview();
+}
+function seekPreview(t: number): void {
+  if (previewStart == null) startPreview();
+  previewStart = performance.now() / 1000 - t;
 }
 
 log(`ready · avatar: ${avatar.description}`);

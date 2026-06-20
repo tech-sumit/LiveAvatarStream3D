@@ -101,6 +101,164 @@ body {
   pointer-events: none;
 }
 
+/* ── Director timeline (bottom overlay) ───────────────────────────────────── */
+#timeline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 186px;
+  background: rgba(12, 16, 24, 0.96);
+  border-top: 1px solid var(--line);
+  display: none;
+  flex-direction: column;
+  backdrop-filter: blur(4px);
+}
+#timeline.open {
+  display: flex;
+}
+.tl-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.tl-btn {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tl-btn:hover {
+  border-color: var(--accent);
+}
+.tl-add {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tl-num {
+  width: 54px;
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.tl-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--accent);
+  min-width: 42px;
+}
+.tl-dim {
+  font-size: 11px;
+  color: var(--muted);
+}
+.tl-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+  margin: 2px 2px;
+}
+.tl-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.tl-labels {
+  width: 78px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--line);
+  padding-top: 18px;
+}
+.tl-lane-label {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid rgba(40, 49, 67, 0.5);
+}
+.tl-tracks {
+  position: relative;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.tl-ruler {
+  position: absolute;
+  top: 0;
+  height: 18px;
+  right: 0;
+}
+.tl-tick {
+  position: absolute;
+  top: 2px;
+  font-size: 9px;
+  color: var(--muted);
+  border-left: 1px solid rgba(80, 95, 130, 0.4);
+  padding-left: 3px;
+  height: 100%;
+}
+.tl-lane {
+  position: absolute;
+  right: 0;
+  border-bottom: 1px solid rgba(40, 49, 67, 0.5);
+}
+.tl-lane[data-kind='camera'] {
+  top: 18px;
+}
+.tl-lane[data-kind='motion'] {
+  top: 58px;
+}
+.tl-cue {
+  position: absolute;
+  top: 5px;
+  height: 30px;
+  border-radius: 5px;
+  color: #06101f;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: grab;
+  user-select: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.tl-cue.sel {
+  outline: 2px solid #fff;
+  z-index: 5;
+}
+.tl-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+  background: rgba(0, 0, 0, 0.25);
+}
+.tl-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--rec);
+  pointer-events: none;
+  z-index: 6;
+}
+
 #panel {
   background: var(--panel);
   border-left: 1px solid var(--line);
