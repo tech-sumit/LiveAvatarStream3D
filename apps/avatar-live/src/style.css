@@ -37,6 +37,40 @@ body {
   height: 100%;
 }
 
+/* PiP "virtual camera" frame overlay — matches the renderer's bottom-left inset
+   (left/bottom 16px, width 24%, 4:5). Purely cosmetic; clicks pass through. */
+#pipFrame {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  width: 24%;
+  aspect-ratio: 4 / 5;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+#pipFrame span {
+  position: absolute;
+  top: 5px;
+  left: 7px;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  text-shadow: 0 1px 2px #000;
+}
+#viewHint {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(10, 13, 20, 0.5);
+  padding: 3px 8px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
 #panel {
   background: var(--panel);
   border-left: 1px solid var(--line);
@@ -132,6 +166,11 @@ select {
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.grid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 8px;
 }
 
