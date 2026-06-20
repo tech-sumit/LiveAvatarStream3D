@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createStudio, type Studio } from './studio.js';
 
 export type Shot = 'close' | 'medium' | 'wide';
@@ -68,6 +69,12 @@ export class Stage {
 
     this.scene.background = new THREE.Color(0x0a0e16);
     this.scene.fog = new THREE.Fog(0x0a0e16, 12, 30);
+
+    // Image-based lighting: soft, realistic ambient + reflections on skin/hair/
+    // materials (the single biggest realism lever beyond direct lights). Neutral
+    // RoomEnvironment, no external asset.
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
     this.camera = new THREE.PerspectiveCamera(35, this.capture.w / this.capture.h, 0.1, 100);
     this.camera.position.set(0, 1.5, 2);
