@@ -1,0 +1,13 @@
+{
+  "label": "MPFB (realistic, CC0)",
+  "description": "MakeHuman/MPFB realistic human with ARKit shapes — CC0",
+  "model": "model.glb",
+  "shot": "medium",
+  "lipsync": {
+    "gain": 1,
+    "jaw": 1,
+    "wide": 1.35,
+    "round": 1,
+    "smoothing": 0.2
+  }
+}
