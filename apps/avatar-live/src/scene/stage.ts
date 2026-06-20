@@ -87,6 +87,11 @@ export class Stage {
     this.setCaptureFormat(this.capture);
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    // Track the viewport cell directly so docking the timeline (which shrinks
+    // #stage without a window resize) keeps the renderer + gate correct.
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => this.resize()).observe(this.el);
+    }
     this.renderer.setAnimationLoop(() => this.tick());
   }
 

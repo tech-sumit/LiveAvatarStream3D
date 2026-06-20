@@ -13,13 +13,14 @@ import { Recorder } from './capture/recorder.js';
 import { resolveGesture, selectTalkClip, type Gesture } from './avatar/gestures.js';
 import { TimelinePlayer } from './timeline/player.js';
 import { TimelineUI } from './timeline/ui.js';
-import { poseToTuple } from './timeline/catalog.js';
-import { cueId, type PoseTuple, type Timeline } from './timeline/types.js';
+import { CATALOG, poseToTuple } from './timeline/catalog.js';
+import { cueId, type Cue, type PoseTuple, type Timeline } from './timeline/types.js';
 import type { EmotionName } from './avatar/emotion.js';
 import type { TtsSource } from './tts/types.js';
 
 // ── DOM ────────────────────────────────────────────────────────────────────
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const appEl = $('app');
 const stageEl = $('stage');
 const scriptEl = $<HTMLTextAreaElement>('script');
 const liveEl = $<HTMLTextAreaElement>('liveLine');
@@ -57,6 +58,17 @@ const lightRim = $<HTMLInputElement>('lightRim');
 const lightAmbient = $<HTMLInputElement>('lightAmbient');
 const exposureEl = $<HTMLInputElement>('exposure');
 const warmthEl = $<HTMLInputElement>('warmth');
+const projectNameEl = $<HTMLInputElement>('projectName');
+const saveTimelineBtn = $<HTMLButtonElement>('saveTimeline');
+const loadTimelineBtn = $<HTMLButtonElement>('loadTimeline');
+const savedListSel = $<HTMLSelectElement>('savedList');
+const timelineFileEl = $<HTMLInputElement>('timelineFile');
+const cueInspectorEl = $<HTMLDivElement>('cueInspector');
+const cueTypeEl = $<HTMLDivElement>('cueType');
+const cueStartEl = $<HTMLInputElement>('cueStart');
+const cueDurEl = $<HTMLInputElement>('cueDur');
+const cueSetViewBtn = $<HTMLButtonElement>('cueSetView');
+const cueDeleteBtn = $<HTMLButtonElement>('cueDelete');
 
 function log(msg: string): void {
   const ts = new Date().toLocaleTimeString();
@@ -731,19 +743,21 @@ function setSpeakingUi(on: boolean): void {
 // ── Director timeline UI + preview ───────────────────────────────────────────
 const timelineEl = $<HTMLDivElement>('timeline');
 const timelineToggle = $<HTMLButtonElement>('timelineToggle');
+function buildTimelineUI(): void {
+  if (timelineUI) return;
+  timelineUI = new TimelineUI(timelineEl, timeline, {
+    onChange: () => player.load(timeline),
+    onPreview: togglePreview,
+    onStop: stopPreview,
+    onSeek: seekPreview,
+    onCapturePose: captureCameraCue,
+    onRecordPath: toggleCameraRecord,
+    onSelect: showCueInspector,
+  });
+}
 timelineToggle.addEventListener('click', () => {
-  const open = timelineEl.classList.toggle('open');
-  stageEl.classList.toggle('tl-open', open); // lift the OUTPUT preview above the panel
-  if (open && !timelineUI) {
-    timelineUI = new TimelineUI(timelineEl, timeline, {
-      onChange: () => player.load(timeline),
-      onPreview: togglePreview,
-      onStop: stopPreview,
-      onSeek: seekPreview,
-      onCapturePose: captureCameraCue,
-      onRecordPath: toggleCameraRecord,
-    });
-  }
+  const open = appEl.classList.toggle('tl-open'); // grid row expands; Stage's ResizeObserver resizes
+  if (open) buildTimelineUI();
   timelineToggle.classList.toggle('primary', open);
   if (!open) stopPreview();
 });
@@ -827,6 +841,141 @@ window.addEventListener('keydown', (e) => {
   }
   e.preventDefault();
 });
+
+// ── Cue inspector (right panel) — precise editing of the selected cue ─────────
+let selectedCue: Cue | null = null;
+function showCueInspector(cue: Cue | null): void {
+  selectedCue = cue;
+  cueInspectorEl.hidden = !cue;
+  if (!cue) return;
+  cueTypeEl.textContent = `${cue.track} · ${CATALOG[cue.type]?.label ?? cue.type}`;
+  cueStartEl.value = cue.start.toFixed(1);
+  cueDurEl.value = cue.duration.toFixed(1);
+  // "Set to current view" only makes sense for posed camera cues (not preset / path).
+  cueSetViewBtn.hidden = cue.track !== 'camera' || !!cue.path;
+}
+function commitCueEdit(): void {
+  if (!selectedCue) return;
+  selectedCue.start = Math.max(0, Number(cueStartEl.value) || 0);
+  selectedCue.duration = Math.max(0.1, Number(cueDurEl.value) || 0.1);
+  player.load(timeline);
+  timelineUI?.refresh();
+}
+cueStartEl.addEventListener('input', commitCueEdit);
+cueDurEl.addEventListener('input', commitCueEdit);
+cueSetViewBtn.addEventListener('click', () => {
+  if (!selectedCue) return;
+  selectedCue.pose = poseToTuple(stage.getCameraPose());
+  if (!selectedCue.type.startsWith('cam.')) return;
+  selectedCue.type = 'cam.custom';
+  player.load(timeline);
+  timelineUI?.refresh();
+  showCueInspector(selectedCue);
+  log('cue set to the current camera view.');
+});
+cueDeleteBtn.addEventListener('click', () => {
+  if (selectedCue) timelineUI?.removeCue(selectedCue.id);
+});
+
+// ── Timeline save / load ─────────────────────────────────────────────────────
+// Cues are already JSON-safe (pose/path are number tuples). We persist to
+// localStorage (a named index) and also offer a .json file export/import.
+const STORE_INDEX = 'las.timelines';
+const storeKey = (name: string) => `las.timeline.${name}`;
+
+function listSaved(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(STORE_INDEX) || '[]') as string[];
+  } catch {
+    return [];
+  }
+}
+function refreshSavedList(): void {
+  const names = listSaved();
+  savedListSel.innerHTML = '';
+  const def = document.createElement('option');
+  def.value = '';
+  def.textContent = names.length ? '— load saved —' : '(none saved)';
+  savedListSel.appendChild(def);
+  for (const n of names) {
+    const o = document.createElement('option');
+    o.value = n;
+    o.textContent = n;
+    savedListSel.appendChild(o);
+  }
+}
+function serializeTimeline(): string {
+  return JSON.stringify({ version: 1, duration: timeline.duration, cues: timeline.cues }, null, 2);
+}
+function applyTimeline(data: { duration?: number; cues?: Cue[] }): void {
+  if (!data || !Array.isArray(data.cues)) {
+    log('load failed: not a valid timeline file.');
+    return;
+  }
+  timeline.duration = Math.max(2, Number(data.duration) || 26);
+  timeline.cues = data.cues.map((c) => ({ ...c, id: cueId() })); // fresh ids avoid collisions
+  player.load(timeline);
+  buildTimelineUI();
+  timelineUI?.reload();
+  if (!appEl.classList.contains('tl-open')) {
+    appEl.classList.add('tl-open');
+    timelineToggle.classList.add('primary');
+  }
+  log(`loaded timeline — ${timeline.cues.length} cue(s), ${timeline.duration}s.`);
+}
+saveTimelineBtn.addEventListener('click', () => {
+  const name = (projectNameEl.value.trim() || 'untitled').replace(/[^\w.-]+/g, '_');
+  const json = serializeTimeline();
+  // localStorage (named index)
+  try {
+    localStorage.setItem(storeKey(name), json);
+    const names = listSaved();
+    if (!names.includes(name)) names.push(name);
+    localStorage.setItem(STORE_INDEX, JSON.stringify(names));
+    refreshSavedList();
+    savedListSel.value = name;
+  } catch (err) {
+    log(`couldn't save to browser storage: ${String(err)}`);
+  }
+  // .json file download
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+  downloadEl.href = url;
+  downloadEl.download = `${name}.timeline.json`;
+  downloadEl.textContent = `⬇ ${name}.timeline.json`;
+  downloadEl.hidden = false;
+  downloadEl.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  log(`saved timeline "${name}" (browser + .json).`);
+});
+loadTimelineBtn.addEventListener('click', () => timelineFileEl.click());
+timelineFileEl.addEventListener('change', async () => {
+  const file = timelineFileEl.files?.[0];
+  if (!file) return;
+  try {
+    applyTimeline(JSON.parse(await file.text()));
+    projectNameEl.value = file.name.replace(/\.timeline\.json$|\.json$/i, '');
+  } catch (err) {
+    log(`load failed: ${String(err)}`);
+  }
+  timelineFileEl.value = '';
+});
+savedListSel.addEventListener('change', () => {
+  const name = savedListSel.value;
+  if (!name) return;
+  const json = localStorage.getItem(storeKey(name));
+  if (!json) {
+    log(`"${name}" not found in browser storage.`);
+    refreshSavedList();
+    return;
+  }
+  try {
+    applyTimeline(JSON.parse(json));
+    projectNameEl.value = name;
+  } catch (err) {
+    log(`load failed: ${String(err)}`);
+  }
+});
+refreshSavedList();
 
 log(`ready · avatar: ${avatar.description}`);
 

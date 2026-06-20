@@ -14,6 +14,10 @@
 * {
   box-sizing: border-box;
 }
+/* the hidden attribute must win over our display:flex/block rules */
+[hidden] {
+  display: none !important;
+}
 html,
 body {
   margin: 0;
@@ -24,10 +28,87 @@ body {
 
 #app {
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: 320px minmax(0, 1fr) 336px;
+  grid-template-rows: 46px minmax(0, 1fr) 0px;
+  grid-template-areas:
+    'top top top'
+    'left center right'
+    'bottom bottom bottom';
   height: 100vh;
 }
+#app.tl-open {
+  grid-template-rows: 46px minmax(0, 1fr) 212px;
+}
+
+/* Top bar */
+#topbar {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.tb-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tb-right {
+  margin-left: auto;
+}
+.tb-brand {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--text);
+}
+.tb-btn {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tb-btn:hover {
+  border-color: var(--accent);
+}
+.tb-btn.primary,
+.tb-btn.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #07101f;
+}
+.rec-btn.rec {
+  background: var(--rec);
+  border-color: var(--rec);
+  color: #fff;
+}
+#projectName {
+  width: 120px;
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+#savedList,
+#captureFormat {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-size: 12px;
+  max-width: 150px;
+}
+
 #stage {
+  grid-area: center;
   position: relative;
   min-width: 0;
 }
@@ -71,11 +152,6 @@ body {
 #pipFrame.rec {
   border-color: var(--rec);
 }
-/* keep the OUTPUT preview visible above the director timeline panel */
-#stage.tl-open #pipFrame {
-  bottom: 198px;
-  width: 18%;
-}
 #pipFrame canvas {
   width: 100%;
   height: 100%;
@@ -106,21 +182,15 @@ body {
   pointer-events: none;
 }
 
-/* ── Director timeline (bottom overlay) ───────────────────────────────────── */
+/* ── Director timeline (docked bottom row) ────────────────────────────────── */
 #timeline {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 186px;
-  background: rgba(12, 16, 24, 0.96);
+  grid-area: bottom;
+  background: rgba(12, 16, 24, 0.98);
   border-top: 1px solid var(--line);
-  display: none;
-  flex-direction: column;
-  backdrop-filter: blur(4px);
-}
-#timeline.open {
   display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
 }
 .tl-bar {
   display: flex;
@@ -269,28 +339,38 @@ body {
   z-index: 6;
 }
 
-#panel {
+.panel {
   background: var(--panel);
-  border-left: 1px solid var(--line);
-  padding: 16px;
-  height: 100vh;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
-  gap: 18px;
 }
-#panel header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+#leftPanel {
+  grid-area: left;
+  border-right: 1px solid var(--line);
 }
-h1 {
-  font-size: 16px;
-  margin: 0;
-  letter-spacing: 0.3px;
+#rightPanel {
+  grid-area: right;
+  border-left: 1px solid var(--line);
+}
+.grp {
+  border-bottom: 1px solid var(--line);
+  padding: 12px 14px;
+}
+.grp h2 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+.grp-grow {
+  flex: 1;
+  min-height: 120px;
+  border-bottom: none;
 }
 .badge {
   font-size: 11px;
@@ -424,7 +504,8 @@ a#download {
 
 #log {
   margin: 0;
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 90px;
   background: #0a0d14;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -432,7 +513,6 @@ a#download {
   font-size: 11px;
   line-height: 1.5;
   color: var(--muted);
-  max-height: 160px;
   overflow-y: auto;
   white-space: pre-wrap;
 }
