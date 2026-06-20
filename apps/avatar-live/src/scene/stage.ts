@@ -41,6 +41,14 @@ export class Stage {
   private updaters: ((dt: number, t: number) => void)[] = [];
   private directorActive = false; // timeline owns the camera (OrbitControls paused)
 
+  // "Screen source": when on, the recorded output cuts to a fullscreen video
+  // feed (the studio wall content / a cast tab) instead of the 3D camera.
+  private outputSource: 'scene' | 'screen' = 'scene';
+  private screenVideo: HTMLVideoElement | null = null;
+  private screenScene = new THREE.Scene();
+  private screenCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private screenQuad: THREE.Mesh;
+
   constructor(container: HTMLElement) {
     this.el = container;
     this.gateEl = document.getElementById('cameraGate');
@@ -71,6 +79,13 @@ export class Stage {
 
     this.scene.background = new THREE.Color(0x12161f);
     this.scene.fog = new THREE.Fog(0x12161f, 6, 14);
+
+    // Fullscreen quad (NDC -1..1) for the "screen source" output cut.
+    this.screenQuad = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      new THREE.MeshBasicMaterial({ map: null, toneMapped: false }),
+    );
+    this.screenScene.add(this.screenQuad);
 
     this.camera = new THREE.PerspectiveCamera(35, this.capture.w / this.capture.h, 0.1, 100);
     this.camera.position.set(0, 1.5, 2);
@@ -179,6 +194,31 @@ export class Stage {
     return this.outputCanvas.captureStream(fps);
   }
 
+  /** Provide the video the "screen source" cut renders (the studio wall feed). */
+  setScreenSource(video: HTMLVideoElement | null): void {
+    this.screenVideo = video;
+    const mat = this.screenQuad.material as THREE.MeshBasicMaterial;
+    mat.map?.dispose();
+    if (video) {
+      const tex = new THREE.VideoTexture(video);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      mat.map = tex;
+    } else {
+      mat.map = null;
+      this.outputSource = 'scene';
+    }
+    mat.needsUpdate = true;
+  }
+
+  /** Switch the recorded output between the 3D camera and the screen feed. */
+  setOutputSource(src: 'scene' | 'screen'): void {
+    this.outputSource = src === 'screen' && this.screenVideo ? 'screen' : 'scene';
+  }
+
+  get outputIsScreen(): boolean {
+    return this.outputSource === 'screen';
+  }
+
   private tick(): void {
     const dt = Math.min(this.clock.getDelta(), 0.05);
     const t = this.clock.elapsedTime;
@@ -196,17 +236,21 @@ export class Stage {
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
 
-    // Output pass: render exactly the capture gate (a sub-window of the same
-    // frustum) into the output canvas at the capture resolution. Gizmo hidden.
-    const g = this.gate;
-    const saved = this.hideInOutput.map((o) => o.visible);
-    this.hideInOutput.forEach((o) => (o.visible = false));
-    this.camera.setViewOffset(W, H, g.left, g.top, g.w, g.h);
-    this.camera.updateProjectionMatrix();
-    this.outputRenderer.render(this.scene, this.camera);
-    this.camera.clearViewOffset();
-    this.camera.updateProjectionMatrix();
-    this.hideInOutput.forEach((o, i) => (o.visible = saved[i]));
+    // Output pass. Either a fullscreen cut to the screen-source video, or the
+    // capture gate (a sub-window of the same frustum) at the capture resolution.
+    if (this.outputSource === 'screen' && this.screenVideo && this.screenVideo.readyState >= 2) {
+      this.outputRenderer.render(this.screenScene, this.screenCam);
+    } else {
+      const g = this.gate;
+      const saved = this.hideInOutput.map((o) => o.visible);
+      this.hideInOutput.forEach((o) => (o.visible = false));
+      this.camera.setViewOffset(W, H, g.left, g.top, g.w, g.h);
+      this.camera.updateProjectionMatrix();
+      this.outputRenderer.render(this.scene, this.camera);
+      this.camera.clearViewOffset();
+      this.camera.updateProjectionMatrix();
+      this.hideInOutput.forEach((o, i) => (o.visible = saved[i]));
+    }
   }
 
   private setupLights(): void {

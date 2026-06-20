@@ -142,6 +142,24 @@
           </div>
         </section>
 
+        <section class="grp">
+          <h2>Back screen &amp; cast</h2>
+          <div class="row">
+            <input id="screenUrl" type="text" placeholder="video URL (mp4 / webm)…" />
+            <button id="screenLoad">Play</button>
+          </div>
+          <div class="row">
+            <label class="filebtn">Video file<input id="screenFile" type="file" accept="video/*" hidden /></label>
+            <button id="screenCast">📺 Cast tab/screen</button>
+          </div>
+          <div class="row">
+            <button id="camSource">Camera source: Scene</button>
+            <button id="screenStop">Back to headline</button>
+          </div>
+          <p class="hint">Cast streams a Chrome tab/window/screen onto the wall (pick it in
+            the browser dialog). “Camera source: Screen” cuts the recorded output to the wall video.</p>
+        </section>
+
         <section class="grp" id="cueInspector" hidden>
           <h2>Cue inspector</h2>
           <div id="cueType" class="tl-dim">—</div>

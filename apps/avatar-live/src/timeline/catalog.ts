@@ -22,6 +22,8 @@ export const CATALOG: Record<string, CueDef> = {
   // Authored framings: a captured static view, or a recorded free move.
   'cam.custom': { track: 'camera', label: 'Custom view', color: '#7c5bff', defaultDuration: 1.5 },
   'cam.path': { track: 'camera', label: 'Recorded move', color: '#ff8c42', defaultDuration: 3.0 },
+  // Vision-mixer cut: while active, the recorded output IS the wall/cast video.
+  'cam.screenSource': { track: 'camera', label: 'Cut to screen', color: '#e0457b', defaultDuration: 3.0 },
 
   // ── Avatar motion (fires once at the cue start) ─────────────────────────────
   'motion.turnScreen': { track: 'motion', label: 'Turn to screen', color: '#3ad29f', defaultDuration: 1.0 },
