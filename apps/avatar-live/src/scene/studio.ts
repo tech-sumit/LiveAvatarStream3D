@@ -39,10 +39,13 @@ export function createStudio(): Studio {
   bezel.position.set(0, 1.75, -3.25);
   group.add(bezel);
 
+  const screenTex = makeScreenTexture();
   const screenMat = new THREE.MeshStandardMaterial({
-    color: 0x12203f,
-    emissive: 0x1b3a7a,
-    emissiveIntensity: 0.9,
+    color: 0x0a1228,
+    map: screenTex,
+    emissive: 0x6f9bff,
+    emissiveMap: screenTex,
+    emissiveIntensity: 0.85,
     roughness: 0.5,
   });
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 2.3), screenMat);
@@ -93,8 +96,31 @@ export function createStudio(): Studio {
       for (const m of accentMats) m.color.setHex(hex);
     },
     setScreen(hex: number) {
-      screenMat.emissive.setHex(hex);
-      screenMat.color.setHex(hex);
+      screenMat.emissive.setHex(hex); // tints the gradient on the video wall
     },
   };
+}
+
+// A studio video-wall texture: vertical gradient + center glow + faint scanlines.
+function makeScreenTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 256;
+  const g = c.getContext('2d')!;
+  const grad = g.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, '#0a1730');
+  grad.addColorStop(0.5, '#1b3a7a');
+  grad.addColorStop(1, '#0a1730');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 512, 256);
+  const glow = g.createRadialGradient(256, 128, 20, 256, 128, 280);
+  glow.addColorStop(0, 'rgba(120,170,255,0.4)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = glow;
+  g.fillRect(0, 0, 512, 256);
+  g.fillStyle = 'rgba(120,160,255,0.06)';
+  for (let y = 0; y < 256; y += 6) g.fillRect(0, y, 512, 2);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
