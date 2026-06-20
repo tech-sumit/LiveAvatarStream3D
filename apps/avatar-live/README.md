@@ -64,6 +64,24 @@ on load, switches the voice dropdown to your ElevenLabs voices, and lip-syncs
 from the real waveform. Without a key it falls back to browser Web Speech.
 For production, front the API with an equivalent proxy/Worker.
 
+## Body & gesture animation
+
+Ready Player Me avatars are full-body rigged, so they get **skeletal body
+motion**: an idle stance, switching to talking gestures while speaking
+(`AvatarController` runs a `THREE.AnimationMixer`; the app crossfades idle↔talk
+on speech start/stop). Pick a wider camera **shot** to see the gestures.
+
+Clips come from the Ready Player Me animation library and are **fetched, not
+committed** (their license allows free use *with RPM avatars* but forbids
+redistribution):
+
+```bash
+apps/avatar-live/scripts/fetch-animations.sh   # → public/animations/{idle,talk1..3}.glb
+```
+
+Body animation is **RPM-only** (the avatar must be a Ready Player Me model);
+non-RPM avatars (facecap, etc.) keep face + idle head motion only.
+
 ## Avatars & lip-sync requirements
 
 The default avatar is **brunette** (`public/avatars/brunette.glb`) — a textured
