@@ -11,6 +11,15 @@ npm run dev:avatar      # from repo root → http://localhost:5175
 No backend or GPU is required for the default path — it uses the browser's
 Web Speech API for TTS and renders the avatar locally with Three.js.
 
+## Editor / camera controls
+
+- **Orbit / zoom / pan** the main view: drag to rotate, scroll to zoom, right-drag
+  to pan (`OrbitControls`). The main camera is the one that gets **recorded**.
+- **Virtual-camera PiP** (bottom-left): a fixed front-on framing of the head as a
+  reference monitor while you orbit the main view. Hidden during recording.
+- **Avatar position** X/Y/Z sliders move the avatar; **Center avatar** resets it.
+- **Reset camera** re-frames; the **shot** dropdown presets close/medium/wide.
+
 ## How it works
 
 ```

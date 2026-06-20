@@ -1,25 +1,22 @@
 import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 export type Shot = 'close' | 'medium' | 'wide';
 
-// The render surface + virtual camera. Owns the rAF loop, a three-point-ish
-// light setup, a soft backdrop, and camera framing. The canvas IS the virtual
-// camera — Recorder captures its stream. Subscribers get a per-frame callback
-// with delta time to advance the avatar/lipsync.
+// The render surface + cameras. The MAIN camera is user-controlled via
+// OrbitControls (rotate / zoom / pan) — this is the virtual camera that gets
+// recorded. A second PiP camera renders a fixed front-on framing into a small
+// inset (bottom-left) as a reference monitor while you orbit the main view.
 export class Stage {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
+  readonly controls: OrbitControls;
+  private pipCamera: THREE.PerspectiveCamera;
+  private pipEnabled = true;
   private el: HTMLElement;
   private clock = new THREE.Clock();
   private updaters: ((dt: number, t: number) => void)[] = [];
-
-  private camTarget = new THREE.Vector3(0, 1.6, 0);
-  private camDesired = new THREE.Vector3(0, 1.6, 2.2);
-  private lookDesired = new THREE.Vector3(0, 1.6, 0);
-  private camPos = new THREE.Vector3(0, 1.6, 2.2);
-  private camLook = new THREE.Vector3(0, 1.6, 0);
-  private shot: Shot = 'medium';
 
   constructor(container: HTMLElement) {
     this.el = container;
@@ -30,13 +27,22 @@ export class Stage {
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.autoClear = false; // we manage clears for the PiP pass
     this.el.appendChild(this.renderer.domElement);
 
     this.scene.background = new THREE.Color(0x12161f);
     this.scene.fog = new THREE.Fog(0x12161f, 6, 14);
 
     this.camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
-    this.camera.position.copy(this.camPos);
+    this.camera.position.set(0, 1.5, 2);
+    this.pipCamera = new THREE.PerspectiveCamera(28, 0.8, 0.1, 100);
+
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.target.set(0, 1.5, 0);
+    this.controls.minDistance = 0.2;
+    this.controls.maxDistance = 8;
 
     this.setupLights();
     this.setupBackdrop();
@@ -53,26 +59,25 @@ export class Stage {
     this.updaters.push(fn);
   }
 
-  /**
-   * Aim the camera at a head center and choose a framing distance proportional
-   * to the head height (so any avatar scale frames consistently). `snap` jumps
-   * the camera immediately instead of easing — used for the initial framing and
-   * when a tab is backgrounded (rAF throttled), where easing would never finish.
-   */
-  frame(headCenter: THREE.Vector3, headHeight: number, shot: Shot = this.shot, snap = true): void {
-    this.shot = shot;
-    this.camTarget.copy(headCenter);
+  /** Point both cameras at a head center; choose distance from head height. */
+  frame(headCenter: THREE.Vector3, headHeight: number, shot: Shot = 'medium', snap = true): void {
     const factor = shot === 'close' ? 2.0 : shot === 'medium' ? 3.4 : 6.5;
     const dist = headHeight * factor;
-    const yOff = shot === 'close' ? headHeight * 0.04 : -headHeight * 0.08;
-    this.camDesired.set(headCenter.x, headCenter.y + yOff, headCenter.z + dist);
-    this.lookDesired.set(headCenter.x, headCenter.y, headCenter.z);
+    this.controls.target.copy(headCenter);
     if (snap) {
-      this.camPos.copy(this.camDesired);
-      this.camLook.copy(this.lookDesired);
-      this.camera.position.copy(this.camPos);
-      this.camera.lookAt(this.camLook);
+      const yOff = shot === 'close' ? headHeight * 0.04 : -headHeight * 0.08;
+      this.camera.position.set(headCenter.x, headCenter.y + yOff, headCenter.z + dist);
     }
+    this.controls.update();
+
+    // PiP: fixed front-on medium framing of the head.
+    const pipDist = headHeight * 3.2;
+    this.pipCamera.position.set(headCenter.x, headCenter.y, headCenter.z + pipDist);
+    this.pipCamera.lookAt(headCenter);
+  }
+
+  setPip(on: boolean): void {
+    this.pipEnabled = on;
   }
 
   captureStream(fps = 30): MediaStream {
@@ -83,21 +88,36 @@ export class Stage {
     const dt = Math.min(this.clock.getDelta(), 0.05);
     const t = this.clock.elapsedTime;
     for (const fn of this.updaters) fn(dt, t);
+    this.controls.update();
 
-    // Smoothly ease the camera toward its framing, with a gentle handheld drift.
-    const ease = 1 - Math.exp(-dt / 0.4);
-    this.camPos.lerp(this.camDesired, ease);
-    this.camLook.lerp(this.lookDesired, ease);
-    const drift = new THREE.Vector3(Math.sin(t * 0.27) * 0.012, Math.sin(t * 0.21) * 0.008, 0);
-    this.camera.position.copy(this.camPos).add(drift);
-    this.camera.lookAt(this.camLook);
+    const W = this.el.clientWidth || window.innerWidth;
+    const H = this.el.clientHeight || window.innerHeight;
 
+    // Main pass (full frame).
+    this.renderer.setViewport(0, 0, W, H);
+    this.renderer.setScissorTest(false);
+    this.renderer.setClearColor(0x12161f, 1);
+    this.renderer.clear(true, true, true);
     this.renderer.render(this.scene, this.camera);
+
+    // PiP pass (bottom-left inset).
+    if (this.pipEnabled) {
+      const pw = Math.round(W * 0.24);
+      const ph = Math.round(pw * 1.25);
+      const m = 16;
+      this.pipCamera.aspect = pw / ph;
+      this.pipCamera.updateProjectionMatrix();
+      this.renderer.setScissorTest(true);
+      this.renderer.setViewport(m, m, pw, ph);
+      this.renderer.setScissor(m, m, pw, ph);
+      this.renderer.setClearColor(0x0a0d14, 1);
+      this.renderer.clear(true, true, false);
+      this.renderer.render(this.scene, this.pipCamera);
+      this.renderer.setScissorTest(false);
+    }
   }
 
   private setupLights(): void {
-    // Soft three-point studio. Warm key, gentle neutral fill, cool rim — tuned
-    // so real skin textures read naturally rather than blowing out to white.
     const key = new THREE.DirectionalLight(0xfff1e0, 1.6);
     key.position.set(1.8, 2.6, 2.4);
     key.castShadow = true;

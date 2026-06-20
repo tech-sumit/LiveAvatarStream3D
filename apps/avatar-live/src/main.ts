@@ -30,6 +30,11 @@ const shotSel = $<HTMLSelectElement>('shot');
 const glbInput = $<HTMLInputElement>('glb');
 const avatarSel = $<HTMLSelectElement>('avatarSel');
 const glbUrlInput = $<HTMLInputElement>('glbUrl');
+const posX = $<HTMLInputElement>('posX');
+const posY = $<HTMLInputElement>('posY');
+const posZ = $<HTMLInputElement>('posZ');
+const resetViewBtn = $<HTMLButtonElement>('resetView');
+const centerAvatarBtn = $<HTMLButtonElement>('centerAvatar');
 const loadUrlBtn = $<HTMLButtonElement>('loadUrl');
 const recordBtn = $<HTMLButtonElement>('record');
 const downloadEl = $<HTMLAnchorElement>('download');
@@ -38,6 +43,7 @@ const a2fAudioInput = $<HTMLInputElement>('a2fAudio');
 const a2fModeEl = $<HTMLSpanElement>('a2fMode');
 const statusEl = $<HTMLSpanElement>('avatarStatus');
 const logEl = $<HTMLPreElement>('log');
+const pipFrameEl = $<HTMLDivElement>('pipFrame');
 
 function log(msg: string): void {
   const ts = new Date().toLocaleTimeString();
@@ -61,6 +67,8 @@ async function loadAvatar(url: string, label: string): Promise<boolean> {
       log(`⚠ ${label}: ${res.detail}. Use an ARKit/Oculus-blendshape avatar (e.g. Ready Player Me).`);
       return false;
     }
+    posX.value = posY.value = posZ.value = '0';
+    avatar.setPosition(0, 0, 0);
     stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot);
     statusEl.textContent = avatar.description;
     log(`loaded ${label} — ${res.detail}`);
@@ -306,6 +314,17 @@ avatar.setEmotion(emotionSel.value as EmotionName);
 shotSel.addEventListener('change', () => stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot));
 rateEl.addEventListener('input', () => boundary.setRate(Number(rateEl.value)));
 
+// Avatar position (X/Y/Z) + camera resets.
+const applyPos = () => avatar.setPosition(Number(posX.value), Number(posY.value), Number(posZ.value));
+[posX, posY, posZ].forEach((el) => el.addEventListener('input', applyPos));
+resetViewBtn.addEventListener('click', () =>
+  stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot, true),
+);
+centerAvatarBtn.addEventListener('click', () => {
+  posX.value = posY.value = posZ.value = '0';
+  applyPos();
+});
+
 glbInput.addEventListener('change', async () => {
   const file = glbInput.files?.[0];
   if (!file) return;
@@ -333,6 +352,8 @@ glbUrlInput.addEventListener('keydown', (e) => {
 const recorder = new Recorder(() => stage.captureStream(30));
 recordBtn.addEventListener('click', async () => {
   if (!recorder.active) {
+    stage.setPip(false); // keep the inset out of the recording
+    pipFrameEl.style.display = 'none';
     recorder.start();
     recordBtn.textContent = '■ Stop recording';
     recordBtn.classList.add('rec');
@@ -340,6 +361,8 @@ recordBtn.addEventListener('click', async () => {
     log('recording camera…');
   } else {
     const { url, filename } = await recorder.stop();
+    stage.setPip(true);
+    pipFrameEl.style.display = '';
     recordBtn.textContent = '● Record camera';
     recordBtn.classList.remove('rec');
     if (url) {

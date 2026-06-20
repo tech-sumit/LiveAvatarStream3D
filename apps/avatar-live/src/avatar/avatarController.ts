@@ -30,7 +30,8 @@ export interface MouthCue {
 const SILENT: MouthCue = { jawOpen: 0, mouthWide: 0, mouthRound: 0, mouthClose: 0 };
 
 export class AvatarController {
-  readonly group = new THREE.Group();
+  readonly group = new THREE.Group(); // outer: user X/Y/Z offset (sliders)
+  private motion = new THREE.Group(); // inner: idle sway/breathing; holds avatar
   headCenter = new THREE.Vector3(0, 1.5, 0);
   headHeight = 0.42; // world-space head height, drives camera framing distance
   description = 'procedural head';
@@ -68,13 +69,19 @@ export class AvatarController {
     // camera's framing distances (tuned for a real head) read correctly.
     head.group.scale.setScalar(0.18);
     head.group.position.y = 1.5;
-    this.group.add(head.group);
+    this.group.add(this.motion);
+    this.motion.add(head.group);
     this.rig = head.rig;
     this.headCenter = new THREE.Vector3(0, 1.53, 0);
   }
 
   setRenderer(renderer: THREE.WebGLRenderer): void {
     this.renderer = renderer;
+  }
+
+  /** Translate the whole avatar (X/Y/Z editor sliders). */
+  setPosition(x: number, y: number, z: number): void {
+    this.group.position.set(x, y, z);
   }
 
   /**
@@ -119,8 +126,8 @@ export class AvatarController {
   }
 
   private swapTo(root: THREE.Object3D, rig: FaceRig, fit: { center: THREE.Vector3; height: number }): void {
-    this.group.clear();
-    this.group.add(root);
+    this.motion.clear();
+    this.motion.add(root);
     this.rig = rig;
     this.current = zeroChannels();
     this.headCenter = fit.center;
@@ -263,11 +270,12 @@ export class AvatarController {
   private updateIdle(dt: number): void {
     this.idleClock += dt;
     const t = this.idleClock;
-    // Subtle breathing + sway; a little more alive while speaking.
+    // Subtle breathing + sway on the inner group (so the X/Y/Z offset on the
+    // outer group is preserved). A little more alive while speaking.
     const amp = this.speaking ? 1.4 : 1;
-    this.group.position.y = Math.sin(t * 1.6) * 0.006 * amp;
-    this.group.rotation.y = Math.sin(t * 0.5) * 0.03 * amp + Math.sin(t * 0.23) * 0.015;
-    this.group.rotation.x = Math.sin(t * 0.7) * 0.012 * amp;
+    this.motion.position.y = Math.sin(t * 1.6) * 0.006 * amp;
+    this.motion.rotation.y = Math.sin(t * 0.5) * 0.03 * amp + Math.sin(t * 0.23) * 0.015;
+    this.motion.rotation.x = Math.sin(t * 0.7) * 0.012 * amp;
   }
 }
 
