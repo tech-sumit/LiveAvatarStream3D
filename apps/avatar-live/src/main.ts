@@ -43,26 +43,33 @@ stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot);
 statusEl.textContent = avatar.description;
 
 // Shared loader for the default avatar, file uploads, and URL loads.
-async function loadAvatar(url: string, label: string): Promise<void> {
+async function loadAvatar(url: string, label: string): Promise<boolean> {
   log(`loading ${label}…`);
   try {
     const res = await avatar.loadGltf(url);
     if (res.mode === 'none') {
       log(`⚠ ${label}: ${res.detail}. Use an ARKit/Oculus-blendshape avatar (e.g. Ready Player Me).`);
-      return;
+      return false;
     }
     stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot);
     statusEl.textContent = avatar.description;
     log(`loaded ${label} — ${res.detail}`);
     if (res.mode === 'jawbone') log('note: jaw-bone lipsync is open/close only (no visemes/expression).');
+    return true;
   } catch (err) {
     log(`failed to load ${label}: ${String(err)}`);
+    return false;
   }
 }
 
-// Default: the realistic human face (facecap — a real captured head with the
-// full ARKit blendshape set).
-void loadAvatar('/avatars/human.glb', 'realistic face (facecap)');
+// Default avatar: a textured Ready Player Me human (from the MIT-licensed
+// met4citizen/talkinghead repo) with full ARKit + Oculus viseme blendshapes.
+// Falls back to the facecap head scan, then the procedural head.
+void (async () => {
+  if (await loadAvatar('/avatars/brunette.glb', 'Ready Player Me (brunette)')) return;
+  if (await loadAvatar('/avatars/human.glb', 'realistic face (facecap)')) return;
+  log('using procedural head.');
+})();
 
 // ── Lipsync state ────────────────────────────────────────────────────────────
 const boundary = new BoundaryLipsync(Number(rateEl.value));

@@ -91,14 +91,14 @@ export class AvatarController {
 
     const morphRig = new MorphFaceRig(root);
     if (morphRig.boundCount > 0) {
-      this.swapTo(root, morphRig, fitAvatar(root, faceMeshOf(root), null));
+      this.swapTo(root, morphRig, fitAvatar(root, faceMeshOf(root)));
       this.description = `glTF · ${morphRig.boundNames.length} ARKit/viseme morphs`;
       return { mode: 'morphs', detail: this.description };
     }
 
     const jawRig = new JawBoneRig(root);
     if (jawRig.found) {
-      this.swapTo(root, jawRig, fitAvatar(root, null, jawRig.headBone));
+      this.swapTo(root, jawRig, fitAvatar(root, null));
       this.description = `glTF · jaw-bone lipsync (no blendshapes — open/close only)`;
       return { mode: 'jawbone', detail: this.description };
     }
@@ -211,23 +211,22 @@ function faceMeshOf(root: THREE.Object3D): THREE.Mesh | null {
 // head center for camera framing. `faceMesh` (the morph-bearing mesh) gives an
 // exact head when present; otherwise `headBone` locates the head; otherwise we
 // estimate from the bounding box.
-function fitAvatar(
-  root: THREE.Object3D,
-  faceMesh: THREE.Mesh | null,
-  headBone: THREE.Object3D | null,
-): { center: THREE.Vector3; height: number } {
+function fitAvatar(root: THREE.Object3D, faceMesh: THREE.Mesh | null): { center: THREE.Vector3; height: number } {
   root.traverse((o) => {
     o.castShadow = true;
     o.frustumCulled = false;
   });
+  const headBone = findHeadBone(root);
 
   const whole = new THREE.Box3().setFromObject(root);
   const wholeSize = new THREE.Vector3();
   whole.getSize(wholeSize);
 
-  // Head-only only when the morph mesh dominates the whole asset (a face scan).
+  // Head-only when an unskinned morph mesh dominates the asset (a face scan like
+  // facecap). Skinned full-body avatars (RPM) report a tiny/degenerate face-mesh
+  // box, so we never treat those as head-only.
   let headOnly = false;
-  if (faceMesh) {
+  if (faceMesh && !(faceMesh as THREE.SkinnedMesh).isSkinnedMesh) {
     const fb = new THREE.Box3().setFromObject(faceMesh);
     const fs = new THREE.Vector3();
     fb.getSize(fs);
@@ -250,27 +249,42 @@ function fitAvatar(
     root.position.set(-wc.x * scale, -whole.min.y * scale, -wc.z * scale);
   }
 
-  // Resolve the head center + head height in world space after the transform.
+  // Resolve the head center + height in world space after the transform.
   root.updateWorldMatrix(true, true);
-  const hc = new THREE.Vector3();
-  let height: number;
   const finalWhole = new THREE.Box3().setFromObject(root);
   const finalWholeH = finalWhole.max.y - finalWhole.min.y;
-  if (faceMesh) {
+  const hc = new THREE.Vector3();
+  let height: number;
+
+  if (headOnly && faceMesh) {
     const fb = new THREE.Box3().setFromObject(faceMesh);
     fb.getCenter(hc);
     height = fb.max.y - fb.min.y;
   } else if (headBone) {
+    // Most reliable for skinned avatars: the head bone marks the head.
     headBone.getWorldPosition(hc);
-    hc.y += finalWholeH * 0.05; // bone pivot sits low in the head; raise to eyes
+    hc.y += finalWholeH * 0.045; // bone pivot is low in the head; raise to eyes
     height = finalWholeH * 0.13; // a human head is ~13% of standing height
   } else {
     hc.set(
       (finalWhole.min.x + finalWhole.max.x) / 2,
-      finalWhole.min.y + finalWholeH * 0.92,
+      finalWhole.min.y + finalWholeH * 0.9,
       (finalWhole.min.z + finalWhole.max.z) / 2,
     );
     height = finalWholeH * 0.13;
   }
   return { center: hc, height: Math.max(height, 0.05) };
+}
+
+// Find a head bone by name, ignoring the RPM/Mixamo "HeadTop_End" tip marker.
+function findHeadBone(root: THREE.Object3D): THREE.Object3D | null {
+  let exact: THREE.Object3D | null = null;
+  let loose: THREE.Object3D | null = null;
+  root.traverse((o) => {
+    if (!((o as THREE.Bone).isBone || /bone/i.test(o.type))) return;
+    if (/top|end|tip/i.test(o.name)) return;
+    if (/(^|[:_])head$/i.test(o.name)) exact ??= o;
+    else if (/head/i.test(o.name)) loose ??= o;
+  });
+  return exact ?? loose;
 }
