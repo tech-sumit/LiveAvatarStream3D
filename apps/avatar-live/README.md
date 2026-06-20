@@ -33,9 +33,9 @@ script text ──► RealtimeSession ──► TtsSource ──► (audio)
 ```
 
 - **TTS sources** (`src/tts/`) — `WebSpeechTts` (local, instant, word-boundary
-  events) and `ServerTts` (cloned voice; POSTs to `VITE_TTS_URL`, plays via Web
-  Audio so lipsync reads the real waveform). Both implement `TtsSource`, so the
-  session is source-agnostic.
+  events), `ElevenLabsTts` (real/cloned voice), and `ServerTts` (generic
+  cloned-voice endpoint). All implement `TtsSource`, so the session is
+  source-agnostic. The app auto-upgrades to ElevenLabs when it's configured.
 - **Lipsync** (`src/lipsync/`) — `BoundaryLipsync` synthesizes mouth shapes from
   word letters timed to word-boundary events (used with Web Speech, which gives
   no routable audio). `AudioAnalyserLipsync` derives jaw + vowel shape from
@@ -48,6 +48,21 @@ script text ──► RealtimeSession ──► TtsSource ──► (audio)
 - **Session** (`src/session/`) — splits a script into sentences, speaks them
   back-to-back, supports live `enqueue()` (stream lines in) and `stop()`
   (barge-in).
+
+## Voice (ElevenLabs)
+
+For a real (or cloned) voice instead of the robotic browser voice, put your key
+in `apps/avatar-live/.env`:
+
+```bash
+ELEVENLABS_API_KEY=sk_...      # NOT VITE_-prefixed — stays server-side
+```
+
+Restart `npm run dev:avatar`. The dev server proxies `/eleven/*` to ElevenLabs
+and injects the key (it never reaches the browser, no CORS). The app detects this
+on load, switches the voice dropdown to your ElevenLabs voices, and lip-syncs
+from the real waveform. Without a key it falls back to browser Web Speech.
+For production, front the API with an equivalent proxy/Worker.
 
 ## Avatars & lip-sync requirements
 

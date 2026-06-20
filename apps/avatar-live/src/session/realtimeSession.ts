@@ -21,7 +21,7 @@ export class RealtimeSession {
   private stopped = false;
 
   constructor(
-    private tts: TtsSource,
+    private getTts: () => TtsSource,
     private getOpts: () => SpeakOpts,
     private hooks: SessionHooks,
   ) {}
@@ -64,7 +64,7 @@ export class RealtimeSession {
       while (!this.stopped && this.queue.length) {
         const text = this.queue.shift()!;
         this.hooks.onSegmentStart?.(text);
-        const handle = this.tts.speak(text, this.getOpts(), {
+        const handle = this.getTts().speak(text, this.getOpts(), {
           onStart: () => this.hooks.onStatus?.(`speaking: "${truncate(text)}"`),
           onWord: this.hooks.onWord,
           onAudioNode: this.hooks.onAudioNode,

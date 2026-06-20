@@ -4,6 +4,7 @@ import { BoundaryLipsync } from './lipsync/boundaryLipsync.js';
 import { AudioAnalyserLipsync } from './lipsync/audioLipsync.js';
 import { WebSpeechTts } from './tts/webSpeech.js';
 import { ServerTts } from './tts/serverTts.js';
+import { ElevenLabsTts } from './tts/elevenLabs.js';
 import { RealtimeSession } from './session/realtimeSession.js';
 import { Recorder } from './capture/recorder.js';
 import { BlendshapeTimelineLipsync } from './lipsync/blendshapeTimeline.js';
@@ -155,36 +156,46 @@ async function loadAndRunA2F(url: string, label: string): Promise<void> {
 }
 
 // ── TTS source selection ─────────────────────────────────────────────────────
+// Default to browser Web Speech; asynchronously upgrade to ElevenLabs if the
+// proxy + ELEVENLABS_API_KEY are configured (see vite.config.ts). `activeTts` is
+// read through a getter by the session, so the swap takes effect immediately.
 const serverTtsUrl = import.meta.env.VITE_TTS_URL as string | undefined;
-let tts: TtsSource;
-if (WebSpeechTts.supported()) {
-  tts = new WebSpeechTts();
-} else if (serverTtsUrl) {
-  tts = new ServerTts(serverTtsUrl);
-} else {
-  tts = new WebSpeechTts(); // will report unsupported on use
-  log('No TTS available: Web Speech unsupported and VITE_TTS_URL unset.');
-}
+let activeTts: TtsSource = WebSpeechTts.supported()
+  ? new WebSpeechTts()
+  : serverTtsUrl
+    ? new ServerTts(serverTtsUrl)
+    : new WebSpeechTts();
 
-void populateVoices();
+void (async () => {
+  if (await ElevenLabsTts.available()) {
+    activeTts = new ElevenLabsTts();
+    log('voice: ElevenLabs (real TTS) — lip-sync from the actual waveform');
+  } else {
+    log('voice: browser (Web Speech). Add ELEVENLABS_API_KEY to apps/avatar-live/.env for ElevenLabs.');
+  }
+  await populateVoices();
+})();
+
 async function populateVoices(): Promise<void> {
-  if (!tts.listVoices) return;
-  const voices = await tts.listVoices();
   voiceSel.innerHTML = '';
+  if (!activeTts.listVoices) return;
+  const voices = await activeTts.listVoices();
   for (const v of voices) {
     const opt = document.createElement('option');
     opt.value = v.id;
     opt.textContent = v.label;
     voiceSel.appendChild(opt);
   }
-  // Prefer an English voice by default.
-  const en = voices.find((v) => /en[-_]/i.test(v.id) || /English/i.test(v.label));
-  if (en) voiceSel.value = en.id;
+  // For Web Speech, default to an English voice; ElevenLabs voices are all usable.
+  if (activeTts.kind === 'web-speech') {
+    const en = voices.find((v) => /en[-_]/i.test(v.id) || /English/i.test(v.label));
+    if (en) voiceSel.value = en.id;
+  }
 }
 
 // ── Session ──────────────────────────────────────────────────────────────────
 const session = new RealtimeSession(
-  tts,
+  () => activeTts,
   () => ({ voiceId: voiceSel.value || undefined, rate: Number(rateEl.value), pitch: Number(pitchEl.value) }),
   {
     onWord: (word, atMs) => {
@@ -297,7 +308,7 @@ function setSpeakingUi(on: boolean): void {
   stopBtn.disabled = !on;
 }
 
-log(`ready · TTS: ${tts.kind} · avatar: ${avatar.description}`);
+log(`ready · avatar: ${avatar.description}`);
 
 // Debug handle for inspecting the scene/camera from the console.
 (window as unknown as { __las: unknown }).__las = { stage, avatar };
