@@ -63,11 +63,34 @@ async function loadAvatar(url: string, label: string): Promise<boolean> {
     statusEl.textContent = avatar.description;
     log(`loaded ${label} — ${res.detail}`);
     if (res.mode === 'jawbone') log('note: jaw-bone lipsync is open/close only (no visemes/expression).');
+    await setupBodyAnimation();
     return true;
   } catch (err) {
     log(`failed to load ${label}: ${String(err)}`);
     return false;
   }
+}
+
+// Body/gesture animation (Ready Player Me avatars only — RPM animation library
+// is licensed for use with RPM avatars). Clips are fetched locally, not bundled.
+const TALK_CLIPS = ['talk1', 'talk2', 'talk3'];
+async function setupBodyAnimation(): Promise<void> {
+  if (!avatar.isReadyPlayerMe) {
+    log('body animation: skipped (needs a Ready Player Me avatar).');
+    return;
+  }
+  const got = await avatar.loadAnimations([
+    { name: 'idle', url: '/animations/idle.glb' },
+    { name: 'talk1', url: '/animations/talk1.glb' },
+    { name: 'talk2', url: '/animations/talk2.glb' },
+    { name: 'talk3', url: '/animations/talk3.glb' },
+  ]);
+  if (got.includes('idle')) avatar.playClip('idle', 0);
+  log(
+    got.length
+      ? `body animation: ${got.length} clips (${got.join(', ')})`
+      : 'body animation: no clips found — run scripts/fetch-animations.sh',
+  );
 }
 
 // Default avatar: a textured Ready Player Me human (from the MIT-licensed
@@ -93,6 +116,7 @@ let a2fLip: BlendshapeTimelineLipsync | null = null;
 let a2fSrc: AudioBufferSourceNode | null = null;
 let a2fStart = 0;
 
+let bodyTalking = false;
 stage.onFrame((dt) => {
   if (a2fLip && a2fCtx) {
     const t = a2fCtx.currentTime - a2fStart;
@@ -101,6 +125,14 @@ stage.onFrame((dt) => {
     avatar.setMouth(analyser ? analyser.sample() : boundary.sample(performance.now()));
   } else {
     avatar.setSilent();
+  }
+  // Switch body posture between idle and a talking gesture as speech starts/stops.
+  const isSpeaking = !!a2fLip || speaking;
+  if (isSpeaking !== bodyTalking) {
+    bodyTalking = isSpeaking;
+    if (avatar.animationClips.length) {
+      avatar.playClip(isSpeaking ? TALK_CLIPS[Math.floor(Math.random() * TALK_CLIPS.length)] : 'idle');
+    }
   }
   avatar.update(dt);
 });

@@ -54,6 +54,13 @@ export class AvatarController {
   // Renderer is needed for KTX2 transcoder support detection.
   private renderer: THREE.WebGLRenderer | null = null;
 
+  // Skeletal body animation (Ready Player Me avatars only — license-gated).
+  isReadyPlayerMe = false;
+  private animRoot: THREE.Object3D | null = null;
+  private mixer: THREE.AnimationMixer | null = null;
+  private actions: Record<string, THREE.AnimationAction> = {};
+  private currentClip = '';
+
   constructor() {
     const head = createProceduralHead();
     // The procedural head is modeled at ~1m radius for easy authoring; scale it
@@ -118,6 +125,57 @@ export class AvatarController {
     this.current = zeroChannels();
     this.headCenter = fit.center;
     this.headHeight = fit.height;
+    // Reset animation state for the new avatar.
+    this.animRoot = root;
+    this.mixer = null;
+    this.actions = {};
+    this.currentClip = '';
+    let rpm = false;
+    root.traverse((o) => {
+      if (/^Wolf3D/i.test(o.name) || o.name === 'Armature') rpm = true;
+    });
+    this.isReadyPlayerMe = rpm;
+  }
+
+  /**
+   * Load skeletal body-animation clips (one AnimationClip per glb) and bind them
+   * to the avatar's skeleton by bone name. RPM-skeleton clips bind directly.
+   * Returns the names that bound. No-op unless the avatar is Ready Player Me
+   * (the RPM animation library is licensed for use with RPM avatars only).
+   */
+  async loadAnimations(clips: { name: string; url: string }[]): Promise<string[]> {
+    if (!this.animRoot || !this.isReadyPlayerMe) return [];
+    const loader = new GLTFLoader();
+    this.mixer = new THREE.AnimationMixer(this.animRoot);
+    const loaded: string[] = [];
+    for (const c of clips) {
+      try {
+        const gltf = await loader.loadAsync(c.url);
+        const clip = gltf.animations[0];
+        if (!clip) continue;
+        const action = this.mixer.clipAction(clip, this.animRoot as THREE.Object3D);
+        action.setLoop(THREE.LoopRepeat, Infinity);
+        this.actions[c.name] = action;
+        loaded.push(c.name);
+      } catch {
+        /* skip a clip that fails to load */
+      }
+    }
+    return loaded;
+  }
+
+  /** Crossfade to a named body clip (no-op if it isn't loaded). */
+  playClip(name: string, fade = 0.3): void {
+    const next = this.actions[name];
+    if (!next || this.currentClip === name) return;
+    const prev = this.actions[this.currentClip];
+    next.reset().setEffectiveWeight(1).fadeIn(fade).play();
+    if (prev) prev.fadeOut(fade);
+    this.currentClip = name;
+  }
+
+  get animationClips(): string[] {
+    return Object.keys(this.actions);
   }
 
   setEmotion(name: EmotionName, intensity = 1): void {
@@ -150,6 +208,10 @@ export class AvatarController {
   }
 
   update(dt: number): void {
+    // Advance skeletal body animation (if any). This drives the whole skeleton
+    // including the head bone; our face channels run on top via morph targets.
+    this.mixer?.update(dt);
+
     // A2F-3D / ARKit full-face path: the timeline already carries jaw, visemes,
     // brows, blinks and emotion, so apply it directly and only add idle motion.
     if (this.namedFace && this.rig.applyNamed) {
