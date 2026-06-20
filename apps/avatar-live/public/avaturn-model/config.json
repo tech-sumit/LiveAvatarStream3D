@@ -1,0 +1,7 @@
+{
+  "label": "Avaturn (photoreal)",
+  "description": "Photoreal avatar with ARKit visemes — ideal head-and-shoulders anchor",
+  "model": "model.glb",
+  "shot": "medium",
+  "lipsync": { "gain": 1.0, "jaw": 1.0, "wide": 1.0, "round": 1.0, "smoothing": 0.2 }
+}

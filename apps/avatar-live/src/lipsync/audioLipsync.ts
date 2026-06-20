@@ -10,12 +10,13 @@ export class AudioAnalyserLipsync {
   private freq: Uint8Array<ArrayBuffer>;
   private jaw = 0;
 
-  constructor(ctx: AudioContext, source: AudioNode) {
+  constructor(ctx: AudioContext, source: AudioNode, smoothing = 0.2) {
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 1024;
     // Low smoothing so the loudness envelope tracks syllables (dips between
     // sounds) instead of staying high → the mouth actually closes while talking.
-    this.analyser.smoothingTimeConstant = 0.2;
+    // Per-avatar tunable from the Lip-sync calibration panel.
+    this.analyser.smoothingTimeConstant = smoothing;
     source.connect(this.analyser);
     this.time = new Uint8Array(this.analyser.fftSize);
     this.freq = new Uint8Array(this.analyser.frequencyBinCount);

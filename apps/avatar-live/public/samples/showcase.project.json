@@ -6,7 +6,7 @@
   "rate": 1,
   "pitch": 1,
   "emotion": "confident",
-  "avatarUrl": "/avatars/avaturn.glb",
+  "avatarUrl": "avaturn-model",
   "shot": "medium",
   "studioOn": true,
   "idleMotion": false,

@@ -1,6 +1,8 @@
 import { defineConfig, loadEnv, type Connect, type Plugin } from 'vite';
 import { AwsClient } from 'aws4fetch';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // Realtime avatar app. Port 5175 to avoid clashing with the scene editor (5174)
 // and the web app.
@@ -21,6 +23,83 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 //   DELETE /r2/o/<key>         → delete object
 //
 // Optional A2F: VITE_A2F_URL points at an Audio2Face-3D HTTP wrapper.
+
+// ── Avatar system ────────────────────────────────────────────────────────────
+// Each avatar lives in public/<id>-model/ with a model.glb + config.json. This
+// plugin auto-discovers those folders → writes public/avatars.json (the index
+// the app fetches), and exposes a dev endpoint to save per-avatar lip-sync config
+// back to its config.json. Add an avatar by dropping a folder — no code changes.
+function scanAvatars(publicDir: string): string[] {
+  if (!existsSync(publicDir)) return [];
+  return readdirSync(publicDir)
+    .filter((name) => {
+      try {
+        return (
+          statSync(join(publicDir, name)).isDirectory() &&
+          existsSync(join(publicDir, name, 'config.json'))
+        );
+      } catch {
+        return false;
+      }
+    })
+    .sort();
+}
+
+function avatarPlugin(): Plugin {
+  let publicDir = '';
+  const writeIndex = () => {
+    if (!publicDir) return;
+    try {
+      writeFileSync(join(publicDir, 'avatars.json'), JSON.stringify(scanAvatars(publicDir)));
+    } catch {
+      /* ignore */
+    }
+  };
+  return {
+    name: 'avatar-system',
+    configResolved(c) {
+      publicDir = c.publicDir;
+    },
+    buildStart() {
+      writeIndex(); // bake the index into the build (copied into dist/)
+    },
+    configureServer(server) {
+      writeIndex();
+      const handler: Connect.NextHandleFunction = async (req, res, next) => {
+        const url = req.url || '';
+        // Live, always-fresh index (newly-added folders appear without a restart).
+        if (url.startsWith('/avatars.json')) {
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify(scanAvatars(publicDir)));
+          return;
+        }
+        // Save a per-avatar config.json (lip-sync calibration etc.).
+        const m = url.match(/^\/avatar-config\/([\w-]+)$/);
+        if (m && req.method === 'POST') {
+          const id = m[1];
+          const dir = join(publicDir, id);
+          if (!existsSync(join(dir, 'config.json'))) {
+            res.statusCode = 404;
+            res.end('unknown avatar');
+            return;
+          }
+          try {
+            const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+            writeFileSync(join(dir, 'config.json'), JSON.stringify(body, null, 2));
+            res.setHeader('content-type', 'application/json');
+            res.end('{"ok":true}');
+          } catch (err) {
+            res.statusCode = 400;
+            res.end(`bad config: ${String(err)}`);
+          }
+          return;
+        }
+        next();
+      };
+      server.middlewares.use(handler as (req: IncomingMessage, res: ServerResponse, next: () => void) => void);
+    },
+  };
+}
 
 function readBody(req: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -153,7 +232,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const elevenKey = env.ELEVENLABS_API_KEY;
   return {
-    plugins: [r2Plugin(env)],
+    plugins: [r2Plugin(env), avatarPlugin()],
     server: {
       port: 5175,
       host: true,

@@ -232,10 +232,24 @@ export class AvatarController {
     this.emotionIntensity = intensity;
   }
 
-  /** Called at audio rate by the lipsync driver. */
+  // Per-avatar lip-sync tuning (how much the lips move). Set from the avatar's
+  // config.json; calibrated live from the editor's Lip-sync panel.
+  private lip = { gain: 1, jaw: 1, wide: 1, round: 1 };
+  setLipsync(cfg: Partial<{ gain: number; jaw: number; wide: number; round: number }>): void {
+    this.lip = { ...this.lip, ...cfg };
+  }
+
+  /** Called at audio rate by the lipsync driver. Scaled by the avatar's config. */
   setMouth(cue: MouthCue): void {
-    this.mouthTarget = cue;
-    this.speaking = cue.jawOpen + cue.mouthWide + cue.mouthRound > 0.04;
+    const g = this.lip.gain;
+    this.mouthTarget = {
+      jawOpen: clamp01(cue.jawOpen * g * this.lip.jaw),
+      mouthWide: clamp01(cue.mouthWide * g * this.lip.wide),
+      mouthRound: clamp01(cue.mouthRound * g * this.lip.round),
+      mouthClose: cue.mouthClose,
+    };
+    const m = this.mouthTarget;
+    this.speaking = m.jawOpen + m.mouthWide + m.mouthRound > 0.04;
   }
 
   setSilent(): void {
@@ -391,6 +405,10 @@ export class AvatarController {
 function approach(cur: number, target: number, attack: number, release: number): number {
   const rate = target > cur ? attack : release;
   return cur + (target - cur) * rate;
+}
+
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
 /** The mesh carrying the most morph targets is the face. */
