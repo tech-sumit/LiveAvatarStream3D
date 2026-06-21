@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { buildLookChain, applyLookParams, DEFAULT_LOOK, type LookParams, type LookChain } from '../look/lookChain.js';
 
 export type Shot = 'close' | 'medium' | 'wide';
 
@@ -30,6 +31,9 @@ export class Stage {
 
   private outputRenderer: THREE.WebGLRenderer;
   private outputCanvas: HTMLCanvasElement;
+  private viewportLook!: LookChain;
+  private outputLook!: LookChain;
+  private lookParams: LookParams = { ...DEFAULT_LOOK };
   private capture: CaptureFormat = { name: '16:9 · 720p', w: 1280, h: 720 };
   private hideInOutput: THREE.Object3D[] = [];
   readonly lights = {} as StageLights;
@@ -57,7 +61,7 @@ export class Stage {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMapping = THREE.NoToneMapping; // ToneMappingEffect (ACES) owns tone mapping now
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -72,7 +76,7 @@ export class Stage {
       preserveDrawingBuffer: true,
     });
     this.outputRenderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.outputRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.outputRenderer.toneMapping = THREE.NoToneMapping; // ToneMappingEffect (ACES) owns tone mapping now
     this.outputRenderer.toneMappingExposure = 1.05;
     this.outputRenderer.shadowMap.enabled = true;
     this.outputRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -108,6 +112,12 @@ export class Stage {
     if (typeof ResizeObserver !== 'undefined') {
       new ResizeObserver(() => this.resize()).observe(this.el);
     }
+
+    // Post-processing "look" composers: one over the live viewport renderer,
+    // one over the capture/export renderer (so the recorded MP4 inherits the look).
+    this.viewportLook = buildLookChain(this.renderer, this.scene, this.camera, this.lookParams);
+    this.outputLook = buildLookChain(this.outputRenderer, this.scene, this.camera, this.lookParams);
+
     this.renderer.setAnimationLoop(() => this.tick());
   }
 
@@ -154,6 +164,7 @@ export class Stage {
   setCaptureFormat(fmt: CaptureFormat): void {
     this.capture = fmt;
     this.outputRenderer.setSize(fmt.w, fmt.h, false);
+    this.outputLook?.composer.setSize(fmt.w, fmt.h, false); // guarded: called once during construction before composers exist
     const pip = document.getElementById('pipFrame');
     if (pip) pip.style.aspectRatio = `${fmt.w} / ${fmt.h}`;
     this.resize(); // recomputes the capture gate within the constant environment view
@@ -219,7 +230,7 @@ export class Stage {
     if (this.outputIsScreen) {
       this.outputRenderer.render(this.screenScene, this.screenCam);
     } else {
-      this.outputRenderer.render(this.scene, this.camera);
+      this.outputLook.composer.render();
     }
     return this.outputCanvas;
   }
@@ -271,7 +282,7 @@ export class Stage {
     this.renderer.setViewport(0, 0, W, H);
     this.renderer.setClearColor(0x12161f, 1);
     this.renderer.clear();
-    this.renderer.render(this.scene, this.camera);
+    this.viewportLook.composer.render();
 
     // Output pass. Either a fullscreen cut to the screen-source video, or the
     // capture gate (a sub-window of the same frustum) at the capture resolution.
@@ -283,7 +294,7 @@ export class Stage {
       this.hideInOutput.forEach((o) => (o.visible = false));
       this.camera.setViewOffset(W, H, g.left, g.top, g.w, g.h);
       this.camera.updateProjectionMatrix();
-      this.outputRenderer.render(this.scene, this.camera);
+      this.outputLook.composer.render();
       this.camera.clearViewOffset();
       this.camera.updateProjectionMatrix();
       this.hideInOutput.forEach((o, i) => (o.visible = saved[i]));
@@ -328,6 +339,18 @@ export class Stage {
     this.outputRenderer.toneMappingExposure = value;
   }
 
+  /** Update the post-processing look on both the viewport and the capture/export composers. */
+  setLook(params: LookParams): void {
+    this.lookParams = { ...params };
+    applyLookParams(this.viewportLook.fx, this.lookParams);
+    applyLookParams(this.outputLook.fx, this.lookParams);
+  }
+
+  /** Current look params (for serialization). */
+  getLook(): LookParams {
+    return { ...this.lookParams };
+  }
+
   private setupBackdrop(): void {
     const floor = new THREE.Mesh(
       new THREE.CircleGeometry(14, 64),
@@ -342,6 +365,7 @@ export class Stage {
     const w = this.el.clientWidth || window.innerWidth;
     const h = this.el.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h, false);
+    this.viewportLook?.composer.setSize(w, h, false); // guarded: resize() runs in the constructor before composers exist
     this.camera.aspect = w / h; // environment view fills the canvas
     this.camera.updateProjectionMatrix();
 
