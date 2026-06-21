@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "meta": {
+    "title": "Evening Edition — Showcase",
+    "anchors": [{ "id": "ava", "name": "Ava Lin", "avatarUrl": "avaturn-model", "voiceId": "EXAVITQu4vr4xnSDxMaL" }]
+  },
+  "look": { "preset": "broadcast" },
+  "defaults": { "emotion": "neutral", "idleMotion": true },
+  "rundown": [
+    {
+      "id": "open", "slug": "cold-open", "storyForm": "READER", "headline": "Evening Edition",
+      "beats": [
+        { "id": "o1", "text": "Good evening, and welcome to the broadcast.", "emotion": "warm", "gesture": "open_palms", "camera": { "shot": "medium" } },
+        { "id": "o2", "text": "Here are tonight's top stories.", "emotion": "confident", "camera": { "shot": "close_up" } }
+      ]
+    },
+    {
+      "id": "markets", "slug": "markets", "storyForm": "VO", "headline": "Markets close higher",
+      "beats": [
+        { "id": "m1", "text": "Wall Street ended the day in the green.", "emotion": "confident", "gesture": "point", "camera": { "shot": "wide" } },
+        { "id": "m2", "text": "Tech shares led the gains across the board.", "emotion": "happy" }
+      ]
+    },
+    {
+      "id": "kicker", "slug": "sign-off", "storyForm": "READER", "headline": "Goodnight",
+      "beats": [{ "id": "k1", "text": "That's all for tonight. Thanks for watching.", "emotion": "warm", "gesture": "wave", "camera": { "shot": "close_up" } }]
+    }
+  ]
+}
