@@ -2,8 +2,10 @@ import { BoundaryLipsync } from '../lipsync/boundaryLipsync.js';
 import { AudioAnalyserLipsync } from '../lipsync/audioLipsync.js';
 import { RealtimeSession } from '../session/realtimeSession.js';
 import { resolveGesture, selectTalkClip, type Gesture } from '../avatar/gestures.js';
+import { exportMp4Offline } from '../capture/offlineExporter.js';
 import { cueId, type Cue } from '../timeline/types.js';
 import type { EmotionName } from '../avatar/emotion.js';
+import type { MouthCue } from '../avatar/avatarController.js';
 import type { StudioContext } from './context.js';
 import type { VoicePicker } from './voicePicker.js';
 import type { Recording } from './recording.js';
@@ -38,6 +40,7 @@ export class Performer {
   private renderSrc: AudioBufferSourceNode | null = null;
   private narrationAudio: AudioBuffer | null = null;
   private narrationSegs: { t: number; gesture: string; emotion?: string }[] = [];
+  private exporting = false;
   private performing = false; // guards re-entry while synthesizing / playing
   private session: RealtimeSession;
 
@@ -81,7 +84,7 @@ export class Performer {
   }
 
   get busy(): boolean {
-    return this.performing || this.render != null;
+    return this.performing || this.render != null || this.exporting;
   }
   get isRendering(): boolean {
     return this.render != null;
@@ -172,6 +175,59 @@ export class Performer {
     deps.timeline.setNarrationCues(cues, total / sr);
     app.log(`narration ready · ${(total / sr).toFixed(1)}s, ${cues.length} sentence(s). Preview to play it.`);
     return true;
+  };
+
+  /** Build (or reuse) narration and return the pieces the offline exporter needs. */
+  private async prepareForExport(): Promise<
+    { buffer: AudioBuffer; segs: { t: number; gesture: string; emotion?: string }[]; durationSec: number } | null
+  > {
+    if (!this.narrationAudio) {
+      if (!(await this.buildNarration())) return null;
+    }
+    const buffer = this.narrationAudio!;
+    return { buffer, segs: this.narrationSegs, durationSec: buffer.length / buffer.sampleRate };
+  }
+
+  /** Frame-exact offline MP4 export of the current script at the selected resolution + codec. */
+  exportMp4 = async (): Promise<void> => {
+    const { app, deps } = this;
+    if (this.exporting || app.isBusy()) {
+      app.log('finish the current take before exporting.');
+      return;
+    }
+    const prep = await this.prepareForExport();
+    if (!prep) return; // buildNarration already logged why
+    const fmt = deps.recording.currentFormat();
+    const codec = deps.recording.currentCodec();
+    this.exporting = true;
+    deps.recording.setExportUi(true);
+    app.log(`export: rendering ${prep.durationSec.toFixed(1)}s @ ${fmt.w}×${fmt.h} ${codec.toUpperCase()} …`);
+    try {
+      const cursor = { idx: -1 };
+      const blob = await exportMp4Offline({
+        stage: app.stage,
+        narration: prep.buffer,
+        audioCues: [],
+        durationSec: prep.durationSec,
+        fps: 30,
+        width: fmt.w,
+        height: fmt.h,
+        codec,
+        driveFrame: (t, dt, mouth) => {
+          deps.timeline.playerUpdate(t); // camera / motion / screen cuts
+          this.driveAvatarFrame(t, dt, mouth, prep.segs, cursor);
+        },
+        onProgress: (d, n) => deps.recording.setExportProgress(d, n),
+      });
+      deps.recording.downloadClip(URL.createObjectURL(blob), 'avatar-take.mp4');
+      app.log(`export ready · ${prep.durationSec.toFixed(1)}s ${fmt.w}×${fmt.h} mp4`);
+    } catch (err) {
+      app.log(`export failed: ${String(err)}`);
+    } finally {
+      this.exporting = false;
+      deps.recording.setExportUi(false);
+      deps.recording.setExportProgress(0, 0);
+    }
   };
 
   generateNarration = async (): Promise<void> => {
@@ -281,8 +337,38 @@ export class Performer {
     }
   };
 
+  /**
+   * Per-frame avatar drive shared by the realtime tick and the offline exporter:
+   * sets mouth + gaze, advances the narration-segment cursor (emotion + talk clip),
+   * and steps the avatar. `cursor.idx` is the last-applied segment index.
+   */
+  private driveAvatarFrame(
+    t: number,
+    dt: number,
+    mouth: MouthCue,
+    segs: { t: number; gesture: string; emotion?: string }[],
+    cursor: { idx: number },
+  ): void {
+    const { app } = this;
+    const { avatar, stage } = app;
+    avatar.setMouth(mouth);
+    avatar.setGazeTarget(stage.cameraWorldPosition());
+    while (cursor.idx + 1 < segs.length && segs[cursor.idx + 1].t <= t) {
+      cursor.idx++;
+      const seg = segs[cursor.idx];
+      const emo = (seg.emotion as EmotionName) ?? (app.dom.emotionSel.value as EmotionName);
+      avatar.setEmotion(emo);
+      if (avatar.animationClips.length) {
+        this.lastTalkClip = selectTalkClip(seg.gesture as Gesture, emo, this.lastTalkClip);
+        avatar.playClip(this.lastTalkClip);
+      }
+    }
+    avatar.update(dt);
+  }
+
   /** The synced per-frame loop (registered on stage.onFrame). */
   private tick = (dt: number): void => {
+    if (this.exporting) return; // offline export drives the avatar; don't double-step
     const { app, deps } = this;
     const { avatar, stage } = app;
     // Auto-align: keep the face centered while the user owns the camera.
@@ -297,20 +383,10 @@ export class Performer {
       if (t >= 0) {
         deps.timeline.setUiPlayhead(t);
         deps.timeline.playerUpdate(t);
-        avatar.setMouth(this.render.analyser.sample());
-        avatar.setGazeTarget(stage.cameraWorldPosition());
-        while (this.render.idx + 1 < this.render.timeline.length && this.render.timeline[this.render.idx + 1].t <= t) {
-          this.render.idx++;
-          const seg = this.render.timeline[this.render.idx];
-          const emo = (seg.emotion as EmotionName) ?? (app.dom.emotionSel.value as EmotionName);
-          avatar.setEmotion(emo);
-          if (avatar.animationClips.length) {
-            this.lastTalkClip = selectTalkClip(seg.gesture as Gesture, emo, this.lastTalkClip);
-            avatar.playClip(this.lastTalkClip);
-          }
-        }
+        this.driveAvatarFrame(t, dt, this.render.analyser.sample(), this.render.timeline, this.render);
+      } else {
+        avatar.update(dt);
       }
-      avatar.update(dt);
       return;
     }
     if (this._speaking) {
@@ -406,5 +482,7 @@ export class Performer {
         }
       }
     });
+
+    d.exportMp4Btn.addEventListener('click', () => void this.exportMp4());
   }
 }
