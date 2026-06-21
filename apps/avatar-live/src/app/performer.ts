@@ -3,6 +3,7 @@ import { AudioAnalyserLipsync } from '../lipsync/audioLipsync.js';
 import { RealtimeSession } from '../session/realtimeSession.js';
 import { resolveGesture, selectTalkClip, type Gesture } from '../avatar/gestures.js';
 import { exportMp4Offline } from '../capture/offlineExporter.js';
+import { canExportMp4 } from '../capture/mp4Encoder.js';
 import { cueId, type Cue } from '../timeline/types.js';
 import type { EmotionName } from '../avatar/emotion.js';
 import type { MouthCue } from '../avatar/avatarController.js';
@@ -199,6 +200,11 @@ export class Performer {
     if (!prep) return; // buildNarration already logged why
     const fmt = deps.recording.currentFormat();
     const codec = deps.recording.currentCodec();
+    if (!(await canExportMp4(fmt.w, fmt.h))) {
+      app.log('MP4/WebCodecs unavailable here — falling back to the webm quick preview.');
+      void this.perform(true); // realtime MediaRecorder path (webm)
+      return;
+    }
     this.exporting = true;
     deps.recording.setExportUi(true);
     app.log(`export: rendering ${prep.durationSec.toFixed(1)}s @ ${fmt.w}×${fmt.h} ${codec.toUpperCase()} …`);

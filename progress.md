@@ -1,5 +1,8 @@
 # LiveAvatarStream — progress & single source of truth
 
+> **Scene editor / WYSIWYG / three.js migration:** see [`docs/specs/README.md`](docs/specs/README.md)
+> (Jun 20, 2026). This file remains authoritative for GPU validation history.
+
 This document is the authoritative status of the GPU-plane real-model integration
 (plan: *GPU plane real models*). Where the original plan and the implementation
 diverged, **this document wins** — see [Plan-vs-implementation drift](#plan-vs-implementation-drift).
@@ -26,7 +29,7 @@ diverged, **this document wins** — see [Plan-vs-implementation drift](#plan-vs
   `engine_render` → `services/engine-three` produced a real **1920×1080 mp4** in R2
   (`validate_engine_render.py` PASS). Pod `s5jwghwjkwo96q`, gateway
   `https://<pod-id>-8080.proxy.runpod.net`. Requires Xvfb + headless `gl`.
-  Spec: `docs/specs/2026-06-19-threejs-engine-poc.md`.
+  Spec: `docs/specs/2026-06-20-project-context.md`.
 
 ## Phase status
 
@@ -228,24 +231,20 @@ CONTROL_API_URL=https://las-control-api.<acct>.workers.dev \
    `validate_engine_render.py` → expect `PASS` with ≥1280×720 mp4.
 7. (Realtime) run `validate_musetalk.py` on the pod, then a live browser session.
 
-## Scene editor initiative (Jun 19, 2026)
+## Scene editor initiative (Jun 19–20, 2026)
 
-Web-based 3D scene editor (Unity/Blender-like) for authoring performances before
-H100 render. Architecture: `docs/scene-editor-architecture.md`.
+**Full context:** [`docs/specs/2026-06-20-scene-editor-threejs.md`](docs/specs/2026-06-20-scene-editor-threejs.md)
 
 | Item | Status |
 |---|---|
 | `SceneDocument` schema (`@las/protocol`) | **Done** |
-| `apps/scene-editor` MVP (viewport, graph, inspector, dialog) | **Scaffold** |
-| Client Three.js layout preview | **Done** |
-| Save scene (localStorage) | **Done** |
-| Record → `POST /api/engine-jobs` | **Wired** |
-| R2 scene CRUD (`/api/scenes`) | **TODO Phase 1** |
-| H100 authoritative preview (`engine-three POST /preview`) | **TODO Phase 1** |
-| MJPEG / WebRTC live viewport from pod | **TODO Phase 2** |
-| Live speech bridge (MuseTalk + SFU) | **TODO Phase 3** |
+| Custom React editor | **On branch `backup/custom-scene-editor`** |
+| **three.js editor + LAS Render tab** | **Done locally (uncommitted on `main`)** |
+| Record → `POST /api/engine-jobs` with WYSIWYG `scene` | **Wired** |
+| Pod WYSIWYG render (Lee bust, not placeholder) | **Blocked — pod sync pending** |
+| R2 scene CRUD, GPU preview, live stream | **TODO — see specs next-steps** |
 
-Run locally: `npm run dev:editor` (port 5174). Requires control-api for record/live.
+Run: `npm run dev:editor` → http://localhost:5174
 
 ## Plan-vs-implementation drift
 
@@ -268,3 +267,7 @@ The implementation intentionally diverged from the original plan; trust this fil
 - **3D render is co-located on the H100 pod** (`engine-three` on `:8090`, nginx
   `/engine-three/`). Requires Node 20, native `gl`, and **Xvfb** (`DISPLAY=:99` in
   supervisord). Built by `install_deps.sh` §8.
+- 2026-06-21 — SP-1 (Newscast DSL): frame-exact offline MP4/4K export (WebCodecs + Mediabunny)
+  replaces the webm MediaRecorder deliverable in apps/avatar-live; H.264 default, H.265 gated,
+  cloned-voice audio muxed in sync. MediaRecorder kept as "quick preview (webm)". Validated via
+  typecheck + build + manual studio smoke across 720p/1080p/4K/vertical.
