@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { Script } from './dsl.js';
 import { AvatarTier } from './avatar.js';
 import { Resolution } from './manifest.js';
-import { SceneDocument } from './scene.js';
+import { SceneDocument, PostProcessingSpec } from './scene.js';
 
 /** Kinds of GPU work the orchestrator can dispatch. */
 export const JobKind = z.enum([
@@ -11,7 +11,7 @@ export const JobKind = z.enum([
   'voice_clone',
   'offline_render',
   // 3D-engine cinematic path: TTS -> performance manifest -> Three.js render
-  // node on RTX/L40S. See docs/specs/2026-06-19-threejs-engine-poc.md.
+  // node on RTX/L40S. See docs/specs/2026-06-20-project-context.md.
   'engine_render',
 ]);
 export type JobKind = z.infer<typeof JobKind>;
@@ -63,6 +63,8 @@ export const EngineRenderSpec = z.object({
   fps: z.number().int().min(24).max(60).default(24),
   /** Full editor scene graph — when set, the render node uses WYSIWYG camera + layout. */
   scene: SceneDocument.optional(),
+  /** Optional cinematic post-processing "look" applied to the render. */
+  look: PostProcessingSpec.optional(),
 });
 export type EngineRenderSpec = z.infer<typeof EngineRenderSpec>;
 

@@ -56,6 +56,24 @@ export const SceneNode = z.discriminatedUnion('type', [
 ]);
 export type SceneNode = z.infer<typeof SceneNode>;
 
+/** Cinematic post-processing "look" applied to the viewport and captured output. */
+export const PostProcessingSpec = z.object({
+  enabled: z.boolean().default(true),
+  preset: z.enum(['broadcast', 'flat', 'cinematic', 'warm', 'noir']).default('broadcast'),
+  toneMapping: z
+    .enum(['aces_filmic', 'reinhard2', 'uncharted2', 'optimized_cineon', 'linear'])
+    .default('aces_filmic'), // r152-safe (no agx/neutral)
+  exposure: z.number().min(0.1).max(3).default(1.05),
+  bloomIntensity: z.number().min(0).max(2).default(0.3),
+  bloomThreshold: z.number().min(0).max(1).default(0.85),
+  contrast: z.number().min(-1).max(1).default(0.06),
+  saturation: z.number().min(-1).max(1).default(0.06),
+  vignetteOffset: z.number().min(0).max(1).default(0.32),
+  vignetteDarkness: z.number().min(0).max(1).default(0.45),
+  grain: z.number().min(0).max(1).default(0.04),
+});
+export type PostProcessingSpec = z.infer<typeof PostProcessingSpec>;
+
 /** Authoring-time scene graph synced between the web editor and engine-three. */
 export const SceneDocument = z.object({
   version: z.literal(1).default(1),
@@ -71,6 +89,8 @@ export const SceneDocument = z.object({
   nodes: z.array(SceneNode).min(1),
   /** Which camera node drives the render viewport. */
   activeCameraId: z.string(),
+  /** Optional cinematic post-processing "look" for the viewport and captured output. */
+  look: PostProcessingSpec.optional(),
 });
 export type SceneDocument = z.infer<typeof SceneDocument>;
 
