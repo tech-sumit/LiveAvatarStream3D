@@ -279,3 +279,10 @@ The implementation intentionally diverged from the original plan; trust this fil
   PostProcessingSpec added to @las/protocol (SceneDocument + EngineRenderSpec). engine-three pod
   wiring deferred (needs headless-gl float-RT validation). Built via BatonDeck-orchestrated
   subagents; validated via typecheck + build + browser smoke (noir → grayscale baked into export).
+- 2026-06-22 — SP-3 (Newscast DSL): the language MVP. `NewsReportDoc` v2 schema + pure
+  `compileNewsReport` lowering (→ ProjectDoc + Cue[]) in `@las/protocol` (9 vitest golden tests);
+  avatar-live import discriminator compiles an imported `.newscast.json` → applyProject →
+  Generate → Export MP4 (reuses SP-1 export + SP-2 look). Acts/graphics/transitions/`.ncast`
+  deferred to V2 per §9.5. Validated end-to-end: imported showcase.newscast.json → editor
+  configured (script with [emotion][gesture] tags, headline, look, 12 cues) → exported an
+  11.7s 720p MP4 with synced narration. Built via BatonDeck-orchestrated subagents.
