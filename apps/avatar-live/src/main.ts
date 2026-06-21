@@ -1,8 +1,6 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { Stage, type Shot } from './scene/stage.js';
-import { buildNewsStudio } from './scene/studio.js';
-import { AvatarController } from './avatar/avatarController.js';
+import { type Shot } from './scene/stage.js';
 import { BoundaryLipsync } from './lipsync/boundaryLipsync.js';
 import { AudioAnalyserLipsync } from './lipsync/audioLipsync.js';
 import { WebSpeechTts } from './tts/webSpeech.js';
@@ -20,95 +18,35 @@ import type { EmotionName } from './avatar/emotion.js';
 import type { TtsSource } from './tts/types.js';
 
 // ── DOM ────────────────────────────────────────────────────────────────────
-const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const appEl = $('app');
-const stageEl = $('stage');
-const scriptEl = $<HTMLTextAreaElement>('script');
-const liveEl = $<HTMLTextAreaElement>('liveLine');
-const speakBtn = $<HTMLButtonElement>('speak');
-const stopBtn = $<HTMLButtonElement>('stop');
-const voiceSel = $<HTMLSelectElement>('voice');
-const rateEl = $<HTMLInputElement>('rate');
-const pitchEl = $<HTMLInputElement>('pitch');
-const emotionSel = $<HTMLSelectElement>('emotion');
-const shotSel = $<HTMLSelectElement>('shot');
-const glbInput = $<HTMLInputElement>('glb');
-const avatarSel = $<HTMLSelectElement>('avatarSel');
-const glbUrlInput = $<HTMLInputElement>('glbUrl');
-const lipGainEl = $<HTMLInputElement>('lipGain');
-const lipJawEl = $<HTMLInputElement>('lipJaw');
-const lipWideEl = $<HTMLInputElement>('lipWide');
-const lipRoundEl = $<HTMLInputElement>('lipRound');
-const lipSmoothEl = $<HTMLInputElement>('lipSmooth');
-const lipTestBtn = $<HTMLButtonElement>('lipTest');
-const lipSaveBtn = $<HTMLButtonElement>('lipSave');
-const lipDimEl = $<HTMLDivElement>('lipDim');
-const resetViewBtn = $<HTMLButtonElement>('resetView');
-const centerAvatarBtn = $<HTMLButtonElement>('centerAvatar');
-const gizmoBtn = $<HTMLButtonElement>('gizmoBtn');
-const gizmoModesEl = $<HTMLDivElement>('gizmoModes');
-const moveModeBtn = $<HTMLButtonElement>('moveMode');
-const rotateModeBtn = $<HTMLButtonElement>('rotateMode');
-const loadUrlBtn = $<HTMLButtonElement>('loadUrl');
-const recordBtn = $<HTMLButtonElement>('record');
-const downloadEl = $<HTMLAnchorElement>('download');
-const statusEl = $<HTMLSpanElement>('avatarStatus');
-const logEl = $<HTMLPreElement>('log');
-const pipFrameEl = $<HTMLDivElement>('pipFrame');
-const captureFormatSel = $<HTMLSelectElement>('captureFormat');
-const gateLabelEl = $<HTMLSpanElement>('gateLabel');
-const studioToggle = $<HTMLButtonElement>('studioToggle');
-const idleMotionToggle = $<HTMLButtonElement>('idleMotionToggle');
-const headlineInput = $<HTMLInputElement>('headline');
-const lightPresetSel = $<HTMLSelectElement>('lightPreset');
-const lightKey = $<HTMLInputElement>('lightKey');
-const lightFill = $<HTMLInputElement>('lightFill');
-const lightRim = $<HTMLInputElement>('lightRim');
-const lightAmbient = $<HTMLInputElement>('lightAmbient');
-const exposureEl = $<HTMLInputElement>('exposure');
-const warmthEl = $<HTMLInputElement>('warmth');
-const projectNameEl = $<HTMLInputElement>('projectName');
-const saveTimelineBtn = $<HTMLButtonElement>('saveTimeline');
-const loadTimelineBtn = $<HTMLButtonElement>('loadTimeline');
-const savedListSel = $<HTMLSelectElement>('savedList');
-const timelineFileEl = $<HTMLInputElement>('timelineFile');
-const cueInspectorEl = $<HTMLDivElement>('cueInspector');
-const cueTypeEl = $<HTMLDivElement>('cueType');
-const cueStartEl = $<HTMLInputElement>('cueStart');
-const cueDurEl = $<HTMLInputElement>('cueDur');
-const cueSetViewBtn = $<HTMLButtonElement>('cueSetView');
-const cueDeleteBtn = $<HTMLButtonElement>('cueDelete');
-const cueAudioEl = $<HTMLDivElement>('cueAudio');
-const cueVolEl = $<HTMLInputElement>('cueVol');
-const cueFadeInEl = $<HTMLInputElement>('cueFadeIn');
-const cueFadeOutEl = $<HTMLInputElement>('cueFadeOut');
+import { StudioContext } from './app/context.js';
+const app = new StudioContext();
+const { stage, studio, avatar } = app;
+const log = app.log;
+const audioCtx = app.audio;
+const {
+  appEl, scriptEl, liveEl, speakBtn, stopBtn, voiceSel, rateEl, pitchEl,
+  emotionSel, shotSel, glbInput, avatarSel, glbUrlInput, lipGainEl, lipJawEl,
+  lipWideEl, lipRoundEl, lipSmoothEl, lipTestBtn, lipSaveBtn, lipDimEl,
+  resetViewBtn, centerAvatarBtn, gizmoBtn, gizmoModesEl, moveModeBtn,
+  rotateModeBtn, loadUrlBtn, recordBtn, downloadEl, statusEl, pipFrameEl,
+  captureFormatSel, gateLabelEl, studioToggle, idleMotionToggle, headlineInput,
+  lightPresetSel, lightKey, lightFill, lightRim, lightAmbient, exposureEl,
+  warmthEl, projectNameEl, saveTimelineBtn, loadTimelineBtn, savedListSel,
+  timelineFileEl, cueInspectorEl, cueTypeEl, cueStartEl, cueDurEl, cueSetViewBtn,
+  cueDeleteBtn, cueAudioEl, cueVolEl, cueFadeInEl, cueFadeOutEl, alignFaceBtn,
+  autoAlignBtn, screenUrlInput, screenLoadBtn, screenFileInput, screenCastBtn,
+  screenStopBtn, camSourceBtn, audioFileEl, timelineEl, timelineToggle,
+} = app.dom;
 
-function log(msg: string): void {
-  const ts = new Date().toLocaleTimeString();
-  logEl.textContent = `[${ts}] ${msg}\n${logEl.textContent ?? ''}`.slice(0, 4000);
-}
+// log, the scene/avatar singletons, and the shared AudioContext now live in StudioContext.
 
 // ── Scene + avatar ───────────────────────────────────────────────────────────
-const stage = new Stage(stageEl);
-const studio = buildNewsStudio();
-stage.add(studio.group);
-const avatar = new AvatarController();
-avatar.setRenderer(stage.renderer);
-stage.add(avatar.group);
 stage.frame(avatar.headCenter, avatar.headHeight, shotSel.value as Shot);
 statusEl.textContent = avatar.description;
 
 // Shared AudioContext + a MediaStream destination so the voice (Web Audio) can
 // be mixed into recordings. Created on the first user gesture (autoplay policy).
-let sharedCtx: AudioContext | null = null;
-let recordDest: MediaStreamAudioDestinationNode | null = null;
-function audioCtx(): AudioContext {
-  if (!sharedCtx) {
-    sharedCtx = new AudioContext();
-    recordDest = sharedCtx.createMediaStreamDestination();
-  }
-  return sharedCtx;
-}
+// sharedCtx / recordDest / audioCtx live in StudioContext (recordDest → app.recordDest).
 
 // Shared loader for the default avatar, file uploads, and URL loads. bodyAnim:
 // true/false forces body animation on/off; undefined → humanoid auto-detect.
@@ -402,7 +340,7 @@ let activeTts: TtsSource = WebSpeechTts.supported()
 
 void (async () => {
   if (await ElevenLabsTts.available()) {
-    activeTts = new ElevenLabsTts('/eleven', audioCtx, () => recordDest);
+    activeTts = new ElevenLabsTts('/eleven', audioCtx, () => app.recordDest);
     log('voice: ElevenLabs (real TTS) — lip-sync from the actual waveform');
   } else {
     log('voice: browser (Web Speech). Add ELEVENLABS_API_KEY to apps/avatar-live/.env for ElevenLabs.');
@@ -531,8 +469,6 @@ centerAvatarBtn.addEventListener('click', () => {
 function faceWorld(): THREE.Vector3 {
   return avatar.headCenter.clone().add(avatar.group.position);
 }
-const alignFaceBtn = $<HTMLButtonElement>('alignFace');
-const autoAlignBtn = $<HTMLButtonElement>('autoAlign');
 let autoAlignOn = false;
 alignFaceBtn.addEventListener('click', () => stage.alignToFace(faceWorld()));
 autoAlignBtn.addEventListener('click', () => {
@@ -696,12 +632,6 @@ let castAudioNode: MediaStreamAudioSourceNode | null = null;
 // What's on the wall, for project persistence (a live cast can't be persisted).
 let backScreen: { kind: 'url' | 'r2' | 'file'; src: string; blob?: Blob } | null = null;
 
-const screenUrlInput = $<HTMLInputElement>('screenUrl');
-const screenLoadBtn = $<HTMLButtonElement>('screenLoad');
-const screenFileInput = $<HTMLInputElement>('screenFile');
-const screenCastBtn = $<HTMLButtonElement>('screenCast');
-const screenStopBtn = $<HTMLButtonElement>('screenStop');
-const camSourceBtn = $<HTMLButtonElement>('camSource');
 
 function wireWallAudio(): void {
   if (wallAudioWired) return;
@@ -709,7 +639,7 @@ function wireWallAudio(): void {
   try {
     const src = ctx.createMediaElementSource(wallVideo);
     src.connect(ctx.destination);
-    if (recordDest) src.connect(recordDest);
+    if (app.recordDest) src.connect(app.recordDest);
     wallAudioWired = true;
   } catch {
     /* already wired */
@@ -768,9 +698,9 @@ screenCastBtn.addEventListener('click', async () => {
     // Mute the wall element (its tab is already audible locally → no echo), but tap
     // the cast stream's audio into the recording so the captured clip has it.
     wallVideo.muted = true;
-    if (castStream.getAudioTracks().length && recordDest) {
+    if (castStream.getAudioTracks().length && app.recordDest) {
       castAudioNode = audioCtx().createMediaStreamSource(castStream);
-      castAudioNode.connect(recordDest);
+      castAudioNode.connect(app.recordDest);
     }
     showOnWall();
     castStream.getVideoTracks()[0]?.addEventListener('ended', () => {
@@ -937,7 +867,7 @@ lipSaveBtn.addEventListener('click', async () => {
 // pre-synthesis) falls back to live capture while you press Speak.
 const recorder = new Recorder(
   () => stage.captureStream(30),
-  () => recordDest?.stream.getAudioTracks()[0] ?? null,
+  () => app.recordDest?.stream.getAudioTracks()[0] ?? null,
 );
 let renderSrc: AudioBufferSourceNode | null = null;
 
@@ -1065,7 +995,7 @@ async function perform(record: boolean): Promise<void> {
   const gain = ctx.createGain();
   srcNode.connect(gain);
   gain.connect(ctx.destination);
-  if (recordDest) gain.connect(recordDest);
+  if (app.recordDest) gain.connect(app.recordDest);
   const ana = new AudioAnalyserLipsync(ctx, gain, lipCfg.smoothing);
 
   if (record) {
@@ -1127,7 +1057,6 @@ function stopPerform(): void {
 const audioBuffers = new Map<string, AudioBuffer>(); // cue.id → decoded buffer
 const audioBlobs = new Map<string, Blob>(); // cue.id → original bytes (for R2 upload)
 let scheduledAudio: AudioBufferSourceNode[] = [];
-const audioFileEl = $<HTMLInputElement>('audioFile');
 
 // Drop decoded buffers / blobs for audio cues that no longer exist (e.g. deleted).
 function pruneAudioMaps(): void {
@@ -1199,7 +1128,7 @@ function scheduleAudioCues(ctx: AudioContext, startAt: number): void {
     const gain = ctx.createGain();
     src.connect(gain);
     gain.connect(ctx.destination);
-    if (recordDest) gain.connect(recordDest);
+    if (app.recordDest) gain.connect(app.recordDest);
 
     const g = gain.gain;
     g.setValueAtTime(fi > 0 ? 0.0001 : vol, t0);
@@ -1258,8 +1187,6 @@ function setSpeakingUi(on: boolean): void {
 }
 
 // ── Director timeline UI + preview ───────────────────────────────────────────
-const timelineEl = $<HTMLDivElement>('timeline');
-const timelineToggle = $<HTMLButtonElement>('timelineToggle');
 function buildTimelineUI(): void {
   if (timelineUI) return;
   timelineUI = new TimelineUI(timelineEl, timeline, {
