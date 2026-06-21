@@ -233,6 +233,10 @@ export class Performer {
       this.exporting = false;
       deps.recording.setExportUi(false);
       deps.recording.setExportProgress(0, 0);
+      // The offline loop left the avatar on the last beat's gesture — rest to idle.
+      app.avatar.setSilent();
+      app.avatar.setTurn(0);
+      if (app.avatar.animationClips.length) app.avatar.playClip('idle');
     }
   };
 
@@ -428,6 +432,10 @@ export class Performer {
       this._speaking = false;
       this.analyser = null;
       this.setSpeakingUi(false);
+      // Rest to idle so a barge-in stop doesn't freeze the last gesture (wide hands).
+      app.avatar.setSilent();
+      app.avatar.setTurn(0);
+      if (app.avatar.animationClips.length) app.avatar.playClip('idle');
       app.log('stopped (barge-in)');
     });
     d.liveEl.addEventListener('keydown', (e) => {
