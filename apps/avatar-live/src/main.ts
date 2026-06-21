@@ -27,7 +27,7 @@ timeline.attachPerformer(performer);
 const projects = new ProjectStore(app, { library, voices, lighting, backScreen, timeline, performer });
 
 // Busy guard: block avatar switches / preview while performing, previewing, or recording.
-app.isBusy = () => performer.busy || timeline.busy || recording.busy;
+app.isBusy = () => performer.busy || timeline.busy || recording.active;
 
 lighting.init();
 recording.init();

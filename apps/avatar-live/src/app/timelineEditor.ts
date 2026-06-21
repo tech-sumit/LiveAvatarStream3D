@@ -41,7 +41,7 @@ export class TimelineEditor {
   private audioBuffers = new Map<string, AudioBuffer>(); // cue.id → decoded buffer
   private audioBlobs = new Map<string, Blob>(); // cue.id → original bytes (for R2 upload)
   private scheduledAudio: AudioBufferSourceNode[] = [];
-  private performer!: Performer; // late-bound (set by main after both exist)
+  private performer: Performer | null = null; // late-bound (set by main after both exist)
 
   constructor(private app: StudioContext) {
     this.player = new TimelinePlayer(app.stage, app.avatar);
@@ -176,8 +176,10 @@ export class TimelineEditor {
     this.ui?.setPlayhead(0);
   };
   private togglePreview = (): void => {
-    if (this.performer.isRendering) {
-      this.performer.stop(); // narration playback in progress → stop
+    const p = this.performer;
+    if (!p) return;
+    if (p.isRendering) {
+      p.stop(); // narration playback in progress → stop
       return;
     }
     if (this.previewStart != null) {
@@ -186,7 +188,7 @@ export class TimelineEditor {
     }
     // If narration is generated, Preview plays it lip-synced; otherwise it's a
     // silent camera/motion rehearsal.
-    if (this.performer.hasNarration) void this.performer.perform(false);
+    if (p.hasNarration) void p.perform(false);
     else this.startPreview();
   };
   private seekPreview = (t: number): void => {
@@ -269,10 +271,16 @@ export class TimelineEditor {
       onCapturePose: this.captureCameraCue,
       onRecordPath: this.toggleCameraRecord,
       onSelect: this.showCueInspector,
-      onGenerate: () => void this.performer.generateNarration(),
+      onGenerate: () => void this.performer?.generateNarration(),
       onAddAudio: this.addAudioClip,
     });
   };
+
+  /** Enable/disable the timeline's own Generate button (created by TimelineUI). */
+  setGenerateBusy(on: boolean): void {
+    const gen = document.getElementById('tlGen') as HTMLButtonElement | null;
+    if (gen) gen.disabled = on;
+  }
 
   serialize(): { timeline: { duration: number; cues: Cue[] } } {
     return { timeline: { duration: this.timeline.duration, cues: this.timeline.cues } };
@@ -352,7 +360,7 @@ export class TimelineEditor {
     // Arrow-key camera navigation (when the director isn't driving the camera).
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
-      if (this.previewStart != null || this.performer.isRendering) return; // director owns the camera
+      if (this.previewStart != null || this.performer?.isRendering) return; // director owns the camera
       const s = e.shiftKey ? 0.25 : 0.08;
       switch (e.key) {
         case 'ArrowLeft': this.app.stage.nudgeCamera(-s, 0, 0); break;
