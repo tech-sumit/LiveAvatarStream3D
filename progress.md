@@ -270,4 +270,12 @@ The implementation intentionally diverged from the original plan; trust this fil
 - 2026-06-21 — SP-1 (Newscast DSL): frame-exact offline MP4/4K export (WebCodecs + Mediabunny)
   replaces the webm MediaRecorder deliverable in apps/avatar-live; H.264 default, H.265 gated,
   cloned-voice audio muxed in sync. MediaRecorder kept as "quick preview (webm)". Validated via
-  typecheck + build + manual studio smoke across 720p/1080p/4K/vertical.
+  typecheck + build + manual studio smoke across 720p/1080p/4K/vertical. Verified end-to-end:
+  ElevenLabs narration → 720p/H.264 + 1080p/H.265 MP4s with synced audio (decodable audio track,
+  correct duration/dims).
+- 2026-06-21 — SP-2 (Newscast DSL): camera-filter "look" system in apps/avatar-live via pmndrs
+  postprocessing@6.35.6 (bloom → ACES tone map → contrast/saturation/vignette/grain → SMAA),
+  applied to viewport + capture/export composers so the exported MP4 inherits the look.
+  PostProcessingSpec added to @las/protocol (SceneDocument + EngineRenderSpec). engine-three pod
+  wiring deferred (needs headless-gl float-RT validation). Built via BatonDeck-orchestrated
+  subagents; validated via typecheck + build + browser smoke (noir → grayscale baked into export).

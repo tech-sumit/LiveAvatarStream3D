@@ -3,6 +3,7 @@
 // All behaviour lives in the controllers under ./app/.
 import { StudioContext } from './app/context.js';
 import { Lighting } from './app/lighting.js';
+import { Look } from './app/look.js';
 import { Recording } from './app/recording.js';
 import { BackScreen } from './app/backScreen.js';
 import { AvatarTransform } from './app/avatarTransform.js';
@@ -16,6 +17,7 @@ const app = new StudioContext();
 
 // Leaves + library/timeline → performer (the engine) → projectStore (touches all).
 const lighting = new Lighting(app);
+const look = new Look(app);
 const recording = new Recording(app);
 const backScreen = new BackScreen(app);
 const transform = new AvatarTransform(app);
@@ -24,12 +26,13 @@ const library = new AvatarLibrary(app);
 const timeline = new TimelineEditor(app);
 const performer = new Performer(app, { voices, recording, library, timeline, transform });
 timeline.attachPerformer(performer);
-const projects = new ProjectStore(app, { library, voices, lighting, backScreen, timeline, performer });
+const projects = new ProjectStore(app, { library, voices, lighting, look, backScreen, timeline, performer });
 
 // Busy guard: block avatar switches / preview while performing, previewing, or recording.
 app.isBusy = () => performer.busy || timeline.busy || recording.active;
 
 lighting.init();
+look.init();
 recording.init();
 backScreen.init();
 transform.init();
