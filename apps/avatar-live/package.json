@@ -12,6 +12,7 @@
     "import-avatar": "node scripts/import-avatar.mjs"
   },
   "dependencies": {
+    "mediabunny": "^1.49.0",
     "three": "0.152.2"
   },
   "devDependencies": {
