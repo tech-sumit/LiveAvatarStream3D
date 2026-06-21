@@ -29,7 +29,7 @@ body {
 #app {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr) 336px;
-  grid-template-rows: 46px minmax(0, 1fr) 0px;
+  grid-template-rows: minmax(46px, auto) minmax(0, 1fr) 0px;
   grid-template-areas:
     'top top top'
     'left center right'
@@ -37,16 +37,17 @@ body {
   height: 100vh;
 }
 #app.tl-open {
-  grid-template-rows: 46px minmax(0, 1fr) 244px;
+  grid-template-rows: minmax(46px, auto) minmax(0, 1fr) 244px;
 }
 
 /* Top bar */
 #topbar {
   grid-area: top;
   display: flex;
+  flex-wrap: wrap; /* never clip controls off-screen; wrap to a second row when narrow */
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
+  gap: 6px 10px;
+  padding: 6px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
@@ -97,7 +98,8 @@ body {
   font-size: 12px;
 }
 #savedList,
-#captureFormat {
+#captureFormat,
+#videoCodec {
   background: var(--panel2);
   color: var(--text);
   border: 1px solid var(--line);
@@ -105,6 +107,13 @@ body {
   padding: 5px 8px;
   font-size: 12px;
   max-width: 150px;
+}
+/* The toolbar download link can carry a long filename — keep it from blowing out the row. */
+#topbar a#download {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #stage {
