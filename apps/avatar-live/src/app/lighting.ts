@@ -38,6 +38,19 @@ export class Lighting {
     stage.setLightColor('key', mixColor(0xcfe0ff, 0xffcf8e, Number(dom.warmthEl.value) / 100));
   };
 
+  private setStudioOn(on: boolean): void {
+    this.studioOn = on;
+    this.app.studio.group.visible = on;
+    this.app.dom.studioToggle.textContent = `Studio: ${on ? 'On' : 'Off'}`;
+    this.app.dom.studioToggle.classList.toggle('primary', on);
+  }
+  private setIdleMotion(on: boolean): void {
+    this.idleMotionOn = on;
+    this.app.avatar.setIdleMotion(on);
+    this.app.dom.idleMotionToggle.textContent = `Idle motion: ${on ? 'On' : 'Off'}`;
+    this.app.dom.idleMotionToggle.classList.toggle('primary', on);
+  }
+
   serialize() {
     const d = this.app.dom;
     return {
@@ -62,7 +75,7 @@ export class Lighting {
     headline?: string;
     lights?: { key: number; fill: number; rim: number; ambient: number; exposure: number; warmth: number; preset: string };
   }): void {
-    const { studio, avatar, dom } = this.app;
+    const { studio, dom } = this.app;
     if (doc.lights) {
       dom.lightKey.value = String(doc.lights.key);
       dom.lightFill.value = String(doc.lights.fill);
@@ -73,14 +86,8 @@ export class Lighting {
       dom.lightPresetSel.value = doc.lights.preset ?? 'studio';
       this.applyLights();
     }
-    this.studioOn = doc.studioOn ?? true;
-    studio.group.visible = this.studioOn;
-    dom.studioToggle.textContent = `Studio: ${this.studioOn ? 'On' : 'Off'}`;
-    dom.studioToggle.classList.toggle('primary', this.studioOn);
-    this.idleMotionOn = doc.idleMotion ?? false;
-    avatar.setIdleMotion(this.idleMotionOn);
-    dom.idleMotionToggle.textContent = `Idle motion: ${this.idleMotionOn ? 'On' : 'Off'}`;
-    dom.idleMotionToggle.classList.toggle('primary', this.idleMotionOn);
+    this.setStudioOn(doc.studioOn ?? true);
+    this.setIdleMotion(doc.idleMotion ?? false);
     if (doc.headline) {
       dom.headlineInput.value = doc.headline;
       studio.setHeadline(doc.headline);
@@ -88,24 +95,14 @@ export class Lighting {
   }
 
   init(): void {
-    const { studio, avatar, dom, log } = this.app;
-    dom.studioToggle.addEventListener('click', () => {
-      this.studioOn = !this.studioOn;
-      studio.group.visible = this.studioOn;
-      dom.studioToggle.textContent = `Studio: ${this.studioOn ? 'On' : 'Off'}`;
-      dom.studioToggle.classList.toggle('primary', this.studioOn);
-    });
+    const { studio, dom, log } = this.app;
+    dom.studioToggle.addEventListener('click', () => this.setStudioOn(!this.studioOn));
     dom.headlineInput.addEventListener('input', () => {
       const v = dom.headlineInput.value.trim();
       if (v) studio.setHeadline(v);
     });
-    avatar.setIdleMotion(false);
-    dom.idleMotionToggle.addEventListener('click', () => {
-      this.idleMotionOn = !this.idleMotionOn;
-      avatar.setIdleMotion(this.idleMotionOn);
-      dom.idleMotionToggle.textContent = `Idle motion: ${this.idleMotionOn ? 'On' : 'Off'}`;
-      dom.idleMotionToggle.classList.toggle('primary', this.idleMotionOn);
-    });
+    this.setIdleMotion(false);
+    dom.idleMotionToggle.addEventListener('click', () => this.setIdleMotion(!this.idleMotionOn));
     [dom.lightKey, dom.lightFill, dom.lightRim, dom.lightAmbient, dom.exposureEl, dom.warmthEl].forEach((el) =>
       el.addEventListener('input', this.applyLights),
     );

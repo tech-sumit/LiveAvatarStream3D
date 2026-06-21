@@ -175,12 +175,11 @@ export class Performer {
   };
 
   generateNarration = async (): Promise<void> => {
-    const gen = document.getElementById('tlGen') as HTMLButtonElement | null;
-    if (gen) gen.disabled = true;
+    this.deps.timeline.setGenerateBusy(true);
     try {
       await this.buildNarration();
     } finally {
-      if (gen) gen.disabled = false;
+      this.deps.timeline.setGenerateBusy(false);
     }
   };
 
@@ -222,14 +221,6 @@ export class Performer {
     const startAt = ctx.currentTime + 0.12;
     this.renderSrc = srcNode;
     this.render = { ctx, start: startAt, analyser: ana, timeline: this.narrationSegs, idx: -1 };
-    deps.timeline.beginPlayback(); // camera (if framing cues) + motion + screen cuts off the clock
-    deps.timeline.scheduleAudioCues(ctx, startAt); // background-music / SFX clips, mixed + captured
-    deps.timeline.setUiPlaying(!record);
-    app.log(
-      record
-        ? `render: recording ${app.stage.captureLabel()} · ${(out.length / out.sampleRate).toFixed(1)}s …`
-        : `playing narration · ${(out.length / out.sampleRate).toFixed(1)}s …`,
-    );
 
     srcNode.onended = async () => {
       this.render = null;
@@ -250,7 +241,35 @@ export class Performer {
         app.log('narration playback finished.');
       }
     };
-    srcNode.start(startAt);
+
+    // If anything in the start path throws, reset state so the busy guard can't wedge.
+    try {
+      deps.timeline.beginPlayback(); // camera (if framing cues) + motion + screen cuts off the clock
+      deps.timeline.scheduleAudioCues(ctx, startAt); // background-music / SFX clips, mixed + captured
+      deps.timeline.setUiPlaying(!record);
+      app.log(
+        record
+          ? `render: recording ${app.stage.captureLabel()} · ${(out.length / out.sampleRate).toFixed(1)}s …`
+          : `playing narration · ${(out.length / out.sampleRate).toFixed(1)}s …`,
+      );
+      srcNode.start(startAt);
+    } catch (err) {
+      app.log(`perform failed: ${String(err)}`);
+      this.render = null;
+      this.renderSrc = null;
+      deps.timeline.stopAudioCues();
+      deps.timeline.endPlayback();
+      deps.timeline.setUiPlaying(false);
+      if (record) {
+        try {
+          await deps.recording.stop();
+        } catch {
+          /* recorder may not have started */
+        }
+        deps.recording.setRecUi(false);
+      }
+      this.performing = false;
+    }
   };
 
   /** Stop an in-progress perform() (preview or record) — onended does the cleanup. */

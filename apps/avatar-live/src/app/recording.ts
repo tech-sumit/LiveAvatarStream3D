@@ -23,9 +23,6 @@ export class Recording {
   get active(): boolean {
     return this.recorder.active;
   }
-  get busy(): boolean {
-    return this.recorder.active;
-  }
 
   start(): void {
     this.recorder.start();
