@@ -199,3 +199,13 @@ and the recorder can mux the audio track. See
 **Record camera** captures the canvas (the virtual camera) to a `.webm`.
 Web Speech audio is not capturable by the browser, so local-demo clips are
 video-only; the cloned-voice (Web Audio) path can include audio.
+
+### Export
+
+- **⬇ Export MP4** renders the script frame-exactly **offline** (WebCodecs + Mediabunny)
+  to a `.mp4` at the selected resolution (720p–4K, vertical, square) in H.264 (default)
+  or H.265 (when the browser supports it). Audio (cloned-voice narration) is muxed in
+  sync. The preview may freeze during export — it renders on the main thread.
+- **● Quick preview (webm)** is the old realtime `MediaRecorder` capture, kept for a
+  fast throwaway preview. Web Speech audio is not capturable; use a cloned voice for
+  audio in the exported MP4.

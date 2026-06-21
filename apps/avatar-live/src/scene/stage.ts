@@ -210,6 +210,20 @@ export class Stage {
     return this.outputCanvas.captureStream(fps);
   }
 
+  /**
+   * Render one output frame on demand (offline export) and return the capture
+   * canvas. Mirrors the per-frame output render in the internal loop, but is
+   * called synchronously by the exporter rather than by requestAnimationFrame.
+   */
+  renderOutputFrame(): HTMLCanvasElement {
+    if (this.outputIsScreen) {
+      this.outputRenderer.render(this.screenScene, this.screenCam);
+    } else {
+      this.outputRenderer.render(this.scene, this.camera);
+    }
+    return this.outputCanvas;
+  }
+
   /** Provide the video the "screen source" cut renders (the studio wall feed). */
   setScreenSource(video: HTMLVideoElement | null): void {
     this.screenVideo = video;
