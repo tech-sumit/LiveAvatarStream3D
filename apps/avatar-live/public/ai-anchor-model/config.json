@@ -1,0 +1,8 @@
+{
+  "label": "AI Anchor (full anatomy)",
+  "description": "Route A: Avaturn anatomical base (eyes, teeth, tongue, mouth cavity + 73 ARKit visemes + rig) wrapped to the generated person's face proportions and recolored (dark hair, navy suit). Full viseme lip-sync.",
+  "model": "model.glb",
+  "shot": "medium",
+  "bodyAnim": true,
+  "lipsync": { "gain": 1.0, "jaw": 1.0, "wide": 1.0, "round": 1.0, "smoothing": 0.2 }
+}
