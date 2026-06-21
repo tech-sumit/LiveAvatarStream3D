@@ -1,3 +1,4 @@
+import { validateNewsReportDoc, compileNewsReport } from '@las/protocol';
 import { r2Available, r2GetJson, r2List, r2PutBlob, r2PutJson, r2Url } from '../storage/r2.js';
 import type { Cue } from '../timeline/types.js';
 import type { StudioContext } from './context.js';
@@ -245,9 +246,19 @@ export class ProjectStore {
       try {
         const data = JSON.parse(await file.text());
         const isObj = data && typeof data === 'object';
+        const isNewsReport =
+          isObj &&
+          (data as { version?: unknown }).version === 2 &&
+          (data as { meta?: unknown }).meta &&
+          Array.isArray((data as { rundown?: unknown }).rundown);
         const isProject = isObj && (typeof data.script === 'string' || (data.timeline && typeof data.timeline === 'object'));
         const isTimeline = isObj && Array.isArray(data.cues);
-        if (isProject) {
+        if (isNewsReport) {
+          const { project } = compileNewsReport(validateNewsReportDoc(data));
+          await this.applyProject(project as unknown as ProjectDoc);
+          d.projectNameEl.value = file.name.replace(/\.newscast\.json$|\.(project|timeline)\.json$|\.json$/i, '');
+          this.app.log(`imported newscast: ${(data as { meta: { title?: string } }).meta.title ?? 'untitled'}`);
+        } else if (isProject) {
           await this.applyProject(data as ProjectDoc);
           d.projectNameEl.value = file.name.replace(/\.(project|timeline)\.json$|\.json$/i, '');
         } else if (isTimeline) {
