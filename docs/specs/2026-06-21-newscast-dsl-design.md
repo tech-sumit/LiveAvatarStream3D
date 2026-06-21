@@ -22,6 +22,8 @@ The **Newscast DSL** is one canonical, version-stamped document — the `NewsRep
 8. [Subsystem designs — SP-1 MP4/4K export + SP-2 camera filters/look](#8-subsystem-designs--sp-1-mp44k-export--sp-2-camera-filterslook)
 9. [Worked examples + testing + build order](#9-worked-examples--testing--build-order)
 
+> **Top-level structure.** A `NewsReportDoc` is a sequence of **acts** (Act 1, Act 2, …), each with **setup → action → packup/finishing** phases; the rundown of sections lives in each act's `action`. See [§2.1a](#21a-acts--production-phases--act-actphase-stageop).
+
 > **Reading guide.** §1 orients. **§2 is the single source of truth for every type, field, and enum** — when any other section appears to disagree on a name or shape, §2 wins. §3 (authoring surfaces), §4 (vocabulary), §5 (rundown/timing), §6 (feature semantics), §7 (compile/runtime), and §8 (export/look subsystems) all reference §2 rather than redefining it. §9 gives conformance-anchor examples that validate against §2 + §3 + §4.
 
 > **Tiering.** Every feature is tagged **MVP / V2 / Later**. The **MVP cut line** sits between build steps **SP-3 and SP-4** (see §9.5). MVP = author a `NewsReportDoc` v2 (canonical JSON), import into avatar-live, Record a frame-exact MP4 with the `broadcast` look, driving narration + emotion + gesture + camera + pause + lighting + back-screen + headline + music across a basic multi-section rundown (READER/VO sections). `.ncast` text, full SSML, transitions, lower-thirds/ticker, ducking, WPM auto-timing, wired postures, and gaze are **V2**; multi-camera, multi-avatar, brand kit, captions, ad-break scheduling, and time-manipulated B-roll are **Later**.
@@ -32,7 +34,7 @@ The **Newscast DSL** is one canonical, version-stamped document — the `NewsRep
 
 ### 1.1 Overview
 
-The **Newscast DSL** is a single, canonical, version-stamped document — the `NewsReportDoc` (`version: 2`) — that fully describes a televised news broadcast: a multi-section **rundown** of stories, each with narration, avatar performance (emotion / gesture / posture / gaze), camera motion, transitions, lighting, back-screen / set, on-screen graphics, and audio. Importing one `NewsReportDoc` configures the *entire* editor; pressing **Record** performs the whole document deterministically and delivers a finished MP4. The design intent is "director + writer + producer combined": the writer authors copy, the director blocks camera and performance, the producer schedules graphics, audio, ad-breaks, and the look — all in one artifact.
+The **Newscast DSL** is a single, canonical, version-stamped document — the `NewsReportDoc` (`version: 2`) — that fully describes a televised news broadcast: a multi-section **rundown** of stories, each with narration, avatar performance (emotion / gesture / posture / gaze), camera motion, transitions, lighting, back-screen / set, on-screen graphics, and audio. Importing one `NewsReportDoc` configures the *entire* editor; pressing **Record** performs the whole document deterministically and delivers a finished MP4. The design intent is "director + writer + producer combined": the writer authors copy, the director blocks camera and performance, the producer schedules graphics, audio, ad-breaks, and the look — all in one artifact. The show is divided into **acts** (Act 1, Act 2, …), each a self-contained production unit with explicit **setup → action → packup/finishing** phases — dress the set, roll the performance, strike the set — so a whole broadcast splits into directable parts the way a film divides into acts (see [§2.1a](#21a-acts--production-phases--act-actphase-stageop)).
 
 The document drives **two render backends** from one compile step:
 
@@ -149,12 +151,15 @@ All types are authored as **zod schemas** and the TypeScript types are `z.infer`
 
 ```ts
 export const NewsReportDoc = z.object({
-  version:  z.literal(2),                    // REQUIRED. Schema version discriminator. Always 2 for this DSL.
-  meta:     Meta,                            // REQUIRED. Show-level metadata, anchors, fps, language.
-  brandKit: BrandKit.optional(),             // OPTIONAL (Later). Channel-wide visual identity reused by graphics.
-  look:     PostProcessingSpec.optional(),   // OPTIONAL (MVP). Show-level post FX; root of the look carry-forward chain.
-  defaults: DocDefaults.optional(),          // OPTIONAL. Default beat/section values applied before sticky carry-forward.
-  rundown:  z.array(Section).min(1),          // REQUIRED. Ordered newsroom rundown; ≥1 section. The performance.
+  version:  z.literal(2),                       // REQUIRED. Schema version discriminator. Always 2 for this DSL.
+  meta:     Meta,                               // REQUIRED. Show-level metadata, anchors, fps, language.
+  brandKit: BrandKit.optional(),                // OPTIONAL (Later). Channel-wide visual identity reused by graphics.
+  look:     PostProcessingSpec.optional(),      // OPTIONAL (MVP). Show-level post FX; root of the look carry-forward chain.
+  defaults: DocDefaults.optional(),             // OPTIONAL. Default beat/section values applied before sticky carry-forward.
+  acts:     z.array(Act).min(1).optional(),     // PREFERRED. The show as an ordered sequence of production acts (setup/action/packup). See §2.1a.
+  rundown:  z.array(Section).min(1).optional(),  // SUGAR. A bare rundown ≡ one implicit single act (empty setup/packup).
+}).refine((d) => (d.acts ? 1 : 0) + (d.rundown ? 1 : 0) === 1, {
+  message: 'Provide exactly one of `acts` (preferred) or `rundown` (single-act sugar).',
 });
 export type NewsReportDoc = z.infer<typeof NewsReportDoc>;
 ```
@@ -166,7 +171,92 @@ export type NewsReportDoc = z.infer<typeof NewsReportDoc>;
 | `brandKit` | `BrandKit` | — | — | Palette/fonts/logo/lower-third style reused across all graphics (Later). |
 | `look` | `PostProcessingSpec` | — | `'broadcast'` look at compile | Root post-processing. Sticky base for every `Section.lookOverride`/`Beat.lookOverride`. |
 | `defaults` | `DocDefaults` | — | see §2.4 | Doc-wide fallbacks for emotion/gesture/posture/pause/camera so beats can be terse. |
-| `rundown` | `Section[]` (≥1) | ✓ | — | The ordered list of sections that, performed in order, *is* the newscast. |
+| `acts` | `Act[]` (≥1) | one\* | — | **Preferred top-level structure** — the ordered acts, each with `setup`/`action`/`packup` phases (§2.1a). Performed in order, the acts *are* the newscast. |
+| `rundown` | `Section[]` (≥1) | one\* | — | **Single-act sugar** — a bare rundown with no acts; the compiler wraps it as `acts:[{ setup:{}, action:{ rundown }, packup:{} }]`. |
+
+> \* **Exactly one** of `acts` or `rundown` is provided (the `.refine` enforces it). Everything downstream (§5/§6/§7) operates on the normalized `acts` form.
+
+### 2.1a Acts & production phases — `Act`, `ActPhase`, `StageOp`
+
+A **newscast is an ordered sequence of acts** (Act 1, Act 2, …). Each act is a self-contained production unit with three explicit phases — **setup → action → packup/finishing** — mirroring how a film set is run: dress the set, roll the performance, strike the set. This gives the director per-part control over *what is staged*, *what is performed*, and *how it is closed and handed off*.
+
+- **setup** — staging operations that prepare the act *before* the performance: set lighting/look/background, bring the anchor in and frame them, preload graphics, start a music bed, transition in. (The "stand by … action".)
+- **action** — the performed body: the act's **rundown** (`Section[]` → beats), exactly as defined in §2.5+. The spoken, blocked, recorded content.
+- **packup / finishing** — closing operations: take a lower-third out, fade/duck music, transition or dissolve to the next act, hold a beat, finishing notes. (The "cut … reset".)
+
+```ts
+export const Act = z.object({
+  id:     z.string().min(1),                              // REQUIRED. Stable act id ('act1').
+  name:   z.string().min(1),                              // REQUIRED. Human label ('Act 1 — Top stories').
+  setup:  ActPhase.default({ ops: [], holdAfter_ms: 0 }), // Staging BEFORE the performance.
+  action: z.object({ rundown: z.array(Section).min(1) }), // REQUIRED. The performed rundown (≥1 section).
+  packup: ActPhase.default({ ops: [], holdAfter_ms: 0 }), // Teardown/finishing AFTER the performance.
+  look:   PostProcessingSpec.optional(),                  // OPTIONAL. Act-scoped look; seeds the act's sticky chain.
+  set:    SectionSet.optional(),                          // OPTIONAL. Act-default set/background; sticky within the act.
+  record: z.enum(['full', 'action-only']).default('full'),// 'full' = capture setup+action+packup contiguously; 'action-only' = stage setup silently, record from action.
+});
+export type Act = z.infer<typeof Act>;
+
+export const ActPhase = z.object({
+  ops:          z.array(StageOp).default([]),             // Ordered staging operations.
+  holdAfter_ms: z.number().int().min(0).default(0),       // Dwell after the ops settle (let a fade/move land) before the next phase.
+});
+export type ActPhase = z.infer<typeof ActPhase>;
+
+// Staging vocabulary — configures the stage WITHOUT performing narration. Discriminated on `op`.
+export const StageOp = z.discriminatedUnion('op', [
+  z.object({ op: z.literal('avatar'),     anchorId: z.string().min(1), action: z.enum(['enter','exit','position','swap']).default('enter'), pose: z.string().optional() }),
+  z.object({ op: z.literal('lighting'),   preset: z.string().optional(), key: z.number().optional(), fill: z.number().optional(), rim: z.number().optional(), ambient: z.number().optional(), exposure: z.number().optional(), warmth: z.number().optional(), fade_ms: z.number().int().min(0).default(0) }),
+  z.object({ op: z.literal('look'),       look: PostProcessingSpec, crossfade_ms: z.number().int().min(0).default(0) }),
+  z.object({ op: z.literal('set'),        set: SectionSet }),
+  z.object({ op: z.literal('camera'),     to: CameraCue, duration_ms: z.number().int().min(0).default(0) }),
+  z.object({ op: z.literal('graphic'),    graphic: Graphic, action: z.enum(['preload','show','hide']).default('preload') }),
+  z.object({ op: z.literal('audio'),      audio: AudioCue, action: z.enum(['in','out','duck']).default('in') }),
+  z.object({ op: z.literal('transition'), type: z.enum(['cut','dissolve','fade','wipe','defocus']).default('cut'), dur: z.number().min(0).default(0.5) }),
+  z.object({ op: z.literal('hold'),       ms: z.number().int().min(0) }),
+  z.object({ op: z.literal('note'),       text: z.string().min(1) }),
+]);
+export type StageOp = z.infer<typeof StageOp>;
+```
+
+| `StageOp.op` | Purpose (used in setup / packup) | Lowers to |
+|---|---|---|
+| `avatar` | bring an anchor in / out, reposition, or swap | avatar load + position / exit motion |
+| `lighting` | preset or per-channel + optional fade | `ProjectDoc.lights` / lighting cue |
+| `look` | apply or cross-fade a post-FX look | `PostProcessingSpec` apply (SP-2, §8.2) |
+| `set` | background / set mode (real, chroma, virtual, LED, AR) | `ProjectDoc.backScreen` / set node |
+| `camera` | move camera to a framing over `duration_ms` | `camera` cue (§4.10) |
+| `graphic` | preload / show / hide a graphic (bumper, lower-third, bug) | `graphic` cue |
+| `audio` | music / sfx in, out, or duck (stinger, bed) | `audio` cue |
+| `transition` | dissolve / fade / wipe into or out of the act | transition cue (V2 compositing) |
+| `hold` | dwell N ms (let a transition land) | timeline gap |
+| `note` | director note | never rendered (stripped) |
+
+**Recording & timing.** Acts concatenate on the master timeline in order. For `record:'full'` (default) each act lowers to a contiguous block: `setup.ops` (timed from the act's start, then `holdAfter_ms`) → `action` rundown cues → `packup.ops` (+ `holdAfter_ms`); the next act starts after. `record:'action-only'` applies the setup ops as instantaneous editor configuration (off the recorded timeline) and starts the captured clip at `action`. Section/beat timing (§5) is unchanged within `action`; an act's total duration = setup + action + packup.
+
+**Sticky-state scoping.** `Act.look`/`Act.set` (and any `look`/`set`/`lighting` op in `setup`) seed the act's sticky chain; carry-forward (§2 intro) then flows beat→beat and section→section *within* the act. At an act boundary the chain continues into the next act **unless** that act's `setup` overrides it — so a new act can fully re-dress the stage. `packup` ops that hide graphics / stop music close those elements at the act's end.
+
+**`.ncast` form** (full grammar [§3.4a](#34a-act-blocks--act--setup--packup)):
+```ncast
+=== ACT 1 — Top Stories ===
+@setup
+  lighting studio fade 1.0
+  look broadcast
+  set virtual back-screen=studio_loop.mp4
+  avatar maya enter pose=cam.anchor
+  audio intro_sting.mp3 in
+  transition fade 0.8
+@action
+  ## READER "Mayor unveils transit plan" [anchor=maya cam=medium]
+  Good evening. (warm) The city approved a sweeping transit overhaul today.
+@packup
+  audio bed out fade 1.5
+  graphic lower_third hide
+  transition dissolve 0.6
+  hold 500
+```
+
+**Backward compatibility.** A doc with a top-level `rundown` (no `acts`) is exactly equivalent to one act `{ setup:{}, action:{ rundown }, packup:{} }`; the compiler normalizes `rundown → acts[0].action.rundown` so every downstream rule (§5/§6/§7) operates uniformly on `acts`. Bare-`rundown` examples elsewhere in this spec are this single-act sugar.
 
 ### 2.2 `Meta`
 
@@ -831,6 +921,39 @@ Grammar of a header line:
 | `[id=…]` | `Section.id` (else derived from slug) |
 
 A `# BLOCK` line on its own carries no story; it only **mutates the current block label** applied to subsequent `##` sections until the next `#`.
+
+### 3.4a Act blocks → `Act` / `setup` / `packup`
+
+A `.ncast` file is one or more **act blocks**. An act opens with a triple-`=` header and contains up to three phase blocks — `@setup`, `@action`, `@packup` — in that order. `@action` holds the section headers (§3.4) and their beats; `@setup`/`@packup` hold **stage-op lines** (one `StageOp` per line). A file with section headers but no `=== ACT … ===` header is the single-act sugar (compiles to a top-level `rundown`).
+
+```ebnf
+act          = act_header , [ setup_block ] , action_block , [ packup_block ] ;
+act_header   = "===" , "ACT" , [ index ] , [ ("—" | "-") , name ] , [ "[" attrs "]" ] , "===" , NEWLINE ;
+setup_block  = "@setup"  , NEWLINE , { stage_op_line } ;
+action_block = [ "@action" , NEWLINE ] , { section } ;     (* @action keyword optional if the act has no setup/packup *)
+packup_block = "@packup" , NEWLINE , { stage_op_line } ;
+stage_op_line= op_name , { token | key "=" value } , NEWLINE ;
+```
+
+**Header attributes** (optional, bracketed): `[record=action-only look=cinematic set=virtual]` → `Act.record`, `Act.look`, `Act.set`.
+
+**Stage-op lines** (→ `StageOp`, §2.1a) — one per line; the first token is `op_name`:
+
+| `.ncast` line | → `StageOp` |
+|---|---|
+| `lighting studio fade 1.0` | `{op:'lighting', preset:'studio', fade_ms:1000}` |
+| `lighting key=1.8 warmth=70` | `{op:'lighting', key:1.8, warmth:70}` |
+| `look broadcast` | `{op:'look', look:{preset:'broadcast'}}` |
+| `set virtual back-screen=studio_loop.mp4` | `{op:'set', set:{mode:'virtual', backScreen:{kind:'video', src:'studio_loop.mp4'}}}` |
+| `avatar maya enter pose=cam.anchor` | `{op:'avatar', anchorId:'maya', action:'enter', pose:'cam.anchor'}` |
+| `camera CU dolly_in on eyes over 1.5` | `{op:'camera', to:{shot:'close_up', move:'dolly_in', target:'eyes'}, duration_ms:1500}` |
+| `graphic lower_third show` | `{op:'graphic', action:'show', graphic:{kind:'lowerThird', …}}` |
+| `audio intro_sting.mp3 in` · `audio bed out fade 1.5` | `{op:'audio', action:'in'\|'out', audio:{…}}` |
+| `transition dissolve 0.6` | `{op:'transition', type:'dissolve', dur:0.6}` |
+| `hold 500` | `{op:'hold', ms:500}` |
+| `note stand by for live shot` | `{op:'note', text:'stand by for live shot'}` (never rendered) |
+
+Phase order is fixed (`setup` → `action` → `packup`); `@action` may be omitted when an act has only a performance and no staging. Phase semantics, the `record` mode, and per-act sticky scoping are defined in [§2.1a](#21a-acts--production-phases--act-actphase-stageop); an act-wrapped JSON example is in [§9.1](#91-full-worked-newscast--newsreportdoc-canonical-json).
 
 ### 3.5 Anchors, dialogue, parentheticals → `Beat`
 
@@ -1638,9 +1761,11 @@ Container  = mp4 | webm         (mp4 default; webm fallback)
 
 The rundown is the spine of a `NewsReportDoc`: an ordered list of `Section`s that the compiler walks top-to-bottom to emit `ProjectDoc`+`Cue[]` (avatar-live) or `EngineRenderSpec`/`PerformanceManifest` (engine-three). This section defines section ordering, ad-break blocking, story-form staging, timing/back-timing, sticky carry-forward, and set modes. Everything lowers deterministically. Type shapes are authoritative in [§2](#2-canonical-schema-newsreportdoc--full-type-reference); this section defines the **timing types** (`AdBreak`, `TimeFit`, `Channel`, `Lighting`, `TimingReport`) and the **semantics**.
 
+> **Acts wrap the rundown.** The spine described here is each **act's `action.rundown`** ([§2.1a](#21a-acts--production-phases--act-actphase-stageop)). The master timeline is the acts' `setup → action → packup` blocks concatenated in act order; an act's duration = `setup` (ops + `holdAfter_ms`) + `action` (this rundown) + `packup`. **Sticky carry-forward and back-timing are scoped per act** — `Act.look`/`Act.set`/`setup` ops seed the act, and a `hardTime`/`softTime` budget is fit within the act's `action`. A bare top-level `rundown` is the single-act case.
+
 ### 5.1 Rundown shape & ordering
 
-The rundown is `rundown: Section[]` on `NewsReportDoc` (§2.1). **Array order is authoritative order** — sections play in the order they appear; there is no separate `order` field. The compiler assigns each section a 1-based `rundownIndex` from its array position for display/back-timing only. The `Section` shape is defined in [§2.7](#27-section).
+The rundown is `Act.action.rundown: Section[]` (a bare top-level `rundown` is single-act sugar — §2.1a). **Array order is authoritative order** — sections play in the order they appear; there is no separate `order` field. The compiler assigns each section a 1-based `rundownIndex` from its array position for display/back-timing only. The `Section` shape is defined in [§2.7](#27-section).
 
 Empty `beats: []` is legal only for `storyForm: 'LIVE'` placeholders and ad-bumper sections (a `KICKER`/bare `set` with a `bumper` graphic). A section with no beats and no bumper graphic is a compile **error** (`E_EMPTY_SECTION`). (Note: the §2.7 schema marks `beats` `.min(1)`; the empty-section exception is enforced by a refinement that allows `[]` only for `LIVE` / bumper-only sections.)
 
@@ -2025,7 +2150,17 @@ Both backends consume **one shared front half**: `validateNewsReport()` → `bui
 | `compileToEngineThree` | `packages/protocol/src/compile/toEngineSpec.ts` (extends `manifest.ts`) | MVP |
 | `parseNcast` | `packages/protocol/src/ncast/parse.ts` (.ncast text → `NewsReportDoc`) | V2 |
 
-`NewsReportDoc`, `PostProcessingSpec`, `Section`, `Beat`, `Graphic`, `AudioCue` zod schemas live in `packages/protocol` (§2) and regenerate JSON-Schema via `npm run protocol:schema`.
+`NewsReportDoc`, `PostProcessingSpec`, `Section`, `Beat`, `Graphic`, `AudioCue`, `Act`, `ActPhase`, `StageOp` zod schemas live in `packages/protocol` (§2) and regenerate JSON-Schema via `npm run protocol:schema`.
+
+#### 7.0.2 Act normalization & phase lowering
+
+`buildCompileContext()` first **normalizes acts**: a bare `rundown` becomes `acts:[{ id:'act1', name:'Act 1', setup:{ops:[]}, action:{ rundown }, packup:{ops:[]} }]` ([§2.1a](#21a-acts--production-phases--act-actphase-stageop)). It then walks the acts in order against a single timeline clock `t`:
+
+1. **setup** — each `StageOp` lowers to a cue / editor mutation at the act's start offset (`lighting`→lights cue, `look`→`PostProcessingSpec` apply, `set`→back-screen, `avatar`→load/position/exit, `camera`→camera cue, `graphic`→preload/show, `audio`→music in, `transition`→transition cue), then `t` advances by the ops' durations + `holdAfter_ms`. For `record:'action-only'`, setup ops are applied as **instantaneous editor configuration** and do not advance the recorded clock.
+2. **action** — the act's `rundown` lowers exactly as §5 and §7.2–7.4 describe, starting at the post-setup `t`.
+3. **packup** — `StageOp`s lower at the post-action `t` (+ `holdAfter_ms`); the next act then begins.
+
+Sticky state (camera / look / set / lighting / background) is seeded by `Act.look`/`Act.set`/`setup` ops and carried within the act, persisting into the next act unless that act's `setup` overrides it. The resulting flat `Cue[]` (avatar-live) / manifest timeline (engine-three) is **act-agnostic** downstream — acts are a compile-time structuring layer, not a runtime concept.
 
 ### 7.1 The CompileContext (resolved intermediate)
 
@@ -2659,6 +2794,43 @@ This section is the conformance anchor. Every JSON object below validates agains
 ### 9.1 Full worked newscast — `NewsReportDoc` (canonical JSON)
 
 A complete 4-section rundown: **cold-open bumper → VO story (lower-third + back-screen) → PKG story (3-shot camera move + music bed with ducking + dissolve out) → KICKER sign-off**. Single anchor, 1080p @ 30fps, `broadcast` look at the doc level with per-section/per-beat overrides. *(Conforms to §2: `Emphasis {text, level}`, `sayAs {text, as}`, `BrandKit.palette {primary, secondary, …}`, `logo.corner: tr`, `CaptionsSpec {enabled, mode, standard, cleanFeed}`.)*
+
+> **Single-act sugar vs explicit acts.** This example uses the top-level `rundown` form, which is exactly the single-act show `acts:[{ setup:{}, action:{ rundown }, packup:{} }]` (§2.1a). To split it into a directed **two-act** show — Act 1 (cold-open + VO) with a setup that dresses the studio and an outro that ducks music, Act 2 (package + sign-off) — wrap the same `Section` objects:
+>
+> ```jsonc
+> {
+>   "version": 2,
+>   "meta": { /* …as below… */ },
+>   "look": { "preset": "broadcast" },
+>   "acts": [
+>     {
+>       "id": "act1", "name": "Act 1 — Top of show",
+>       "setup": { "ops": [
+>         { "op": "lighting", "preset": "studio", "fade_ms": 1000 },
+>         { "op": "set", "set": { "mode": "virtual", "backScreen": { "kind": "video", "src": "/bg/studio_loop.mp4" } } },
+>         { "op": "avatar", "anchorId": "anchor_main", "action": "enter", "pose": "cam.anchor" },
+>         { "op": "audio", "action": "in",
+>           "audio": { "id": "sting", "kind": "sfx", "src": "/sfx/intro.mp3", "start": 0, "duration": 3, "volume": 0.9, "fadeIn": 0, "fadeOut": 0.5 } },
+>         { "op": "transition", "type": "fade", "dur": 0.8 }
+>       ], "holdAfter_ms": 200 },
+>       "action": { "rundown": [ /* the cold-open + VO Section objects from below */ ] },
+>       "packup": { "ops": [
+>         { "op": "audio", "action": "out",
+>           "audio": { "id": "bed", "kind": "bed", "src": "/music/bed.mp3", "start": 0, "duration": 1, "volume": 0.0, "fadeIn": 0, "fadeOut": 1.5 } },
+>         { "op": "transition", "type": "dissolve", "dur": 0.6 }
+>       ] }
+>     },
+>     {
+>       "id": "act2", "name": "Act 2 — Package & sign-off",
+>       "setup": { "ops": [ { "op": "lighting", "preset": "warm", "fade_ms": 800 } ] },
+>       "action": { "rundown": [ /* the PKG + KICKER Section objects from below */ ] },
+>       "packup": { "ops": [ { "op": "transition", "type": "fade", "dur": 1.0 }, { "op": "hold", "ms": 500 } ] }
+>     }
+>   ]
+> }
+> ```
+>
+> The `rundown` arrays inside each act's `action` are the exact `Section` objects shown next; only the top-level container differs.
 
 ```jsonc
 {
