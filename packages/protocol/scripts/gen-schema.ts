@@ -27,6 +27,7 @@ import {
   DirectorStreamChunk,
   RealtimeSession,
   SessionMedia,
+  NewsReportDoc,
 } from '../src/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -54,6 +55,7 @@ const schemas = {
   DirectorStreamChunk,
   RealtimeSession,
   SessionMedia,
+  NewsReportDoc,
 } as const;
 
 for (const [name, schema] of Object.entries(schemas)) {
