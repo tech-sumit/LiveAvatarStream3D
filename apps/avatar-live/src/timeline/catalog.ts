@@ -60,19 +60,24 @@ export function poseFor(type: string, hc: THREE.Vector3, hh: number): CameraPose
   const eye = hc.y;
   switch (type) {
     case 'cam.close':
-      return { pos: v(hc.x, eye, hc.z + hh * 2.2), target: v(hc.x, eye, hc.z), fov: 30 };
+      // Tight, but head + shoulders (chest-up) — not a face-only fill. (Factors are in
+      // bone head-heights; the visible head + hair is ~1.5x larger, so these run wider.)
+      return { pos: v(hc.x, eye, hc.z + hh * 4.0), target: v(hc.x, eye - hh * 0.6, hc.z), fov: 30 };
     case 'cam.wide':
-      return { pos: v(hc.x, eye, hc.z + hh * 8.5), target: v(hc.x, eye - hh * 0.7, hc.z), fov: 40 };
+      return { pos: v(hc.x, eye, hc.z + hh * 10.0), target: v(hc.x, eye - hh * 2.2, hc.z), fov: 40 };
     case 'cam.screen':
-      // angled two-shot showing the anchor (right) and the video wall (left/back)
-      return { pos: v(hc.x + hh * 2.2, eye, hc.z + hh * 7), target: v(hc.x - hh * 1.5, eye + hh * 0.2, hc.z - 1.4), fov: 42 };
+      // angled two-shot showing the anchor (right, head→torso) and the video wall (left/back)
+      return { pos: v(hc.x + hh * 2.2, eye, hc.z + hh * 7), target: v(hc.x - hh * 1.5, eye - hh * 0.5, hc.z - 1.4), fov: 42 };
     case 'cam.enterLeft':
       return { pos: v(hc.x - hh * 10, eye, hc.z + hh * 4.5), target: v(hc.x, eye, hc.z), fov: 36 };
     case 'cam.orbit':
       return { pos: v(hc.x - hh * 3.5, eye, hc.z + hh * 4.5), target: v(hc.x, eye, hc.z), fov: 36 };
     case 'cam.anchor':
     default:
-      return { pos: v(hc.x, eye, hc.z + hh * 3.6), target: v(hc.x, eye, hc.z), fov: 35 };
+      // Standard news medium: eye-level camera, look-at dropped to the chest so the frame
+      // reads head (slight headroom) → torso/waist, with the head in the upper third.
+      // (Factors are bone head-heights; visible head + hair is ~1.5x, so these run wider.)
+      return { pos: v(hc.x, eye, hc.z + hh * 6.0), target: v(hc.x, eye - hh * 1.4, hc.z), fov: 35 };
   }
 }
 
