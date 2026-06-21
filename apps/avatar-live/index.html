@@ -23,7 +23,13 @@
         </div>
         <div class="tb-group tb-right">
           <select id="captureFormat" title="Recording size"></select>
-          <button id="record" class="tb-btn rec-btn">● Record</button>
+          <select id="videoCodec" title="Export codec">
+            <option value="avc">H.264 (MP4)</option>
+            <option value="hevc">H.265 / HEVC (MP4, if supported)</option>
+          </select>
+          <button id="exportMp4">⬇ Export MP4</button>
+          <span id="exportProgress"></span>
+          <button id="record" class="tb-btn rec-btn">● Quick preview (webm)</button>
           <a id="download" hidden>⬇ Save clip</a>
           <button id="timelineToggle" class="tb-btn">🎞 Timeline</button>
         </div>
