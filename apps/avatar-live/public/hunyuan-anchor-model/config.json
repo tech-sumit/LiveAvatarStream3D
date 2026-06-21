@@ -1,6 +1,6 @@
 {
   "label": "AI Anchor (Hunyuan)",
-  "description": "Photo → Nano Banana → Hunyuan3D 3.1 mesh, auto-rigged to Avaturn skeleton in Blender (arms refit, fingers aligned, jaw bone added). Body animates + jaw-bone lip-sync (open/close).",
+  "description": "Photo → Hunyuan3D 3.1 (her exact face/identity), rigged to Avaturn skeleton + Avaturn teeth/tongue grafted into the mouth (mouth opens onto real teeth). Jaw-bone lip-sync; eyes are the generated texture.",
   "model": "model.glb",
   "shot": "medium",
   "bodyAnim": true,
