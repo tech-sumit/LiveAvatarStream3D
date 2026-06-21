@@ -37,6 +37,9 @@ export class TimelinePlayer {
     this.stage.setDirector(false);
     this.avatar.setTurn(0);
     this.stage.setScreenCut(false); // revert the output to the manual source
+    // Return to the resting idle pose so the avatar doesn't freeze on the last
+    // gesture clip (e.g. open_palms / wide hands) after a preview or playback ends.
+    if (this.avatar.animationClips.length) this.avatar.playClip('idle');
   }
 
   get duration(): number {
