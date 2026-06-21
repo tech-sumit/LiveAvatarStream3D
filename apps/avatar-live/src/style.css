@@ -450,12 +450,12 @@ select {
 }
 .grid2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
 }
 .grid3 {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -518,4 +518,42 @@ a#download {
   color: var(--muted);
   overflow-y: auto;
   white-space: pre-wrap;
+}
+
+/* Range sliders fill their cell and never overflow the panel (paired with grid minmax(0,1fr)). */
+input[type='range'] {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.mini {
+  min-width: 0;
+}
+.mini input[type='range'] {
+  flex: 1;
+}
+
+/* Collapsible sidebar sections — click the header to expand/collapse. */
+.panel .grp > h2 {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  user-select: none;
+}
+.panel .grp > h2::after {
+  content: '▾';
+  font-size: 9px;
+  color: var(--muted);
+}
+.panel .grp.collapsed > h2::after {
+  content: '▸';
+}
+.panel .grp.collapsed > :not(h2) {
+  display: none !important;
+}
+.panel .grp.collapsed {
+  flex: 0 0 auto;
 }
