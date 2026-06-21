@@ -190,12 +190,18 @@ export class ProjectStore {
         this.app.log(`saved project "${name}" locally (R2 off — assets not persisted).`);
       }
       d.savedListSel.value = name;
-      this.downloadJson(`${name}.project.json`, doc);
     } catch (err) {
       this.app.log(`save failed: ${String(err)}`);
     } finally {
       d.saveTimelineBtn.disabled = false;
     }
+  }
+
+  /** Export the current project as a .json file to disk (separate from the R2 Save). */
+  private exportProjectJson(): void {
+    const name = sanitize(this.app.dom.projectNameEl.value);
+    this.downloadJson(`${name}.project.json`, this.serializeProject(name));
+    this.app.log(`exported "${name}.project.json" to disk.`);
   }
 
   private async applyProject(doc: ProjectDoc): Promise<void> {
@@ -239,6 +245,7 @@ export class ProjectStore {
   async init(): Promise<void> {
     const d = this.app.dom;
     d.saveTimelineBtn.addEventListener('click', () => void this.saveProject());
+    d.exportJsonBtn.addEventListener('click', () => this.exportProjectJson());
     d.loadTimelineBtn.addEventListener('click', () => d.timelineFileEl.click());
     d.timelineFileEl.addEventListener('change', async () => {
       const file = d.timelineFileEl.files?.[0];
