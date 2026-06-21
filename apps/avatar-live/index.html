@@ -164,6 +164,26 @@
         </section>
 
         <section class="grp">
+          <h2>Look</h2>
+          <div class="row">
+            <select id="lookPreset" title="Camera look">
+              <option value="broadcast">Broadcast</option>
+              <option value="flat">Flat (no look)</option>
+              <option value="cinematic">Cinematic</option>
+              <option value="warm">Warm</option>
+              <option value="noir">Noir</option>
+            </select>
+          </div>
+          <div class="grid2">
+            <label class="mini">Bloom <input type="range" id="lookBloom" min="0" max="2" step="0.01" value="0.3" /></label>
+            <label class="mini">Contrast <input type="range" id="lookContrast" min="-1" max="1" step="0.01" value="0.06" /></label>
+            <label class="mini">Saturation <input type="range" id="lookSaturation" min="-1" max="1" step="0.01" value="0.06" /></label>
+            <label class="mini">Vignette <input type="range" id="lookVignette" min="0" max="1" step="0.01" value="0.45" /></label>
+            <label class="mini">Grain <input type="range" id="lookGrain" min="0" max="1" step="0.01" value="0.04" /></label>
+          </div>
+        </section>
+
+        <section class="grp">
           <h2>Back screen &amp; cast</h2>
           <div class="row">
             <input id="screenUrl" type="text" placeholder="video URL (mp4 / webm)…" />

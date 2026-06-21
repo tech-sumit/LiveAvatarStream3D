@@ -4,6 +4,8 @@ import type { StudioContext } from './context.js';
 import type { AvatarLibrary } from './avatarLibrary.js';
 import type { VoicePicker } from './voicePicker.js';
 import type { Lighting } from './lighting.js';
+import type { Look } from './look.js';
+import type { LookParams } from '../look/lookChain.js';
 import type { BackScreen } from './backScreen.js';
 import type { TimelineEditor } from './timelineEditor.js';
 import type { Performer } from './performer.js';
@@ -22,6 +24,7 @@ interface ProjectDoc {
   idleMotion: boolean;
   headline: string;
   lights: { key: number; fill: number; rim: number; ambient: number; exposure: number; warmth: number; preset: string };
+  look?: { preset?: string; params?: LookParams };
   backScreen: { kind: 'url' | 'r2'; src: string } | null;
   timeline: { duration: number; cues: Cue[] };
 }
@@ -36,6 +39,7 @@ export interface ProjectStoreDeps {
   library: AvatarLibrary;
   voices: VoicePicker;
   lighting: Lighting;
+  look: Look;
   backScreen: BackScreen;
   timeline: TimelineEditor;
   performer: Performer;
@@ -118,6 +122,7 @@ export class ProjectStore {
       ...this.c.library.serialize(),
       shot: d.shotSel.value,
       ...this.c.lighting.serialize(),
+      ...this.c.look.serialize(),
       ...this.c.backScreen.serialize(),
       ...this.c.timeline.serialize(),
     };
@@ -203,6 +208,7 @@ export class ProjectStore {
     app.avatar.setEmotion(d.emotionSel.value as never);
     d.shotSel.value = doc.shot ?? 'medium';
     c.lighting.apply(doc);
+    c.look.apply(doc);
     await c.library.apply(doc);
     c.timeline.applyTimelineDoc(doc.timeline);
     await c.timeline.loadAudioAssets((src) => this.fetchAssetBlob(src));

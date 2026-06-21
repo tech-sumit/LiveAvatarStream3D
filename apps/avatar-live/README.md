@@ -209,3 +209,13 @@ video-only; the cloned-voice (Web Audio) path can include audio.
 - **● Quick preview (webm)** is the old realtime `MediaRecorder` capture, kept for a
   fast throwaway preview. Web Speech audio is not capturable; use a cloned voice for
   audio in the exported MP4.
+
+### Look (camera filters)
+
+A post-processing "look" (pmndrs `postprocessing`) is applied to the viewport **and**
+the captured output, so the exported MP4 inherits it. Pick a preset (Broadcast default,
+Flat, Cinematic, Warm, Noir) or tune Bloom / Contrast / Saturation / Vignette / Grain;
+the look is saved in the project. Pipeline: scene → Bloom → ACES tone map → contrast /
+saturation / vignette / film-grain → SMAA. Tone mapping is ACES (three 0.152.2; AgX /
+Neutral need a three upgrade). `PostProcessingSpec` lives in `@las/protocol` so the look
+is part of the shared contract (engine-three pod wiring is a follow-up).
