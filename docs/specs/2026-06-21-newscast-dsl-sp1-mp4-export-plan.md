@@ -84,13 +84,15 @@ export interface Mp4EncoderOpts {
  */
 export class Mp4Encoder {
   private output: Output;
+  private target: BufferTarget; // typed ref — Output.target is the base `Target`, which has no `.buffer`
   private video: CanvasSource;
   private audio: AudioBufferSource | null = null;
   private fps: number;
 
   constructor(opts: Mp4EncoderOpts) {
     this.fps = opts.fps;
-    this.output = new Output({ format: new Mp4OutputFormat(), target: new BufferTarget() });
+    this.target = new BufferTarget();
+    this.output = new Output({ format: new Mp4OutputFormat(), target: this.target });
     this.video = new CanvasSource(opts.canvas, { codec: opts.codec, bitrate: QUALITY_HIGH });
     this.output.addVideoTrack(this.video, { frameRate: opts.fps });
   }
@@ -118,7 +120,7 @@ export class Mp4Encoder {
   /** Finalize and return the MP4 Blob. */
   async finish(): Promise<Blob> {
     await this.output.finalize();
-    const buf = this.output.target.buffer;
+    const buf = this.target.buffer;
     if (!buf) throw new Error('Mp4Encoder: encoder produced no output');
     return new Blob([buf], { type: 'video/mp4' });
   }
@@ -839,14 +841,15 @@ with the DRY version (identical behavior — `driveAvatarFrame` does mouth+gaze+
     }
 ```
 
-> `this.render` is `{ ctx, start, analyser, timeline, idx }`, so passing it as the `cursor` ({ idx }) preserves the existing `this.render.idx` advance. `MouthCue`, `EmotionName`, `Gesture`, and `selectTalkClip` are already imported in this file.
+> `this.render` is `{ ctx, start, analyser, timeline, idx }`, so passing it as the `cursor` ({ idx }) preserves the existing `this.render.idx` advance. `EmotionName`, `Gesture`, and `selectTalkClip` are already imported in this file; `MouthCue` is **not** — add it via the Step-4 import.
 
 - [ ] **Step 4: Add `prepareForExport()` + `exportMp4()`**
 
-In `performer.ts`, add the import at the top (next to the other `../capture`/lipsync imports):
+In `performer.ts`, add the imports at the top (next to the other `../capture`/lipsync imports):
 
 ```ts
 import { exportMp4Offline } from '../capture/offlineExporter.js';
+import type { MouthCue } from '../avatar/avatarController.js'; // used by driveAvatarFrame; NOT already imported in performer.ts
 ```
 
 Add these methods to the `Performer` class (place them after `buildNarration`):
