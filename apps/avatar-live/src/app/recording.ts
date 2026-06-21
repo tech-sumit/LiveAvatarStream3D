@@ -1,4 +1,5 @@
 import { Recorder } from '../capture/recorder.js';
+import { canExportMp4, type VideoCodecChoice } from '../capture/mp4Encoder.js';
 import type { StudioContext } from './context.js';
 
 const CAPTURE_FORMATS = [
@@ -33,7 +34,7 @@ export class Recording {
 
   setRecUi(on: boolean): void {
     const d = this.app.dom;
-    d.recordBtn.textContent = on ? '■ Stop recording' : '● Record camera';
+    d.recordBtn.textContent = on ? '■ Stop preview' : '● Quick preview (webm)';
     d.recordBtn.classList.toggle('rec', on);
     d.pipFrameEl.classList.toggle('rec', on);
   }
@@ -56,6 +57,48 @@ export class Recording {
     d.gateLabelEl.textContent = `${f.w}×${f.h}`;
   };
 
+  /** The currently selected capture resolution. */
+  currentFormat(): { w: number; h: number } {
+    const f = CAPTURE_FORMATS[Number(this.app.dom.captureFormatSel.value)] ?? CAPTURE_FORMATS[0];
+    return { w: f.w, h: f.h };
+  }
+
+  /** The currently selected export codec ('avc' default, 'hevc' if the user picked it). */
+  currentCodec(): VideoCodecChoice {
+    return (this.app.dom.videoCodecSel.value as VideoCodecChoice) ?? 'avc';
+  }
+
+  /** Disable export/preview controls while an export is running. */
+  setExportUi(on: boolean): void {
+    const d = this.app.dom;
+    d.exportMp4Btn.disabled = on;
+    d.recordBtn.disabled = on;
+    d.exportMp4Btn.textContent = on ? '… exporting' : '⬇ Export MP4';
+  }
+
+  /** Show export progress; (0,0) clears it. */
+  setExportProgress(done: number, total: number): void {
+    this.app.dom.exportProgressEl.textContent = total > 0 ? `${Math.round((done / total) * 100)}%` : '';
+  }
+
+  /** Probe MP4 capability; annotate or disable the H.265 option when unavailable. */
+  private async probeCodecs(): Promise<void> {
+    const d = this.app.dom;
+    const okMp4 = await canExportMp4(1920, 1080);
+    if (!okMp4) {
+      this.app.log('note: this browser lacks WebCodecs MP4 — Export MP4 will fall back to webm.');
+    }
+    const { pickVideoCodec } = await import('../capture/mp4Encoder.js');
+    const hevc = await pickVideoCodec('hevc', 1920, 1080);
+    if (hevc !== 'hevc') {
+      const opt = Array.from(d.videoCodecSel.options).find((o) => o.value === 'hevc');
+      if (opt) {
+        opt.textContent = 'H.265 / HEVC (unsupported here)';
+        opt.disabled = true;
+      }
+    }
+  }
+
   init(): void {
     const d = this.app.dom;
     CAPTURE_FORMATS.forEach((f, i) => {
@@ -66,5 +109,6 @@ export class Recording {
     });
     d.captureFormatSel.addEventListener('change', this.applyFormat);
     this.applyFormat();
+    void this.probeCodecs();
   }
 }
