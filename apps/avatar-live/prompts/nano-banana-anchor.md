@@ -70,10 +70,37 @@ sharp, ultra-high resolution, perfectly consistent character identity and wardro
 with the front view.
 ```
 
-> Consistency tip: generate the **front first**, then create the back by
-> *editing/continuing from that image* ("same character, rear view") rather than a
-> fresh prompt — Nano Banana keeps identity far better that way. Reuse the same
-> seed where possible.
+## PROMPT — left profile (copy/paste; for 4-view reconstruction)
+
+```
+The exact same person from the previous images — identical face, hairstyle, and
+wardrobe — now viewed from their LEFT side as a true 90° profile (camera to the
+person's left, facing the side of the body), in the exact same symmetric T-pose:
+arms extended straight out horizontally at shoulder height so the near arm points
+toward the camera and the far arm points away; legs straight with a small gap.
+Show a clean side silhouette: profile of the nose/chin/forehead, the ear, the side
+of the hair, the side of the blazer, hip and leg. Identical flat, even, soft studio
+lighting; identical plain seamless light-gray (#d9d9d9) background; same framing —
+full body head-to-feet, centered, camera at chest height, minimal perspective.
+Photorealistic, sharp, ultra-high resolution, perfectly consistent with the front.
+```
+
+## PROMPT — right profile (copy/paste)
+
+```
+Same person and wardrobe again, identical to the previous views, now viewed from
+their RIGHT side as a true 90° profile (mirror of the left-profile shot), same
+symmetric T-pose, same flat even studio lighting, same plain seamless light-gray
+(#d9d9d9) background, same full-body centered framing at chest height. Clean side
+silhouette of face, ear, hair, blazer, hip and leg. Photorealistic, sharp,
+ultra-high resolution, perfectly consistent with the other three views.
+```
+
+> Consistency tip: generate the **front first**, then create back/left/right by
+> *editing/continuing from that image* ("same character, rear/left/right view")
+> rather than fresh prompts — Nano Banana keeps identity far better that way. Reuse
+> the same seed. 4 consistent views (front/back/left/right) give Hunyuan3D the best
+> reconstruction; 2 (front/back) is the minimum.
 
 ---
 
@@ -95,10 +122,13 @@ anchor — only vary identity/wardrobe.
 
 ## Hand-off to Hunyuan3D (per the workflow node)
 
-- Wire **front → `image`**, **back → `image_back`** (add `image_left` / `image_right`
-  later if you also render side views for higher fidelity).
-- Suggested node settings: `model` 2.1/3.1, `face_count` ~300k–500k, `generate_type`
-  Normal, `pbr`/texture **on** if you want baked color (off = faster, geometry only).
+- Wire all four: **front → `image`**, **back → `image_back`**, **left → `image_left`**,
+  **right → `image_right`** (the `TencentImageToModelNode` has all four; using only
+  front+back leaves the sides/profile guessed — 4-view is a big fidelity gain).
+- Verified-good node settings (from the working run): `model` **3.1**, `face_count`
+  **500000**, `generate_type` Normal, **texture on** (saves diffuse + metallic +
+  roughness + normal). 500k is heavy but fine — we decimate to ~30–50k for the
+  browser during rigging.
 - Output GLB → then map onto Avaturn's rig + ARKit blendshapes with
   `blender -b --python scripts/wrap-to-rig.py -- public/avaturn-model/model.glb <hunyuan>.glb public/<id>-model/model.glb`,
   add a `config.json`, and it auto-appears in the studio dropdown.
