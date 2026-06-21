@@ -61,6 +61,7 @@ export function bindDom() {
     lookGrainEl: $<HTMLInputElement>('lookGrain'),
     projectNameEl: $<HTMLInputElement>('projectName'),
     saveTimelineBtn: $<HTMLButtonElement>('saveTimeline'),
+    exportJsonBtn: $<HTMLButtonElement>('exportJson'),
     loadTimelineBtn: $<HTMLButtonElement>('loadTimeline'),
     savedListSel: $<HTMLSelectElement>('savedList'),
     timelineFileEl: $<HTMLInputElement>('timelineFile'),
