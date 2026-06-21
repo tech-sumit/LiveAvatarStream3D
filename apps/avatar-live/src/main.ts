@@ -12,6 +12,7 @@ import { AvatarLibrary } from './app/avatarLibrary.js';
 import { TimelineEditor } from './app/timelineEditor.js';
 import { Performer } from './app/performer.js';
 import { ProjectStore } from './app/projectStore.js';
+import { initCollapsibleSections } from './app/collapsible.js';
 
 const app = new StudioContext();
 
@@ -41,6 +42,7 @@ timeline.init();
 void voices.init();
 void library.init();
 void projects.init();
+initCollapsibleSections();
 
 app.log(`ready · avatar: ${app.avatar.description}`);
 
