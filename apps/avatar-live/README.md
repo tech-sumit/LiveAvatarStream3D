@@ -219,3 +219,12 @@ the look is saved in the project. Pipeline: scene → Bloom → ACES tone map �
 saturation / vignette / film-grain → SMAA. Tone mapping is ACES (three 0.152.2; AgX /
 Neutral need a three upgrade). `PostProcessingSpec` lives in `@las/protocol` so the look
 is part of the shared contract (engine-three pod wiring is a follow-up).
+
+### Newscast script (import)
+
+Import a `NewsReportDoc` (v2 JSON, `@las/protocol`) via the project/timeline file input to
+configure the whole editor at once: anchor + voice, the script (sections → beats with inline
+`[emotion][gesture]` tags), headline, look, lighting, back-screen, and camera/motion/music
+cues. Then **Generate** + **⬇ Export MP4**. See `public/samples/showcase.newscast.json` and
+`docs/specs/2026-06-21-newscast-dsl-design.md`. MVP supports a `rundown` of READER/VO sections;
+acts/graphics/ticker/transitions/`.ncast` text are V2.
