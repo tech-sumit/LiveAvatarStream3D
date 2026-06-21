@@ -1,0 +1,14 @@
+{
+  "label": "AI Anchor (Hunyuan)",
+  "description": "Photo → Nano Banana → Hunyuan3D 3.1 mesh, auto-rigged to Avaturn skeleton in Blender (arms refit, fingers aligned, jaw bone added). Body animates + jaw-bone lip-sync (open/close).",
+  "model": "model.glb",
+  "shot": "medium",
+  "bodyAnim": true,
+  "lipsync": {
+    "gain": 1.8,
+    "jaw": 1.6,
+    "wide": 1,
+    "round": 1,
+    "smoothing": 0.18
+  }
+}
