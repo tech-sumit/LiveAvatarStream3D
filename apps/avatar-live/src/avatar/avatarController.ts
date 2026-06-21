@@ -215,6 +215,13 @@ export class AvatarController {
         /* skip a clip that fails to load */
       }
     }
+    // Rest in a natural standing pose instead of the skeleton's T-pose bind: start a
+    // neutral idle clip as soon as one binds. Idle motion only layers breathing/sway on
+    // top of the playing body clip, so without this the avatar holds its arms-wide bind.
+    if (!this.currentClip) {
+      const rest = this.actions['idle'] ? 'idle' : this.actions['idle_calm'] ? 'idle_calm' : loaded[0];
+      if (rest) this.playClip(rest, 0);
+    }
     return loaded;
   }
 
