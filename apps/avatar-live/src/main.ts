@@ -15,6 +15,7 @@ import { ProjectStore } from './app/projectStore.js';
 import { initCollapsibleSections } from './app/collapsible.js';
 import { initSliderReadouts } from './app/sliderReadout.js';
 import { initScriptEditor } from './app/scriptEditor.js';
+import { initCameraQuickAccess } from './app/cameraQuickAccess.js';
 
 const app = new StudioContext();
 
@@ -47,6 +48,9 @@ void projects.init();
 initScriptEditor();
 initCollapsibleSections();
 initSliderReadouts();
+// Floating viewport quick-access widget + on-canvas affordances (mirrors the
+// right-panel shot/reset/align controls; runs after transform.init so those exist).
+initCameraQuickAccess(app.dom);
 
 app.log(`ready · avatar: ${app.avatar.description}`);
 
