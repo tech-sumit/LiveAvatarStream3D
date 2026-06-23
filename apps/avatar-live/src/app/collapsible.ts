@@ -3,7 +3,7 @@
  * body. A few advanced sections start collapsed so the panels aren't a wall of
  * controls; everything else stays open.
  */
-const COLLAPSED_BY_DEFAULT = ['lip-sync', 'transform', 'back screen'];
+const COLLAPSED_BY_DEFAULT = ['lip-sync', 'transform', 'back screen', 'look', 'console'];
 
 export function initCollapsibleSections(): void {
   for (const grp of document.querySelectorAll<HTMLElement>('.panel .grp')) {
