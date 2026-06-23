@@ -117,7 +117,7 @@ export class TimelineUI {
     add.title = 'Add a Camera or Motion cue';
     add.onclick = (e) => {
       e.stopPropagation();
-      this.toggleAddMenu(add);
+      this.openAddMenu();
     };
 
     const addAudio = el('button', 'tl-btn');
@@ -126,7 +126,7 @@ export class TimelineUI {
     addAudio.onclick = () => this.hooks.onAddAudio?.();
 
     const capture = el('button', 'tl-btn');
-    capture.textContent = '⌖ Capture view';
+    capture.textContent = '⌖ Capture';
     capture.title = 'Add a camera cue from the current view';
     capture.onclick = () => this.hooks.onCapturePose();
 
@@ -136,20 +136,37 @@ export class TimelineUI {
     rec.title = 'Record a free camera move (orbit / arrow keys), then Stop';
     rec.onclick = () => this.hooks.onRecordPath();
 
-    // Zoom: multiplies the auto-fit baseline pxPerSec.
-    const zoomLabel = el('span', 'tl-dim');
-    zoomLabel.textContent = 'Zoom';
-    const zoom = el('input', 'tl-zoom') as HTMLInputElement;
-    zoom.type = 'range';
-    zoom.min = '0.5';
-    zoom.max = '2';
-    zoom.step = '0.1';
-    zoom.value = String(this.zoom);
-    zoom.title = 'Timeline zoom';
-    zoom.oninput = () => {
-      this.zoom = Number(zoom.value) || 1;
+    // Zoom: a compact stepper (🔍 − %  +) that multiplies the auto-fit baseline
+    // pxPerSec in 10% steps over 50%–200%. Replaces the wide range slider.
+    const zoomGroup = el('div', 'tl-zoomctl');
+    const zoomIcon = el('span', 'tl-zoom-ic');
+    zoomIcon.textContent = '🔍';
+    zoomIcon.title = 'Timeline zoom';
+    const zoomMinus = el('button', 'tl-btn tl-zoom-btn') as HTMLButtonElement;
+    zoomMinus.textContent = '−';
+    zoomMinus.title = 'Zoom out';
+    const zoomPct = el('span', 'tl-zoom-pct');
+    const zoomPlus = el('button', 'tl-btn tl-zoom-btn') as HTMLButtonElement;
+    zoomPlus.textContent = '+';
+    zoomPlus.title = 'Zoom in';
+    const ZOOM_MIN = 0.5;
+    const ZOOM_MAX = 2;
+    const ZOOM_STEP = 0.1;
+    const renderZoomPct = () => {
+      zoomPct.textContent = `${Math.round(this.zoom * 100)}%`;
+      zoomMinus.disabled = this.zoom <= ZOOM_MIN + 1e-6;
+      zoomPlus.disabled = this.zoom >= ZOOM_MAX - 1e-6;
+    };
+    const stepZoom = (dir: number) => {
+      const next = Math.round((this.zoom + dir * ZOOM_STEP) * 10) / 10;
+      this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+      renderZoomPct();
       this.layout();
     };
+    zoomMinus.onclick = () => stepZoom(-1);
+    zoomPlus.onclick = () => stepZoom(1);
+    renderZoomPct();
+    zoomGroup.append(zoomIcon, zoomMinus, zoomPct, zoomPlus);
 
     const durLabel = el('span', 'tl-dim');
     durLabel.textContent = 'Length';
@@ -196,8 +213,7 @@ export class TimelineUI {
       capture,
       rec,
       sep(),
-      zoomLabel,
-      zoom,
+      zoomGroup,
       sep(),
       durLabel,
       dur,
@@ -242,73 +258,90 @@ export class TimelineUI {
     this.render();
   }
 
-  // ── Add-cue popover ───────────────────────────────────────────────────────
+  // ── Add-cue modal dialog ──────────────────────────────────────────────────
 
-  private toggleAddMenu(anchor: HTMLElement): void {
-    if (this.addMenuEl) {
-      this.closeAddMenu();
-      return;
-    }
-    this.openAddMenu(anchor);
-  }
-
-  /** Open the Add popover, optionally scrolling/highlighting a track group. */
-  openAddMenu(anchor?: HTMLElement, focusTrack?: 'camera' | 'motion'): void {
+  /**
+   * Open the "Add a cue" modal: a grid of element cards grouped Camera/Motion.
+   * Click a card → add that cue and close. `focusTrack` scrolls to a group
+   * (used by the C / M keyboard shortcuts). `anchor` is accepted but unused now
+   * that this is a centered dialog rather than an anchored popover.
+   */
+  openAddMenu(_anchor?: HTMLElement, focusTrack?: 'camera' | 'motion'): void {
     this.closeAddMenu();
-    const btn = (anchor ?? this.root.querySelector('#tlAdd')) as HTMLElement | null;
-    if (!btn) return;
 
-    const menu = el('div', 'tl-addmenu');
+    const backdrop = el('div', 'tl-modal');
+    const panel = el('div', 'tl-modal-panel');
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+
+    const header = el('div', 'tl-modal-head');
+    const title = el('h3', 'tl-modal-title');
+    title.textContent = 'Add a cue';
+    const close = el('button', 'tl-modal-close') as HTMLButtonElement;
+    close.type = 'button';
+    close.textContent = '✕';
+    close.title = 'Close';
+    close.onclick = () => this.closeAddMenu();
+    header.append(title, close);
+    panel.append(header);
+
+    const bodyEl = el('div', 'tl-modal-body');
     const groups: { kind: TrackKind; name: string }[] = [
       { kind: 'camera', name: 'Camera' },
       { kind: 'motion', name: 'Motion' },
     ];
     for (const g of groups) {
-      const head = el('div', 'tl-addmenu-head');
+      const section = el('div', 'tl-modal-section');
+      section.dataset.track = g.kind;
+      const head = el('div', 'tl-modal-subhead');
       head.textContent = g.name;
-      head.dataset.track = g.kind;
-      menu.append(head);
+      section.append(head);
+      const grid = el('div', 'tl-modal-grid');
       for (const [key, d] of Object.entries(CATALOG)) {
         if (d.track !== g.kind) continue;
-        const row = el('button', 'tl-addmenu-row') as HTMLButtonElement;
-        const sw = el('span', 'tl-addmenu-sw');
-        sw.style.background = d.color;
-        const lbl = el('span', 'tl-addmenu-lbl');
-        lbl.textContent = d.label;
-        row.append(sw, lbl);
-        row.onclick = () => {
+        const card = el('button', 'tl-card') as HTMLButtonElement;
+        card.type = 'button';
+        card.style.setProperty('--card-accent', d.color);
+        const icon = el('span', 'tl-card-icon');
+        icon.textContent = d.icon;
+        const name = el('span', 'tl-card-label');
+        name.textContent = d.label;
+        const desc = el('span', 'tl-card-desc');
+        desc.textContent = d.desc;
+        card.append(icon, name, desc);
+        card.onclick = () => {
           this.add(key);
           this.closeAddMenu();
         };
-        menu.append(row);
+        grid.append(card);
       }
+      section.append(grid);
+      bodyEl.append(section);
     }
-    document.body.append(menu);
-    this.addMenuEl = menu;
-    // position above the button (timeline sits at the bottom of the viewport)
-    const r = btn.getBoundingClientRect();
-    menu.style.left = `${Math.round(r.left)}px`;
-    const mh = menu.offsetHeight;
-    menu.style.top = `${Math.round(r.top - mh - 6)}px`;
+    panel.append(bodyEl);
+    backdrop.append(panel);
+
+    // backdrop click (but not clicks inside the panel) closes the dialog
+    backdrop.addEventListener('pointerdown', (e) => {
+      if (e.target === backdrop) this.closeAddMenu();
+    });
+
+    document.body.append(backdrop);
+    this.addMenuEl = backdrop;
+    window.addEventListener('keydown', this.onAddMenuKey, true);
 
     if (focusTrack) {
-      const head = menu.querySelector(`.tl-addmenu-head[data-track="${focusTrack}"]`) as HTMLElement | null;
-      head?.scrollIntoView({ block: 'nearest' });
-      head?.classList.add('focus');
+      const section = panel.querySelector(`.tl-modal-section[data-track="${focusTrack}"]`) as HTMLElement | null;
+      section?.scrollIntoView({ block: 'nearest' });
     }
-
-    // close on click-outside / Esc
-    setTimeout(() => {
-      window.addEventListener('pointerdown', this.onAddMenuOutside, true);
-    }, 0);
   }
 
-  private onAddMenuOutside = (e: PointerEvent): void => {
-    if (!this.addMenuEl) return;
-    const t = e.target as Node;
-    if (this.addMenuEl.contains(t)) return;
-    if ((t as HTMLElement)?.id === 'tlAdd') return; // the toggle button handles itself
-    this.closeAddMenu();
+  private onAddMenuKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      this.closeAddMenu();
+    }
   };
 
   private closeAddMenu(): void {
@@ -316,7 +349,7 @@ export class TimelineUI {
       this.addMenuEl.remove();
       this.addMenuEl = null;
     }
-    window.removeEventListener('pointerdown', this.onAddMenuOutside, true);
+    window.removeEventListener('keydown', this.onAddMenuKey, true);
   }
 
   private add(type: string): void {
