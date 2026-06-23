@@ -361,6 +361,8 @@ export class TimelineEditor {
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
       if (this.previewStart != null || this.performer?.isRendering) return; // director owns the camera
+      // A selected (editable) cue claims ←/→ for nudging (TimelineUI handles it).
+      if (this.selectedCue && this.selectedCue.track !== 'narration' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
       const s = e.shiftKey ? 0.25 : 0.08;
       switch (e.key) {
         case 'ArrowLeft': this.app.stage.nudgeCamera(-s, 0, 0); break;
