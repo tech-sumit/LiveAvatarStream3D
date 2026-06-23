@@ -8,6 +8,16 @@
   --accent: #5b8cff;
   --accent2: #3ad29f;
   --rec: #ff4d5e;
+  --amber: #f5b54a;
+  /* Corner-radius scale */
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  /* Spacing scale */
+  --sp-xs: 4px;
+  --sp-sm: 6px;
+  --sp-md: 8px;
+  --sp-lg: 12px;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -69,7 +79,7 @@ body {
   background: var(--panel2);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   padding: 6px 10px;
   font-size: 12px;
   cursor: pointer;
@@ -89,6 +99,11 @@ body {
   border-color: var(--accent);
   color: #07101f;
 }
+/* Amber warning tone — e.g. Save when R2 persistence is unavailable (local-only). */
+.tb-btn.warn {
+  border-color: var(--amber);
+  color: var(--amber);
+}
 .rec-btn.rec {
   background: var(--rec);
   border-color: var(--rec);
@@ -101,7 +116,7 @@ body {
   background: var(--panel2);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   padding: 5px 8px;
   font-size: 12px;
 }
@@ -109,7 +124,7 @@ body {
   background: var(--panel2);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   padding: 5px 8px;
   font-size: 12px;
   min-width: 160px;
@@ -221,7 +236,7 @@ body {
   background: var(--panel2);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 5px 10px;
   font-size: 12px;
   cursor: pointer;
@@ -318,7 +333,7 @@ body {
   position: absolute;
   top: 4px;
   height: 26px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: #06101f;
   font-size: 10px;
   font-weight: 600;
@@ -397,6 +412,48 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+/* ── Badge state variants — drive topbar status, R2 status, avatar-load ── */
+.badge.success {
+  color: var(--accent2);
+  background: rgba(58, 210, 159, 0.12);
+  border-color: rgba(58, 210, 159, 0.3);
+}
+.badge.loading {
+  color: var(--accent);
+  background: rgba(91, 140, 255, 0.12);
+  border-color: rgba(91, 140, 255, 0.3);
+}
+.badge.error {
+  color: var(--rec);
+  background: rgba(255, 77, 94, 0.12);
+  border-color: rgba(255, 77, 94, 0.35);
+}
+.badge.warning {
+  color: var(--amber);
+  background: rgba(245, 181, 74, 0.12);
+  border-color: rgba(245, 181, 74, 0.35);
+}
+/* Pulsing dot prefix while loading/discovering. */
+.badge.loading::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: badge-pulse 1s ease-in-out infinite;
+}
+@keyframes badge-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 section {
@@ -562,6 +619,15 @@ input[type='range'] {
 }
 .mini input[type='range'] {
   flex: 1;
+}
+/* Live value readout appended next to each range slider (sliderReadout.ts). */
+.slider-value {
+  flex: 0 0 auto;
+  min-width: 30px;
+  text-align: right;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
 }
 
 /* Collapsible sidebar sections — click the header to expand/collapse. */
