@@ -233,91 +233,177 @@ body {
   border-bottom: 1px solid var(--line);
 }
 .tl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-sm);
+  height: 32px;
+  white-space: nowrap;
   background: var(--panel2);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  padding: 5px 10px;
+  padding: 0 var(--sp-md);
   font-size: 12px;
+  line-height: 1;
   cursor: pointer;
 }
 .tl-btn:hover {
   border-color: var(--accent);
+}
+.tl-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .tl-btn.tl-recording {
   background: var(--rec);
   border-color: var(--rec);
   color: #fff;
 }
-.tl-zoom {
-  width: 90px;
-  accent-color: var(--accent);
-  cursor: pointer;
+
+/* Compact zoom stepper: 🔍 [−] 100% [+] */
+.tl-zoomctl {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  height: 32px;
+}
+.tl-zoom-ic {
+  font-size: 13px;
+  line-height: 1;
+}
+.tl-zoom-btn {
+  height: 24px;
+  width: 24px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.tl-zoom-pct {
+  min-width: 38px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 .tl-num {
-  width: 70px;
+  height: 32px;
+  width: 64px;
   background: var(--panel2);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  padding: 4px 6px;
+  padding: 0 var(--sp-sm);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
-/* Add-cue popover (anchored above the + Add button, appended to <body>) */
-.tl-addmenu {
+/* ── Add-cue modal dialog ──────────────────────────────────────────────────
+   Full-viewport dim backdrop + centered panel with a grid of cue cards. */
+.tl-modal {
   position: fixed;
+  inset: 0;
   z-index: 1000;
-  min-width: 200px;
-  max-height: 60vh;
-  overflow-y: auto;
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
-  padding: var(--sp-xs);
-}
-.tl-addmenu-head {
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding: var(--sp-sm) var(--sp-sm) var(--sp-xs);
-  border-radius: var(--radius-sm);
-}
-.tl-addmenu-head.focus {
-  background: rgba(91, 140, 255, 0.12);
-  color: var(--text);
-}
-.tl-addmenu-row {
   display: flex;
   align-items: center;
-  gap: var(--sp-sm);
-  width: 100%;
-  text-align: left;
-  background: transparent;
+  justify-content: center;
+  padding: var(--sp-lg);
+  background: rgba(6, 9, 16, 0.62);
+  backdrop-filter: blur(2px);
+}
+.tl-modal-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 92vw);
+  max-height: 80vh;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.tl-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-md) var(--sp-lg);
+  border-bottom: 1px solid var(--line);
+}
+.tl-modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--text);
-  border: 0;
-  border-radius: var(--radius-sm);
-  padding: var(--sp-sm) var(--sp-sm);
-  font-size: 12px;
+}
+.tl-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  width: 28px;
+  background: var(--panel2);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  font-size: 13px;
   cursor: pointer;
 }
-.tl-addmenu-row:hover {
-  background: rgba(91, 140, 255, 0.14);
+.tl-modal-close:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
-.tl-addmenu-sw {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  flex-shrink: 0;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3) inset;
+.tl-modal-body {
+  overflow-y: auto;
+  padding: var(--sp-lg);
 }
-.tl-addmenu-lbl {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.tl-modal-section + .tl-modal-section {
+  margin-top: var(--sp-lg);
+}
+.tl-modal-subhead {
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: var(--sp-sm);
+}
+.tl-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--sp-md);
+}
+.tl-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-xs);
+  text-align: left;
+  padding: var(--sp-md);
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--card-accent, var(--accent));
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+.tl-card:hover {
+  border-color: var(--accent);
+  border-top-color: var(--card-accent, var(--accent));
+  background: var(--panel);
+  transform: translateY(-1px);
+}
+.tl-card-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+.tl-card-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.tl-card-desc {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
 }
 .tl-time {
   font-variant-numeric: tabular-nums;

@@ -9,29 +9,31 @@ export interface CueDef {
   label: string;
   color: string;
   defaultDuration: number;
+  icon: string; // emoji shown on the Add dialog card
+  desc: string; // one-line description shown on the Add dialog card
 }
 
 export const CATALOG: Record<string, CueDef> = {
   // ── Camera moves (the target framing; eased over the cue's duration) ─────────
-  'cam.enterLeft': { track: 'camera', label: 'Enter from left', color: '#5b8cff', defaultDuration: 2.5 },
-  'cam.wide': { track: 'camera', label: 'Wide (studio)', color: '#5b8cff', defaultDuration: 2.0 },
-  'cam.anchor': { track: 'camera', label: 'Anchor (medium)', color: '#5b8cff', defaultDuration: 1.5 },
-  'cam.close': { track: 'camera', label: 'Close-up', color: '#5b8cff', defaultDuration: 1.5 },
-  'cam.screen': { track: 'camera', label: 'Two-shot + screen', color: '#5b8cff', defaultDuration: 1.8 },
-  'cam.orbit': { track: 'camera', label: 'Slow orbit', color: '#5b8cff', defaultDuration: 4.0 },
+  'cam.enterLeft': { track: 'camera', label: 'Enter from left', color: '#5b8cff', defaultDuration: 2.5, icon: '🎬', desc: 'Slide in from the left' },
+  'cam.wide': { track: 'camera', label: 'Wide (studio)', color: '#5b8cff', defaultDuration: 2.0, icon: '🔭', desc: 'Full studio wide shot' },
+  'cam.anchor': { track: 'camera', label: 'Anchor (medium)', color: '#5b8cff', defaultDuration: 1.5, icon: '👤', desc: 'Standard news medium (head→torso)' },
+  'cam.close': { track: 'camera', label: 'Close-up', color: '#5b8cff', defaultDuration: 1.5, icon: '🔍', desc: 'Tight head & shoulders' },
+  'cam.screen': { track: 'camera', label: 'Two-shot + screen', color: '#5b8cff', defaultDuration: 1.8, icon: '🖥', desc: 'Two-shot with the video wall' },
+  'cam.orbit': { track: 'camera', label: 'Slow orbit', color: '#5b8cff', defaultDuration: 4.0, icon: '🔄', desc: 'Slow arc around the anchor' },
   // Authored framings: a captured static view, or a recorded free move.
-  'cam.custom': { track: 'camera', label: 'Custom view', color: '#7c5bff', defaultDuration: 1.5 },
-  'cam.path': { track: 'camera', label: 'Recorded move', color: '#ff8c42', defaultDuration: 3.0 },
+  'cam.custom': { track: 'camera', label: 'Custom view', color: '#7c5bff', defaultDuration: 1.5, icon: '🎯', desc: 'Your captured viewport framing' },
+  'cam.path': { track: 'camera', label: 'Recorded move', color: '#ff8c42', defaultDuration: 3.0, icon: '⏺', desc: 'Replay a recorded camera move' },
   // Vision-mixer cut: while active, the recorded output IS the wall/cast video.
-  'cam.screenSource': { track: 'camera', label: 'Cut to screen', color: '#e0457b', defaultDuration: 3.0 },
+  'cam.screenSource': { track: 'camera', label: 'Cut to screen', color: '#e0457b', defaultDuration: 3.0, icon: '✂', desc: 'Cut output to the wall/cast video' },
 
   // ── Avatar motion (fires once at the cue start) ─────────────────────────────
-  'motion.turnScreen': { track: 'motion', label: 'Turn to screen', color: '#3ad29f', defaultDuration: 1.0 },
-  'motion.faceFront': { track: 'motion', label: 'Face front', color: '#3ad29f', defaultDuration: 1.0 },
-  'motion.point': { track: 'motion', label: 'Point at screen', color: '#3ad29f', defaultDuration: 1.5 },
-  'motion.wave': { track: 'motion', label: 'Wave', color: '#3ad29f', defaultDuration: 1.5 },
-  'motion.nod': { track: 'motion', label: 'Nod', color: '#3ad29f', defaultDuration: 1.2 },
-  'motion.explain': { track: 'motion', label: 'Explain (talk)', color: '#3ad29f', defaultDuration: 2.0 },
+  'motion.turnScreen': { track: 'motion', label: 'Turn to screen', color: '#3ad29f', defaultDuration: 1.0, icon: '↪', desc: 'Turn to address the wall' },
+  'motion.faceFront': { track: 'motion', label: 'Face front', color: '#3ad29f', defaultDuration: 1.0, icon: '⬆', desc: 'Face the camera' },
+  'motion.point': { track: 'motion', label: 'Point at screen', color: '#3ad29f', defaultDuration: 1.5, icon: '👉', desc: 'Point at the screen' },
+  'motion.wave': { track: 'motion', label: 'Wave', color: '#3ad29f', defaultDuration: 1.5, icon: '👋', desc: 'Wave' },
+  'motion.nod': { track: 'motion', label: 'Nod', color: '#3ad29f', defaultDuration: 1.2, icon: '🙂', desc: 'Nod' },
+  'motion.explain': { track: 'motion', label: 'Explain (talk)', color: '#3ad29f', defaultDuration: 2.0, icon: '💬', desc: 'Explaining gesture while talking' },
 };
 
 export interface CameraPose {
