@@ -23,15 +23,6 @@
           <input id="timelineFile" type="file" accept="application/json,.json" hidden />
         </div>
         <div class="tb-group tb-right">
-          <select id="captureFormat" title="Recording size"></select>
-          <select id="videoCodec" title="Export codec">
-            <option value="avc">H.264 (MP4)</option>
-            <option value="hevc">H.265 / HEVC (MP4, if supported)</option>
-          </select>
-          <button id="exportMp4">⬇ Export MP4</button>
-          <span id="exportProgress"></span>
-          <button id="record" class="tb-btn rec-btn">● Quick preview (webm)</button>
-          <a id="download" hidden>⬇ Save clip</a>
           <button id="timelineToggle" class="tb-btn">🎞 Timeline</button>
         </div>
       </header>
@@ -86,6 +77,20 @@
 
       <!-- ── Right panel: scene & inspector ──────────────────────────────── -->
       <aside id="rightPanel" class="panel">
+        <section class="grp">
+          <h2>Export &amp; record</h2>
+          <div class="row">
+            <select id="captureFormat" title="Recording size"></select>
+            <select id="videoCodec" title="Export codec">
+              <option value="avc">H.264 (MP4)</option>
+              <option value="hevc">H.265 / HEVC (MP4, if supported)</option>
+            </select>
+          </div>
+          <button id="exportMp4" class="primary">⬇ Export MP4</button>
+          <span id="exportProgress" class="hint"></span>
+          <button id="record">● Quick preview (webm)</button>
+          <a id="download" hidden>⬇ Save clip</a>
+        </section>
         <section class="grp">
           <h2>Avatar</h2>
           <select id="avatarSel" title="Avatars auto-discovered from public/*-model/"></select>
