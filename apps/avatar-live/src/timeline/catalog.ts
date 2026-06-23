@@ -69,9 +69,9 @@ export function poseFor(type: string, hc: THREE.Vector3, hh: number): CameraPose
       // angled two-shot showing the anchor (right, head→torso) and the video wall (left/back)
       return { pos: v(hc.x + hh * 2.2, eye, hc.z + hh * 7), target: v(hc.x - hh * 1.5, eye - hh * 0.5, hc.z - 1.4), fov: 42 };
     case 'cam.enterLeft':
-      return { pos: v(hc.x - hh * 10, eye, hc.z + hh * 4.5), target: v(hc.x, eye, hc.z), fov: 36 };
+      return { pos: v(hc.x - hh * 12, eye, hc.z + hh * 5.5), target: v(hc.x, eye - hh * 1.3, hc.z), fov: 36 };
     case 'cam.orbit':
-      return { pos: v(hc.x - hh * 3.5, eye, hc.z + hh * 4.5), target: v(hc.x, eye, hc.z), fov: 36 };
+      return { pos: v(hc.x - hh * 4.5, eye, hc.z + hh * 5.5), target: v(hc.x, eye - hh * 1.3, hc.z), fov: 36 };
     case 'cam.anchor':
     default:
       // Standard news medium: eye-level camera, look-at dropped to the chest so the frame

@@ -262,7 +262,7 @@ export class ProjectStore {
         const isTimeline = isObj && Array.isArray(data.cues);
         if (isNewsReport) {
           const { project } = compileNewsReport(validateNewsReportDoc(data));
-          await this.applyProject(project as unknown as ProjectDoc);
+          await this.applyProject(project as ProjectDoc);
           d.projectNameEl.value = file.name.replace(/\.newscast\.json$|\.(project|timeline)\.json$|\.json$/i, '');
           this.app.log(`imported newscast: ${(data as { meta: { title?: string } }).meta.title ?? 'untitled'}`);
         } else if (isProject) {
