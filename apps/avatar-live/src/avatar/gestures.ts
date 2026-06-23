@@ -30,7 +30,11 @@ export const GESTURE_CLIPS: Record<Gesture, string> = {
   nod: 'idle_calm',
 };
 
-const GESTURES = new Set<string>(Object.keys(GESTURE_CLIPS));
+// The gesture-tag vocabulary the script parser recognizes — derived from the clip
+// map so it can never drift. Exported so the script editor highlights exactly the
+// tags this parser acts on (a tag is "known" iff it's in here / EMOTION_NAMES).
+export const GESTURE_NAMES: readonly string[] = Object.keys(GESTURE_CLIPS);
+const GESTURES = new Set<string>(GESTURE_NAMES);
 
 // Keyword → gesture heuristics, applied when a line has no explicit [tag].
 const KEYWORDS: [RegExp, Gesture][] = [
@@ -94,8 +98,9 @@ export function selectTalkClip(gesture: Gesture, emotion: EmotionName, lastClip:
   return pick;
 }
 
-// Emotion directive vocabulary (mirrors EmotionName / DSL emotions).
-const EMOTIONS = new Set<string>([
+// Emotion directive vocabulary (mirrors EmotionName / DSL emotions). Exported so
+// the script editor highlights exactly the emotion tags this parser recognizes.
+export const EMOTION_NAMES: readonly string[] = [
   'neutral',
   'warm',
   'happy',
@@ -106,7 +111,8 @@ const EMOTIONS = new Set<string>([
   'confident',
   'thoughtful',
   'surprised',
-]);
+];
+const EMOTIONS = new Set<string>(EMOTION_NAMES);
 
 /**
  * Parse inline stage directions from a script line and return the spoken text

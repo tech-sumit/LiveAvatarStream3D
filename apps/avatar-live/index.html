@@ -31,15 +31,16 @@
       <aside id="leftPanel" class="panel">
         <section class="grp">
           <h2>Script</h2>
-          <textarea id="script" rows="7" spellcheck="false">[warm][wave] Good evening, and welcome to the broadcast. [serious] Tonight's top story: a breakthrough in realtime three-D avatars. [point] Just look at the headline on the wall behind me. [surprised] Honestly, nobody expected this to arrive so quickly. [count] There are three things you need to know. [open_palms] First, it runs entirely inside your browser. [excited][thumbs_up] Second, the lip-sync is incredibly accurate! [concerned] Third, some worry the technology could be misused. [thoughtful] So what does this mean for the future of news? [hand_to_chest] Personally, I believe it will change everything. [shrug] But of course, only time will tell. [confident][nod] Our team will keep following this story closely. [sad] That is all the heavy news for tonight. [happy][wave] Thank you for watching — goodnight!</textarea>
+          <div class="script-edit">
+            <pre id="scriptHL" class="script-hl" aria-hidden="true"></pre>
+            <textarea id="script" rows="7" spellcheck="false">[warm][wave] Good evening, and welcome to the broadcast. [serious] Tonight's top story: a breakthrough in realtime three-D avatars. [point] Just look at the headline on the wall behind me. [surprised] Honestly, nobody expected this to arrive so quickly. [count] There are three things you need to know. [open_palms] First, it runs entirely inside your browser. [excited][thumbs_up] Second, the lip-sync is incredibly accurate! [concerned] Third, some worry the technology could be misused. [thoughtful] So what does this mean for the future of news? [hand_to_chest] Personally, I believe it will change everything. [shrug] But of course, only time will tell. [confident][nod] Our team will keep following this story closely. [sad] That is all the heavy news for tonight. [happy][wave] Thank you for watching — goodnight!</textarea>
+          </div>
+          <p class="hint">Put <code>[tags]</code> inline to direct emotion &amp; gesture.</p>
           <div class="row">
             <button id="speak" class="primary">▶ Speak (stream)</button>
             <button id="stop" disabled>■ Stop</button>
           </div>
           <textarea id="liveLine" rows="1" placeholder="Type a line and press Enter to stream it in live…"></textarea>
-          <p class="hint">Stage directions — put <code>[tags]</code> in the script:
-            gestures <code>[wave] [point] [count] [open_palms] [thumbs_up] [shrug] [hand_to_chest]</code>
-            and emotions <code>[serious] [happy] [excited] [warm] [concerned]</code>.</p>
         </section>
 
         <section class="grp">
