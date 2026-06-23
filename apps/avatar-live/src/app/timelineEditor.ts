@@ -105,8 +105,17 @@ export class TimelineEditor {
 
   // ── narration handoff (Performer builds the buffer, we own the cues) ──
   setNarrationCues(cues: Cue[], totalSec: number): void {
-    this.timeline.cues = this.timeline.cues.filter((c) => c.track !== 'narration').concat(cues);
-    this.timeline.duration = Math.max(this.timeline.duration, Math.ceil(totalSec) + 1);
+    // The narration defines the performance length. Replace narration cues, and drop any
+    // camera/motion cues that start AFTER the new narration ends — those are stale (e.g.
+    // leftover demo-seed blocks authored for a longer script) and would fire after the
+    // performance is over. Cues overlapping the narration window and audio beds are kept,
+    // and the duration is allowed to SHRINK to fit, so the timeline tracks the script.
+    this.timeline.cues = this.timeline.cues
+      .filter((c) => c.track !== 'narration')
+      .filter((c) => !((c.track === 'camera' || c.track === 'motion') && c.start >= totalSec))
+      .concat(cues);
+    const cueEnd = this.timeline.cues.reduce((m, c) => Math.max(m, Math.ceil(c.start + c.duration)), 0);
+    this.timeline.duration = Math.max(Math.ceil(totalSec) + 1, cueEnd);
     this.player.load(this.timeline);
     this.ui?.reload();
   }

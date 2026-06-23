@@ -226,6 +226,29 @@ export class Stage {
   }
 
   /**
+   * Render the capture-gate sub-window into the output renderer — the exact pixels that
+   * get recorded/encoded. The gate is a contain-fit of the capture aspect inside the
+   * viewport, so cropping to it via setViewOffset and rendering into the capture-sized
+   * output buffer keeps the frame undistorted at any format. Shared by the live loop
+   * (tick) and the offline exporter so the MP4 is pixel-identical to the on-screen OUTPUT
+   * monitor. (Previously the export rendered the full viewport-aspect frustum, which
+   * stretched the frame and showed a wider crop than the gate.)
+   */
+  private renderSceneOutput(): void {
+    const W = this.el.clientWidth || window.innerWidth;
+    const H = this.el.clientHeight || window.innerHeight;
+    const g = this.gate;
+    const saved = this.hideInOutput.map((o) => o.visible);
+    this.hideInOutput.forEach((o) => (o.visible = false));
+    this.camera.setViewOffset(W, H, g.left, g.top, g.w, g.h);
+    this.camera.updateProjectionMatrix();
+    this.outputLook.composer.render();
+    this.camera.clearViewOffset();
+    this.camera.updateProjectionMatrix();
+    this.hideInOutput.forEach((o, i) => (o.visible = saved[i]));
+  }
+
+  /**
    * Render one output frame on demand (offline export) and return the capture
    * canvas. Mirrors the per-frame output render in the internal loop, but is
    * called synchronously by the exporter rather than by requestAnimationFrame.
@@ -234,7 +257,7 @@ export class Stage {
     if (this.outputIsScreen) {
       this.outputRenderer.render(this.screenScene, this.screenCam);
     } else {
-      this.outputLook.composer.render();
+      this.renderSceneOutput();
     }
     return this.outputCanvas;
   }
@@ -293,15 +316,7 @@ export class Stage {
     if (this.outputSource === 'screen' && this.screenVideo && this.screenVideo.readyState >= 2) {
       this.outputRenderer.render(this.screenScene, this.screenCam);
     } else {
-      const g = this.gate;
-      const saved = this.hideInOutput.map((o) => o.visible);
-      this.hideInOutput.forEach((o) => (o.visible = false));
-      this.camera.setViewOffset(W, H, g.left, g.top, g.w, g.h);
-      this.camera.updateProjectionMatrix();
-      this.outputLook.composer.render();
-      this.camera.clearViewOffset();
-      this.camera.updateProjectionMatrix();
-      this.hideInOutput.forEach((o, i) => (o.visible = saved[i]));
+      this.renderSceneOutput();
     }
   }
 
