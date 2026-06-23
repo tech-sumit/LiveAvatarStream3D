@@ -13,6 +13,7 @@ import { TimelineEditor } from './app/timelineEditor.js';
 import { Performer } from './app/performer.js';
 import { ProjectStore } from './app/projectStore.js';
 import { initCollapsibleSections } from './app/collapsible.js';
+import { initSliderReadouts } from './app/sliderReadout.js';
 
 const app = new StudioContext();
 
@@ -43,6 +44,7 @@ void voices.init();
 void library.init();
 void projects.init();
 initCollapsibleSections();
+initSliderReadouts();
 
 app.log(`ready · avatar: ${app.avatar.description}`);
 
