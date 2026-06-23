@@ -23,7 +23,7 @@
           <input id="timelineFile" type="file" accept="application/json,.json" hidden />
         </div>
         <div class="tb-group tb-right">
-          <button id="timelineToggle" class="tb-btn">🎞 Timeline</button>
+          <button id="timelineToggle" class="tb-btn" title="Toggle the director timeline dock (shows at bottom when open)">🎞 Timeline</button>
         </div>
       </header>
 
@@ -79,12 +79,18 @@
       <aside id="rightPanel" class="panel">
         <section class="grp">
           <h2>Export &amp; record</h2>
-          <div class="row">
-            <select id="captureFormat" title="Recording size"></select>
-            <select id="videoCodec" title="Export codec">
-              <option value="avc">H.264 (MP4)</option>
-              <option value="hevc">H.265 / HEVC (MP4, if supported)</option>
-            </select>
+          <div class="grid2">
+            <div class="field">
+              <label for="captureFormat" class="tl-dim">Format (resolution)</label>
+              <select id="captureFormat" title="Recording size"></select>
+            </div>
+            <div class="field">
+              <label for="videoCodec" class="tl-dim">Codec (compression)</label>
+              <select id="videoCodec" title="Export codec">
+                <option value="avc">H.264 (MP4)</option>
+                <option value="hevc">H.265 / HEVC (MP4, if supported)</option>
+              </select>
+            </div>
           </div>
           <button id="exportMp4" class="primary">⬇ Export MP4</button>
           <span id="exportProgress" class="hint"></span>
