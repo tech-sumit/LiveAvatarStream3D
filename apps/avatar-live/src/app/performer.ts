@@ -73,7 +73,7 @@ export class Performer {
         },
         onIdle: () => {
           this._speaking = false;
-          if (app.avatar.animationClips.length) app.avatar.playClip('idle');
+          app.avatar.restToIdle();
           this.analyser = null;
           app.log('idle');
           this.setSpeakingUi(false);
@@ -236,7 +236,7 @@ export class Performer {
       // The offline loop left the avatar on the last beat's gesture — rest to idle.
       app.avatar.setSilent();
       app.avatar.setTurn(0);
-      if (app.avatar.animationClips.length) app.avatar.playClip('idle');
+      app.avatar.restToIdle();
     }
   };
 
@@ -295,7 +295,7 @@ export class Performer {
       deps.timeline.stopAudioCues();
       app.avatar.setSilent();
       app.avatar.setGazeTarget(null);
-      if (app.avatar.animationClips.length) app.avatar.playClip('idle');
+      app.avatar.restToIdle();
       deps.timeline.setUiPlaying(false);
       deps.timeline.setUiPlayhead(0);
       this.performing = false;
@@ -435,7 +435,7 @@ export class Performer {
       // Rest to idle so a barge-in stop doesn't freeze the last gesture (wide hands).
       app.avatar.setSilent();
       app.avatar.setTurn(0);
-      if (app.avatar.animationClips.length) app.avatar.playClip('idle');
+      app.avatar.restToIdle();
       app.log('stopped (barge-in)');
     });
     d.liveEl.addEventListener('keydown', (e) => {

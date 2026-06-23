@@ -556,4 +556,8 @@ input[type='range'] {
 }
 .panel .grp.collapsed {
   flex: 0 0 auto;
+  min-height: 0; /* the log section (.grp-grow) sets min-height:120px — release it when collapsed */
+}
+.panel .grp.collapsed > h2 {
+  margin-bottom: 0;
 }

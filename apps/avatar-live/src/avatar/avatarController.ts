@@ -218,10 +218,7 @@ export class AvatarController {
     // Rest in a natural standing pose instead of the skeleton's T-pose bind: start a
     // neutral idle clip as soon as one binds. Idle motion only layers breathing/sway on
     // top of the playing body clip, so without this the avatar holds its arms-wide bind.
-    if (!this.currentClip) {
-      const rest = this.actions['idle'] ? 'idle' : this.actions['idle_calm'] ? 'idle_calm' : loaded[0];
-      if (rest) this.playClip(rest, 0);
-    }
+    if (!this.currentClip) this.restToIdle(0);
     return loaded;
   }
 
@@ -244,6 +241,14 @@ export class AvatarController {
 
   get animationClips(): string[] {
     return Object.keys(this.actions);
+  }
+
+  /** Settle into a resting idle pose. Reuses the loader's idle → idle_calm → first-clip
+   *  fallback — playClip is a no-op for a missing clip, so 'idle' alone isn't safe (a
+   *  partial asset load could leave only talk clips). No-op if no body clip is loaded. */
+  restToIdle(fade = 0.3): void {
+    const rest = this.actions['idle'] ? 'idle' : this.actions['idle_calm'] ? 'idle_calm' : Object.keys(this.actions)[0];
+    if (rest) this.playClip(rest, fade);
   }
 
   setEmotion(name: EmotionName, intensity = 1): void {
