@@ -208,6 +208,8 @@ export class ProjectStore {
     const { app, c } = this;
     const d = app.dom;
     d.scriptEl.value = doc.script ?? d.scriptEl.value;
+    // Refresh the overlay highlighter / validity badge for the loaded script.
+    d.scriptEl.dispatchEvent(new Event('input'));
     c.performer.invalidateNarration();
     c.voices.apply(doc);
     c.performer.setRate(Number(d.rateEl.value));
