@@ -158,7 +158,7 @@ export function compileNewsReport(doc: NewsReportDoc): { project: CompiledProjec
       scriptParts.push(`[${curEmotion}][${gesture}] ${ensureTerminal(beat.text)}`);
 
       const dur = estDuration(beat.text);
-      cues.push({ id: id('nar'), track: 'narration', type: 'narration', start: round1(t), duration: round1(dur), text: beat.text, gesture, emotion: curEmotion });
+      cues.push({ id: id('nar'), track: 'narration', type: 'narration', start: round1(t), duration: round1(dur), text: ensureTerminal(beat.text), gesture, emotion: curEmotion });
 
       const camType = cameraTypeFor(curCamera);
       if (camType !== prevCamType) {
