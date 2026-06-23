@@ -54,7 +54,7 @@ export class Recording {
     const d = this.app.dom;
     const f = CAPTURE_FORMATS[Number(d.captureFormatSel.value)] ?? CAPTURE_FORMATS[0];
     this.app.stage.setCaptureFormat(f);
-    d.gateLabelEl.textContent = `${f.w}×${f.h}`;
+    d.gateLabelEl.textContent = `${f.name} · ${f.w}×${f.h}`;
   };
 
   /** The currently selected capture resolution. */

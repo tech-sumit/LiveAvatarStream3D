@@ -77,6 +77,12 @@ body {
 .tb-btn:hover {
   border-color: var(--accent);
 }
+.tb-btn:active {
+  transform: scale(0.98);
+}
+.tb-btn.primary:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
 .tb-btn.primary,
 .tb-btn.on {
   background: var(--accent);
@@ -89,7 +95,9 @@ body {
   color: #fff;
 }
 #projectName {
-  width: 120px;
+  min-width: 140px;
+  max-width: 200px;
+  flex: 0 1 auto;
   background: var(--panel2);
   color: var(--text);
   border: 1px solid var(--line);
@@ -104,7 +112,9 @@ body {
   border-radius: 7px;
   padding: 5px 8px;
   font-size: 12px;
-  max-width: 150px;
+  min-width: 160px;
+  max-width: 220px;
+  flex: 0 1 auto;
 }
 /* The toolbar download link can carry a long filename — keep it from blowing out the row. */
 #topbar a#download {
@@ -128,7 +138,8 @@ body {
 /* Capture-area frame ("virtual lines") — JS sizes it to the camera's letterbox. */
 #cameraGate {
   position: absolute;
-  border: 1px dashed rgba(91, 140, 255, 0.7);
+  border: 1px dashed rgba(91, 140, 255, 1);
+  background: rgba(91, 140, 255, 0.04);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
   pointer-events: none;
 }
@@ -243,7 +254,8 @@ body {
 }
 .tl-time {
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--accent);
   min-width: 42px;
 }
@@ -334,8 +346,9 @@ body {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
+  width: 3px;
   background: var(--rec);
+  cursor: grab;
   pointer-events: none;
   z-index: 6;
 }
@@ -451,6 +464,13 @@ select {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
 }
+/* A labelled control: caption stacked above its input/select. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
 .grid3 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -477,8 +497,19 @@ button:hover:not(:disabled),
   border-color: var(--accent);
 }
 button:disabled {
-  opacity: 0.45;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(40, 49, 67, 0.6);
   cursor: not-allowed;
+}
+/* Global keyboard-focus ring on all interactive controls (WCAG 2.4.7). */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+.filebtn:focus-visible,
+.tb-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 button.primary {
   background: var(--accent);
@@ -507,6 +538,7 @@ a#download {
   margin: 0;
   flex: 1;
   min-height: 90px;
+  max-height: 150px;
   background: #0a0d14;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -540,6 +572,10 @@ input[type='range'] {
   justify-content: space-between;
   gap: 8px;
   user-select: none;
+}
+.panel .grp > h2:hover {
+  background: rgba(91, 140, 255, 0.08);
+  border-radius: 4px;
 }
 .panel .grp > h2::after {
   content: '▾';
