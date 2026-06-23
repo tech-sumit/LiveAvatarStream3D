@@ -61,31 +61,56 @@ export class AvatarTransform {
       this.syncGizmoToAvatar();
       stage.frame(avatar.headCenter, avatar.headHeight, 'wide', true); // reveal the avatar + gizmo
       dom.shotSel.value = 'wide';
+      this.flashGate();
     }
     this.gizmo.visible = on;
     this.gizmo.enabled = on;
     dom.gizmoBtn.classList.toggle('primary', on);
     dom.gizmoModesEl.hidden = !on;
+    // Drive viewport discoverability: the "Press G to edit" hint shows only while
+    // the gizmo is OFF (class on #stage, hint is pointer-events:none / CSS-driven).
+    dom.stageEl.classList.toggle('gizmo-on', on);
+  }
+
+  /** Briefly pulse the capture-gate border so a reframe/reset is noticeable. */
+  private flashGate(): void {
+    const gate = this.app.dom.cameraGateEl;
+    if (!gate) return;
+    gate.classList.remove('flash');
+    void gate.offsetWidth; // restart the animation
+    gate.classList.add('flash');
+    window.setTimeout(() => gate.classList.remove('flash'), 320);
   }
 
   init(): void {
     const { stage, avatar, dom } = this.app;
-    dom.alignFaceBtn.addEventListener('click', () => stage.alignToFace(this.faceWorld()));
+    // Start with the gizmo-off hint visible (no class on #stage means "gizmo off").
+    dom.stageEl.classList.remove('gizmo-on');
+    dom.alignFaceBtn.addEventListener('click', () => {
+      stage.alignToFace(this.faceWorld());
+      this.flashGate();
+    });
     dom.autoAlignBtn.addEventListener('click', () => {
       this.autoAlignOn = !this.autoAlignOn;
       dom.autoAlignBtn.textContent = `Auto-align: ${this.autoAlignOn ? 'On' : 'Off'}`;
       dom.autoAlignBtn.classList.toggle('primary', this.autoAlignOn);
+      // Viewport feedback: glow the capture gate while auto-align tracks the face.
+      dom.cameraGateEl?.classList.toggle('auto-aligning', this.autoAlignOn);
       if (this.autoAlignOn) stage.alignToFace(this.faceWorld()); // snap immediately, then keep aligned
     });
-    dom.resetViewBtn.addEventListener('click', () =>
-      stage.frame(avatar.headCenter, avatar.headHeight, dom.shotSel.value as Shot, true),
-    );
+    dom.resetViewBtn.addEventListener('click', () => {
+      stage.frame(avatar.headCenter, avatar.headHeight, dom.shotSel.value as Shot, true);
+      this.flashGate();
+    });
     dom.centerAvatarBtn.addEventListener('click', () => {
       avatar.setPosition(0, 0, 0);
       avatar.group.quaternion.identity();
       this.syncGizmoToAvatar();
     });
-    dom.shotSel.addEventListener('change', () => stage.frame(avatar.headCenter, avatar.headHeight, dom.shotSel.value as Shot));
+    dom.shotSel.addEventListener('change', () => {
+      stage.frame(avatar.headCenter, avatar.headHeight, dom.shotSel.value as Shot);
+      this.flashGate();
+    });
 
     this.setGizmoMode('translate');
     dom.gizmoBtn.addEventListener('click', () => {
