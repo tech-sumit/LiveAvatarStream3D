@@ -24,16 +24,24 @@ const LANES: { kind: TrackKind; name: string }[] = [
   { kind: 'audio', name: 'Audio' },
 ];
 const LABEL_W = 78;
-const LANE_H = 34;
+const LANE_H = 40;
 const RULER_H = 18;
+const MIN_TICK_PX = 60; // aim for ~60px between ruler labels
 
 export class TimelineUI {
   private root: HTMLElement;
   private trackArea!: HTMLElement;
   private playheadEl!: HTMLElement;
+  private snapGuideEl!: HTMLElement;
   private timeLabel!: HTMLElement;
   private selected: string | null = null;
   private pxPerSec = 60;
+  private basePxPerSec = 60; // auto-fit baseline before zoom is applied
+  private zoom = 1;
+  private playheadT = 0;
+  private playing = false;
+  private addMenuEl: HTMLElement | null = null;
+  private undoStack: string[] = []; // serialized timeline snapshots (last ~5)
 
   constructor(
     container: HTMLElement,
@@ -43,13 +51,7 @@ export class TimelineUI {
     this.root = container;
     this.build();
     window.addEventListener('resize', () => this.layout());
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (this.selected && !(e.target instanceof HTMLInputElement)) {
-          this.remove(this.selected);
-        }
-      }
-    });
+    window.addEventListener('keydown', this.onKeyDown);
   }
 
   getTimeline(): Timeline {
@@ -57,6 +59,7 @@ export class TimelineUI {
   }
 
   setPlaying(on: boolean): void {
+    this.playing = on;
     this.root.querySelector('#tlPlay')!.textContent = on ? '■ Stop' : '▶ Preview';
   }
 
@@ -76,11 +79,13 @@ export class TimelineUI {
   /** Rebuild from scratch after the timeline is replaced (load / new). */
   reload(): void {
     this.selected = null;
+    this.undoStack = []; // a new timeline → drop stale undo history
     this.build();
     this.hooks.onSelect?.(null);
   }
 
   setPlayhead(t: number): void {
+    this.playheadT = t;
     const x = LABEL_W + t * this.pxPerSec;
     this.playheadEl.style.left = `${x}px`;
     this.timeLabel.textContent = `${t.toFixed(1)}s`;
@@ -89,6 +94,7 @@ export class TimelineUI {
   private build(): void {
     this.root.innerHTML = '';
     this.root.classList.add('tl');
+    this.closeAddMenu();
 
     // Toolbar
     const bar = el('div', 'tl-bar');
@@ -105,12 +111,45 @@ export class TimelineUI {
     gen.title = 'Synthesize the script → narration lane (then Preview plays it lip-synced)';
     gen.onclick = () => this.hooks.onGenerate?.();
 
-    const addCam = this.addMenu('camera', '+ Camera');
-    const addMotion = this.addMenu('motion', '+ Motion');
+    const add = el('button', 'tl-btn') as HTMLButtonElement;
+    add.id = 'tlAdd';
+    add.textContent = '＋ Add';
+    add.title = 'Add a Camera or Motion cue';
+    add.onclick = (e) => {
+      e.stopPropagation();
+      this.toggleAddMenu(add);
+    };
+
     const addAudio = el('button', 'tl-btn');
     addAudio.textContent = '+ Audio';
     addAudio.title = 'Add a background-music / SFX clip';
     addAudio.onclick = () => this.hooks.onAddAudio?.();
+
+    const capture = el('button', 'tl-btn');
+    capture.textContent = '⌖ Capture view';
+    capture.title = 'Add a camera cue from the current view';
+    capture.onclick = () => this.hooks.onCapturePose();
+
+    const rec = el('button', 'tl-btn');
+    rec.id = 'tlRec';
+    rec.textContent = '● Rec cam';
+    rec.title = 'Record a free camera move (orbit / arrow keys), then Stop';
+    rec.onclick = () => this.hooks.onRecordPath();
+
+    // Zoom: multiplies the auto-fit baseline pxPerSec.
+    const zoomLabel = el('span', 'tl-dim');
+    zoomLabel.textContent = 'Zoom';
+    const zoom = el('input', 'tl-zoom') as HTMLInputElement;
+    zoom.type = 'range';
+    zoom.min = '0.5';
+    zoom.max = '2';
+    zoom.step = '0.1';
+    zoom.value = String(this.zoom);
+    zoom.title = 'Timeline zoom';
+    zoom.oninput = () => {
+      this.zoom = Number(zoom.value) || 1;
+      this.layout();
+    };
 
     const durLabel = el('span', 'tl-dim');
     durLabel.textContent = 'Length';
@@ -125,20 +164,20 @@ export class TimelineUI {
       this.hooks.onChange();
     };
 
-    const capture = el('button', 'tl-btn');
-    capture.textContent = '⌖ Capture view';
-    capture.title = 'Add a camera cue from the current view';
-    capture.onclick = () => this.hooks.onCapturePose();
-
-    const rec = el('button', 'tl-btn');
-    rec.id = 'tlRec';
-    rec.textContent = '● Rec cam';
-    rec.title = 'Record a free camera move (orbit / arrow keys), then Stop';
-    rec.onclick = () => this.hooks.onRecordPath();
+    const undo = el('button', 'tl-btn') as HTMLButtonElement;
+    undo.id = 'tlUndo';
+    undo.textContent = '↶ Undo';
+    undo.title = 'Undo the last cue change';
+    undo.disabled = this.undoStack.length === 0;
+    undo.onclick = () => this.undo();
 
     const clear = el('button', 'tl-btn');
     clear.textContent = 'Clear';
+    clear.title = 'Remove all cues';
     clear.onclick = () => {
+      if (!this.timeline.cues.length) return;
+      if (!confirm(`Clear all ${this.timeline.cues.length} cue(s)? This cannot be undone except via Undo.`)) return;
+      this.pushUndo();
       this.timeline.cues = [];
       this.selected = null;
       this.hooks.onSelect?.(null);
@@ -152,31 +191,44 @@ export class TimelineUI {
       sep(),
       gen,
       sep(),
-      addCam,
-      addMotion,
+      add,
       addAudio,
       capture,
       rec,
       sep(),
+      zoomLabel,
+      zoom,
+      sep(),
       durLabel,
       dur,
       sep(),
+      undo,
       clear,
     );
 
     // Body: fixed labels + scrollable track area
     const body = el('div', 'tl-body');
     const labels = el('div', 'tl-labels');
-    const ru=el('div','tl-lane-label'); ru.textContent=''; ru.style.height=`${RULER_H}px`; labels.append(ru);
+    const ru = el('div', 'tl-lane-label');
+    ru.textContent = '';
+    ru.style.height = `${RULER_H}px`;
+    labels.append(ru);
     for (const l of LANES) {
       const lab = el('div', 'tl-lane-label');
+      lab.dataset.kind = l.kind;
+      lab.dataset.name = l.name;
       lab.textContent = l.name;
       lab.style.height = `${LANE_H}px`;
       labels.append(lab);
     }
     this.trackArea = el('div', 'tl-tracks');
     this.playheadEl = el('div', 'tl-playhead');
-    this.trackArea.append(this.playheadEl);
+    const grab = el('div', 'tl-playhead-grab');
+    this.playheadEl.append(grab);
+    this.snapGuideEl = el('div', 'tl-snap-guide');
+    this.snapGuideEl.hidden = true;
+    this.trackArea.append(this.snapGuideEl, this.playheadEl);
+    this.wirePlayheadDrag();
     // seek by clicking the ruler/track area
     this.trackArea.addEventListener('pointerdown', (e) => {
       if (e.target !== this.trackArea && !(e.target as HTMLElement).classList.contains('tl-ruler')) return;
@@ -190,29 +242,87 @@ export class TimelineUI {
     this.render();
   }
 
-  private addMenu(track: TrackKind, label: string): HTMLElement {
-    const sel = el('select', 'tl-add') as HTMLSelectElement;
-    const def = el('option') as HTMLOptionElement;
-    def.value = '';
-    def.textContent = label;
-    sel.append(def);
-    for (const [key, d] of Object.entries(CATALOG)) {
-      if (d.track !== track) continue;
-      const o = el('option') as HTMLOptionElement;
-      o.value = key;
-      o.textContent = d.label;
-      sel.append(o);
+  // ── Add-cue popover ───────────────────────────────────────────────────────
+
+  private toggleAddMenu(anchor: HTMLElement): void {
+    if (this.addMenuEl) {
+      this.closeAddMenu();
+      return;
     }
-    sel.onchange = () => {
-      if (!sel.value) return;
-      this.add(sel.value);
-      sel.value = '';
-    };
-    return sel;
+    this.openAddMenu(anchor);
+  }
+
+  /** Open the Add popover, optionally scrolling/highlighting a track group. */
+  openAddMenu(anchor?: HTMLElement, focusTrack?: 'camera' | 'motion'): void {
+    this.closeAddMenu();
+    const btn = (anchor ?? this.root.querySelector('#tlAdd')) as HTMLElement | null;
+    if (!btn) return;
+
+    const menu = el('div', 'tl-addmenu');
+    const groups: { kind: TrackKind; name: string }[] = [
+      { kind: 'camera', name: 'Camera' },
+      { kind: 'motion', name: 'Motion' },
+    ];
+    for (const g of groups) {
+      const head = el('div', 'tl-addmenu-head');
+      head.textContent = g.name;
+      head.dataset.track = g.kind;
+      menu.append(head);
+      for (const [key, d] of Object.entries(CATALOG)) {
+        if (d.track !== g.kind) continue;
+        const row = el('button', 'tl-addmenu-row') as HTMLButtonElement;
+        const sw = el('span', 'tl-addmenu-sw');
+        sw.style.background = d.color;
+        const lbl = el('span', 'tl-addmenu-lbl');
+        lbl.textContent = d.label;
+        row.append(sw, lbl);
+        row.onclick = () => {
+          this.add(key);
+          this.closeAddMenu();
+        };
+        menu.append(row);
+      }
+    }
+    document.body.append(menu);
+    this.addMenuEl = menu;
+    // position above the button (timeline sits at the bottom of the viewport)
+    const r = btn.getBoundingClientRect();
+    menu.style.left = `${Math.round(r.left)}px`;
+    const mh = menu.offsetHeight;
+    menu.style.top = `${Math.round(r.top - mh - 6)}px`;
+
+    if (focusTrack) {
+      const head = menu.querySelector(`.tl-addmenu-head[data-track="${focusTrack}"]`) as HTMLElement | null;
+      head?.scrollIntoView({ block: 'nearest' });
+      head?.classList.add('focus');
+    }
+
+    // close on click-outside / Esc
+    setTimeout(() => {
+      window.addEventListener('pointerdown', this.onAddMenuOutside, true);
+    }, 0);
+  }
+
+  private onAddMenuOutside = (e: PointerEvent): void => {
+    if (!this.addMenuEl) return;
+    const t = e.target as Node;
+    if (this.addMenuEl.contains(t)) return;
+    if ((t as HTMLElement)?.id === 'tlAdd') return; // the toggle button handles itself
+    this.closeAddMenu();
+  };
+
+  private closeAddMenu(): void {
+    if (this.addMenuEl) {
+      this.addMenuEl.remove();
+      this.addMenuEl = null;
+    }
+    window.removeEventListener('pointerdown', this.onAddMenuOutside, true);
   }
 
   private add(type: string): void {
     const d = CATALOG[type];
+    if (!d) return;
+    this.pushUndo();
     const at = Number(this.timeLabel.textContent?.replace('s', '')) || 0;
     this.timeline.cues.push({ id: cueId(), track: d.track, type, start: at, duration: d.defaultDuration });
     this.render();
@@ -220,6 +330,7 @@ export class TimelineUI {
   }
 
   private remove(id: string): void {
+    this.pushUndo();
     this.timeline.cues = this.timeline.cues.filter((c) => c.id !== id);
     if (this.selected === id) {
       this.selected = null;
@@ -234,8 +345,143 @@ export class TimelineUI {
     this.remove(id);
   }
 
+  // ── Undo stack (last ~5 timeline states) ──────────────────────────────────
+
+  private snapshot(): string {
+    return JSON.stringify(this.timeline.cues);
+  }
+  private pushUndo(): void {
+    this.undoStack.push(this.snapshot());
+    if (this.undoStack.length > 5) this.undoStack.shift();
+    this.refreshUndoBtn();
+  }
+  private refreshUndoBtn(): void {
+    const b = this.root.querySelector('#tlUndo') as HTMLButtonElement | null;
+    if (b) b.disabled = this.undoStack.length === 0;
+  }
+  private undo(): void {
+    const prev = this.undoStack.pop();
+    if (prev == null) return;
+    try {
+      this.timeline.cues = JSON.parse(prev) as Cue[];
+    } catch {
+      return;
+    }
+    if (this.selected && !this.timeline.cues.some((c) => c.id === this.selected)) {
+      this.selected = null;
+      this.hooks.onSelect?.(null);
+    }
+    this.render();
+    this.refreshUndoBtn();
+    this.hooks.onChange();
+  }
+
+  // ── Playhead drag-scrub + snap guide ──────────────────────────────────────
+
+  private wirePlayheadDrag(): void {
+    this.playheadEl.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      this.playheadEl.setPointerCapture(e.pointerId);
+      this.playheadEl.classList.add('dragging');
+      const rect = this.trackArea.getBoundingClientRect();
+      const seekAt = (clientX: number) => {
+        const t = (clientX - rect.left - LABEL_W + this.trackArea.scrollLeft) / this.pxPerSec;
+        const clamped = Math.max(0, Math.min(this.timeline.duration, t));
+        this.hooks.onSeek(clamped);
+        this.setPlayhead(clamped);
+      };
+      seekAt(e.clientX);
+      const move = (ev: PointerEvent) => seekAt(ev.clientX);
+      const up = (ev: PointerEvent) => {
+        this.playheadEl.releasePointerCapture(ev.pointerId);
+        this.playheadEl.classList.remove('dragging');
+        this.playheadEl.removeEventListener('pointermove', move);
+        this.playheadEl.removeEventListener('pointerup', up);
+      };
+      this.playheadEl.addEventListener('pointermove', move);
+      this.playheadEl.addEventListener('pointerup', up);
+    });
+  }
+
+  private showSnapGuide(t: number): void {
+    this.snapGuideEl.hidden = false;
+    this.snapGuideEl.style.left = `${LABEL_W + t * this.pxPerSec}px`;
+  }
+  private hideSnapGuide(): void {
+    this.snapGuideEl.hidden = true;
+  }
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+
+  private onKeyDown = (e: KeyboardEvent): void => {
+    const target = e.target as HTMLElement | null;
+    const typing =
+      target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target?.isContentEditable;
+
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (this.selected && !typing) {
+        e.preventDefault();
+        this.remove(this.selected);
+      }
+      return;
+    }
+    if (typing) return;
+    // Only the timeline-area shortcuts below; guarded so they don't steal input focus.
+    switch (e.key) {
+      case ' ': // Space → toggle preview
+        e.preventDefault();
+        this.hooks.onPreview();
+        break;
+      case 'ArrowLeft':
+      case 'ArrowRight': {
+        // Only consume arrows when a cue is selected (nudge it) or while previewing
+        // (scrub). Otherwise defer to the host's camera-navigation arrow handler.
+        const cue = this.selected ? this.timeline.cues.find((c) => c.id === this.selected && c.track !== 'narration') : null;
+        if (!cue && !this.playing) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const dt = e.shiftKey ? 1 : 0.1;
+        this.nudge(e.key === 'ArrowLeft' ? -dt : dt);
+        break;
+      }
+      case 'a':
+      case 'A':
+        e.preventDefault();
+        this.hooks.onAddAudio?.();
+        break;
+      case 'c':
+      case 'C':
+        e.preventDefault();
+        this.openAddMenu(undefined, 'camera');
+        break;
+      case 'm':
+      case 'M':
+        e.preventDefault();
+        this.openAddMenu(undefined, 'motion');
+        break;
+      default:
+        break;
+    }
+  };
+
+  /** Nudge the selected (editable) cue by dt, else scrub the playhead by dt. */
+  private nudge(dt: number): void {
+    const cue = this.selected ? this.timeline.cues.find((c) => c.id === this.selected) : null;
+    if (cue && cue.track !== 'narration') {
+      cue.start = Math.max(0, Math.round((cue.start + dt) * 10) / 10);
+      this.render();
+      this.hooks.onChange();
+      return;
+    }
+    const t = Math.max(0, Math.min(this.timeline.duration, Math.round((this.playheadT + dt) * 10) / 10));
+    this.hooks.onSeek(t);
+    this.setPlayhead(t);
+  }
+
+  // ── Rendering ─────────────────────────────────────────────────────────────
+
   private render(): void {
-    // wipe lanes (keep playhead)
+    // wipe lanes (keep playhead + snap guide)
     this.trackArea.querySelectorAll('.tl-lane, .tl-ruler').forEach((n) => n.remove());
 
     const ruler = el('div', 'tl-ruler');
@@ -253,7 +499,20 @@ export class TimelineUI {
       }
       this.trackArea.append(laneEl);
     });
+    this.updateLaneCounts();
     this.layout();
+  }
+
+  /** Refresh lane labels to "Name (n)" cue counts. */
+  private updateLaneCounts(): void {
+    const labels = this.root.querySelectorAll('.tl-lane-label[data-kind]');
+    labels.forEach((node) => {
+      const lab = node as HTMLElement;
+      const kind = lab.dataset.kind as TrackKind;
+      const name = lab.dataset.name ?? '';
+      const n = this.timeline.cues.filter((c) => c.track === kind).length;
+      lab.textContent = `${name} (${n})`;
+    });
   }
 
   private cueEl(cue: Cue): HTMLElement {
@@ -262,12 +521,13 @@ export class TimelineUI {
     const label = cue.track === 'narration' ? (cue.text ?? '…') : cue.track === 'audio' ? (cue.label ?? 'audio') : d ? d.label : cue.type;
     c.style.background = cue.track === 'narration' ? '#445170' : cue.track === 'audio' ? '#c78b3a' : d ? d.color : '#666';
     c.textContent = label;
-    c.title = label;
+    c.title = label; // full label on hover (CSS ellipsis-truncates the visible text)
     if (cue.id === this.selected) c.classList.add('sel');
 
     // Narration blocks are read-only (timing is owned by the synthesized audio) —
     // clickable to inspect, but not draggable/resizable.
     if (cue.track === 'narration') {
+      c.classList.add('readonly');
       c.style.cursor = 'pointer';
       c.addEventListener('pointerdown', (e) => {
         e.stopPropagation();
@@ -293,11 +553,14 @@ export class TimelineUI {
         if (Math.abs(ev.clientX - startX) > 3) moved = true;
         cue.start = Math.max(0, Math.round((startT + dt) * 10) / 10);
         this.placeCue(c, cue);
+        if (moved) this.showSnapGuide(cue.start);
       };
       const up = (ev: PointerEvent) => {
         c.releasePointerCapture(ev.pointerId);
         c.removeEventListener('pointermove', move);
         c.removeEventListener('pointerup', up);
+        this.hideSnapGuide();
+        if (moved) this.pushUndo();
         this.select(cue.id);
         if (moved) this.hooks.onChange();
       };
@@ -311,15 +574,20 @@ export class TimelineUI {
       handle.setPointerCapture(e.pointerId);
       const startX = e.clientX;
       const startD = cue.duration;
+      let resized = false;
       const move = (ev: PointerEvent) => {
         const dd = (ev.clientX - startX) / this.pxPerSec;
+        if (Math.abs(ev.clientX - startX) > 3) resized = true;
         cue.duration = Math.max(0.3, Math.round((startD + dd) * 10) / 10);
         this.placeCue(c, cue);
+        if (resized) this.showSnapGuide(cue.start + cue.duration);
       };
       const up = (ev: PointerEvent) => {
         handle.releasePointerCapture(ev.pointerId);
         handle.removeEventListener('pointermove', move);
         handle.removeEventListener('pointerup', up);
+        this.hideSnapGuide();
+        if (resized) this.pushUndo();
         this.hooks.onChange();
       };
       handle.addEventListener('pointermove', move);
@@ -344,16 +612,17 @@ export class TimelineUI {
 
   private layout(): void {
     const avail = this.trackArea.clientWidth - LABEL_W - 8;
-    this.pxPerSec = Math.max(24, avail / Math.max(2, this.timeline.duration));
-    // ruler ticks
+    this.basePxPerSec = Math.max(24, avail / Math.max(2, this.timeline.duration));
+    this.pxPerSec = this.basePxPerSec * this.zoom;
+    // ruler ticks: adaptive spacing so labels never jam at low zoom (~60px apart)
     const ruler = this.trackArea.querySelector('.tl-ruler') as HTMLElement | null;
     if (ruler) {
       ruler.innerHTML = '';
-      const step = this.pxPerSec < 40 ? 5 : this.pxPerSec < 80 ? 2 : 1;
-      for (let s = 0; s <= this.timeline.duration; s += step) {
+      const step = this.tickStep();
+      for (let s = 0; s <= this.timeline.duration + 1e-6; s += step) {
         const tick = el('span', 'tl-tick');
         tick.style.left = `${s * this.pxPerSec}px`;
-        tick.textContent = `${s}s`;
+        tick.textContent = `${Number(s.toFixed(1))}s`;
         ruler.append(tick);
       }
     }
@@ -363,6 +632,16 @@ export class TimelineUI {
       const els = Array.from(laneEl.querySelectorAll('.tl-cue')) as HTMLElement[];
       els.forEach((c, i) => cues[i] && this.placeCue(c, cues[i]));
     }
+    // keep the playhead aligned to its current time after a zoom/relayout
+    this.playheadEl.style.left = `${LABEL_W + this.playheadT * this.pxPerSec}px`;
+  }
+
+  /** Pick a "nice" tick step (1/2/5/10…) so labels sit ~MIN_TICK_PX apart. */
+  private tickStep(): number {
+    const targetSec = MIN_TICK_PX / this.pxPerSec; // seconds we'd want per label
+    const steps = [0.5, 1, 2, 5, 10, 15, 30, 60];
+    for (const s of steps) if (s >= targetSec) return s;
+    return steps[steps.length - 1];
   }
 }
 
