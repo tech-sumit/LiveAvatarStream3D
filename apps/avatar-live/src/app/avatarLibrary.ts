@@ -51,6 +51,7 @@ export class AvatarLibrary {
       avatar.group.quaternion.identity();
       stage.frame(avatar.headCenter, avatar.headHeight, dom.shotSel.value as Shot);
       dom.statusEl.textContent = avatar.description;
+      dom.statusEl.className = 'badge success';
       log(`loaded ${label} — ${res.detail}`);
       if (res.mode === 'jawbone') log('note: jaw-bone lipsync is open/close only (no visemes/expression).');
       await this.setupBodyAnimation(bodyAnim ?? avatar.isReadyPlayerMe);
@@ -253,6 +254,7 @@ export class AvatarLibrary {
     // Initial framing + discovery + auto-load (prefer the photoreal Avaturn anchor).
     stage.frame(avatar.headCenter, avatar.headHeight, dom.shotSel.value as Shot);
     dom.statusEl.textContent = avatar.description;
+    dom.statusEl.className = 'badge loading'; // discovering + auto-loading an avatar
     await this.discoverAvatars();
     const ids = [...this.avatarConfigs.keys()];
     const order = ['avaturn-model', ...ids.filter((i) => i !== 'avaturn-model')];
@@ -262,6 +264,9 @@ export class AvatarLibrary {
         return;
       }
     }
+    // No discovered GLB loaded — the procedural head is the active (working) avatar.
+    dom.statusEl.textContent = avatar.description;
+    dom.statusEl.className = 'badge success';
     log('using procedural head — drop a blendshape GLB in public/<name>-model/model.glb.');
   }
 }

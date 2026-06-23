@@ -94,8 +94,34 @@ export class Lighting {
     }
   }
 
+  /** Push the named preset's values into the sliders and apply them. */
+  private applyPreset(name: string): void {
+    const { dom, log } = this.app;
+    const p = LIGHT_PRESETS[name];
+    if (!p) return;
+    dom.lightKey.value = String(p.key);
+    dom.lightFill.value = String(p.fill);
+    dom.lightRim.value = String(p.rim);
+    dom.lightAmbient.value = String(p.amb);
+    dom.exposureEl.value = String(p.exp);
+    dom.warmthEl.value = String(p.warm);
+    this.applyLights();
+    this.syncReadouts();
+    log(`light preset: ${name}`);
+  }
+
+  /** Re-apply the currently selected lighting preset (Reset button). */
+  resetToPreset = (): void => this.applyPreset(this.app.dom.lightPresetSel.value);
+
+  // Programmatic slider changes don't fire `input`, so nudge the readouts to refresh.
+  private syncReadouts(): void {
+    [this.app.dom.lightKey, this.app.dom.lightFill, this.app.dom.lightRim, this.app.dom.lightAmbient, this.app.dom.exposureEl, this.app.dom.warmthEl].forEach(
+      (el) => el.dispatchEvent(new Event('input', { bubbles: true })),
+    );
+  }
+
   init(): void {
-    const { studio, dom, log } = this.app;
+    const { studio, dom } = this.app;
     dom.studioToggle.addEventListener('click', () => this.setStudioOn(!this.studioOn));
     dom.headlineInput.addEventListener('input', () => {
       const v = dom.headlineInput.value.trim();
@@ -106,18 +132,8 @@ export class Lighting {
     [dom.lightKey, dom.lightFill, dom.lightRim, dom.lightAmbient, dom.exposureEl, dom.warmthEl].forEach((el) =>
       el.addEventListener('input', this.applyLights),
     );
-    dom.lightPresetSel.addEventListener('change', () => {
-      const p = LIGHT_PRESETS[dom.lightPresetSel.value];
-      if (!p) return;
-      dom.lightKey.value = String(p.key);
-      dom.lightFill.value = String(p.fill);
-      dom.lightRim.value = String(p.rim);
-      dom.lightAmbient.value = String(p.amb);
-      dom.exposureEl.value = String(p.exp);
-      dom.warmthEl.value = String(p.warm);
-      this.applyLights();
-      log(`light preset: ${dom.lightPresetSel.value}`);
-    });
+    dom.lightPresetSel.addEventListener('change', () => this.applyPreset(dom.lightPresetSel.value));
+    dom.lightReset.addEventListener('click', this.resetToPreset);
     this.applyLights();
   }
 }

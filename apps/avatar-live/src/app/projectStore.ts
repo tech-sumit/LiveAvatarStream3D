@@ -286,6 +286,13 @@ export class ProjectStore {
 
     this.r2On = await r2Available();
     this.app.log(this.r2On ? 'persistence: Cloudflare R2.' : 'persistence: browser localStorage (set R2_* in .env for R2).');
+    // Reflect persistence target on the Save control: warn (amber) when R2 is off so
+    // the user knows projects only live in this browser's localStorage.
+    const saveBtn = this.app.dom.saveTimelineBtn;
+    saveBtn.classList.toggle('warn', !this.r2On);
+    saveBtn.title = this.r2On
+      ? 'Save the project to the cloud (R2)'
+      : '⚠ R2 not configured — saving to this browser only (set R2_* in .env for cloud sync)';
     await this.refreshSavedList();
   }
 }

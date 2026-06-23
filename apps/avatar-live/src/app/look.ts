@@ -40,7 +40,20 @@ export class Look {
     this.preset = name;
     this.params = { ...p };
     this.pushSliders(this.params);
+    this.syncReadouts();
     this.app.stage.setLook(this.params);
+  }
+
+  /** Re-apply the currently selected look preset (Reset button). */
+  resetToPreset = (): void => this.applyPreset(this.app.dom.lookPresetSel.value);
+
+  // pushSliders() sets slider values programmatically (no `input` event) — nudge the
+  // live readouts to refresh.
+  private syncReadouts(): void {
+    const d = this.app.dom;
+    [d.lookBloomEl, d.lookContrastEl, d.lookSaturationEl, d.lookVignetteEl, d.lookGrainEl].forEach((el) =>
+      el.dispatchEvent(new Event('input', { bubbles: true })),
+    );
   }
 
   serialize() {
@@ -64,6 +77,7 @@ export class Look {
   init(): void {
     const d = this.app.dom;
     d.lookPresetSel.addEventListener('change', () => this.applyPreset(d.lookPresetSel.value));
+    d.lookReset.addEventListener('click', this.resetToPreset);
     [d.lookBloomEl, d.lookContrastEl, d.lookSaturationEl, d.lookVignetteEl, d.lookGrainEl].forEach((el) =>
       el.addEventListener('input', this.applyFromSliders),
     );
