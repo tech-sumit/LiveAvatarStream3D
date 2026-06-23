@@ -207,12 +207,211 @@ body {
   position: absolute;
   top: 12px;
   left: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-sm);
   font-size: 11px;
   color: var(--muted);
   background: rgba(10, 13, 20, 0.5);
   padding: 3px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
+  pointer-events: auto; /* the close ✕ needs clicks; the canvas sits behind it */
+}
+.view-hint-close {
+  background: transparent;
+  border: none;
+  padding: 0 0 0 2px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.view-hint-close:hover {
+  color: var(--text);
+}
+
+/* ── Capture-gate framing feedback ────────────────────────────────────────── */
+/* 300ms border pulse when the shot changes / camera resets / gizmo opens. */
+#cameraGate.flash {
+  animation: gate-flash 0.32s ease-out;
+}
+@keyframes gate-flash {
+  0% {
+    border-color: var(--accent2);
+    box-shadow: 0 0 0 2px var(--accent2), 0 0 18px rgba(58, 210, 159, 0.55);
+  }
+  100% {
+    border-color: rgba(91, 140, 255, 1);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+  }
+}
+/* Steady glow while auto-align is tracking the face. */
+#cameraGate.auto-aligning {
+  border-color: var(--accent2);
+  border-style: solid;
+  box-shadow: 0 0 0 1px rgba(58, 210, 159, 0.4), 0 0 14px rgba(58, 210, 159, 0.35);
+  animation: gate-aligning 1.6s ease-in-out infinite;
+}
+@keyframes gate-aligning {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(58, 210, 159, 0.3), 0 0 10px rgba(58, 210, 159, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(58, 210, 159, 0.55), 0 0 18px rgba(58, 210, 159, 0.5);
+  }
+}
+
+/* ── Floating viewport quick-access pill (top-right of #stage) ─────────────── */
+/* Sits below the #gateLabel (which is top-right inside #cameraGate at top:4px). */
+.cam-quick {
+  position: absolute;
+  top: 30px;
+  right: 14px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  padding: var(--sp-xs) var(--sp-sm);
+  background: rgba(20, 26, 38, 0.82);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+}
+.cam-quick-btn {
+  height: 26px;
+  min-width: 26px;
+  padding: 0 var(--sp-sm);
+  font-size: 11px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  cursor: pointer;
+}
+.cam-quick-btn:hover {
+  border-color: var(--accent);
+}
+.cam-quick-btn.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #07101f;
+  font-weight: 600;
+}
+.cam-quick-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 1px;
+  background: var(--line);
+}
+
+/* ── Gizmo discoverability hint (centered, faint, non-interactive) ────────── */
+.gizmo-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 3;
   pointer-events: none;
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(10, 13, 20, 0.42);
+  padding: 4px 10px;
+  border-radius: 999px;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+/* Hidden while the gizmo is ON (AvatarTransform sets .gizmo-on on #stage). */
+#stage.gizmo-on .gizmo-hint {
+  opacity: 0;
+}
+
+/* ── OUTPUT PiP show/hide toggle ──────────────────────────────────────────── */
+.pip-toggle {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  pointer-events: auto; /* #pipFrame is pointer-events:none; re-enable on the toggle */
+  height: 20px;
+  width: 20px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  background: rgba(10, 13, 20, 0.6);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+}
+.pip-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+/* Collapsed PiP: hide the canvas + ● OUTPUT label, keep a small handle with the toggle. */
+#pipFrame.pip-collapsed {
+  width: 32px;
+  aspect-ratio: 1 / 1;
+  background: rgba(10, 13, 20, 0.55);
+}
+#pipFrame.pip-collapsed canvas,
+#pipFrame.pip-collapsed > span {
+  display: none;
+}
+
+/* ── First-load welcome overlay ───────────────────────────────────────────── */
+.view-welcome {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-lg);
+  background: rgba(6, 9, 16, 0.55);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+}
+.view-welcome-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-lg);
+  padding: 20px 26px;
+  text-align: center;
+  background: rgba(20, 26, 38, 0.92);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.55);
+}
+.view-welcome-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.view-welcome-hints {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-sm) var(--sp-lg);
+  font-size: 12px;
+  color: var(--muted);
+}
+.view-welcome-ok {
+  padding: 8px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #07101f;
+  cursor: pointer;
 }
 
 /* ── Director timeline (docked bottom row) ────────────────────────────────── */

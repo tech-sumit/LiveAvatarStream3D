@@ -38,6 +38,8 @@ export function bindDom() {
     statusEl: $<HTMLSpanElement>('avatarStatus'),
     logEl: $<HTMLPreElement>('log'),
     pipFrameEl: $<HTMLDivElement>('pipFrame'),
+    cameraGateEl: $<HTMLDivElement>('cameraGate'),
+    viewHintEl: $<HTMLDivElement>('viewHint'),
     captureFormatSel: $<HTMLSelectElement>('captureFormat'),
     exportMp4Btn: $<HTMLButtonElement>('exportMp4'),
     videoCodecSel: $<HTMLSelectElement>('videoCodec'),
