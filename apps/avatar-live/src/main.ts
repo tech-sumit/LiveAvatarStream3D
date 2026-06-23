@@ -14,6 +14,7 @@ import { Performer } from './app/performer.js';
 import { ProjectStore } from './app/projectStore.js';
 import { initCollapsibleSections } from './app/collapsible.js';
 import { initSliderReadouts } from './app/sliderReadout.js';
+import { initScriptEditor } from './app/scriptEditor.js';
 
 const app = new StudioContext();
 
@@ -43,6 +44,7 @@ timeline.init();
 void voices.init();
 void library.init();
 void projects.init();
+initScriptEditor();
 initCollapsibleSections();
 initSliderReadouts();
 

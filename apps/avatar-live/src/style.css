@@ -717,6 +717,155 @@ input[type='range'] {
   color: var(--muted);
 }
 
+/* ── Script editor: overlay-highlighted textarea ──────────────────────────── */
+/* #scriptHL (colored prose) sits absolutely behind #script; the textarea is
+   layered on top transparent so the caret/typed text aligns over the highlight.
+   The two MUST share identical box metrics for the alignment to hold. */
+.script-edit {
+  position: relative;
+}
+/* Shared box metrics — every property that affects glyph layout is declared on
+   BOTH #script and #scriptHL with the same value. */
+.script-edit #script,
+.script-edit #scriptHL {
+  margin: 0;
+  width: 100%;
+  min-height: calc(7 * 1.5em + 18px); /* ~rows=7 at line-height 1.5 + padding */
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  tab-size: 4;
+}
+/* The highlight layer: fills the wrapper exactly under the textarea. */
+.script-edit #scriptHL {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  margin: 0;
+  overflow: hidden; /* scroll synced from the textarea in JS */
+  color: var(--text);
+  background: var(--panel2);
+  pointer-events: none;
+}
+/* The textarea: layered on top, transparent text so only the caret shows. */
+.script-edit #script {
+  position: relative;
+  z-index: 1;
+  display: block;
+  color: transparent;
+  background: transparent;
+  caret-color: var(--text);
+  resize: vertical;
+}
+/* Token colors — emotion=amber (warm), gesture=green, unknown=red+dotted. */
+.script-hl .tok {
+  border-radius: 3px;
+}
+.script-hl .tok-emotion {
+  color: var(--amber);
+  font-weight: 600;
+}
+.script-hl .tok-gesture {
+  color: var(--accent2);
+  font-weight: 600;
+}
+.script-hl .tok-unknown {
+  color: var(--rec);
+  font-weight: 600;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+/* Toolbar: chip rows + actions, sits between the editor and the Speak row. */
+.script-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-xs);
+}
+.chip-cap {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: var(--sp-xs);
+  min-width: 52px;
+}
+.chip {
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
+}
+.chip:hover {
+  border-color: var(--accent);
+}
+.chip-emotion {
+  border-color: rgba(245, 181, 74, 0.4);
+  color: var(--amber);
+}
+.chip-emotion:hover {
+  border-color: var(--amber);
+  background: rgba(245, 181, 74, 0.12);
+}
+.chip-gesture {
+  border-color: rgba(58, 210, 159, 0.4);
+  color: var(--accent2);
+}
+.chip-gesture:hover {
+  border-color: var(--accent2);
+  background: rgba(58, 210, 159, 0.12);
+}
+.script-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.script-valid {
+  flex: 1;
+  text-align: left;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  cursor: pointer;
+}
+.script-valid.ok {
+  color: var(--accent2);
+  border-color: rgba(58, 210, 159, 0.35);
+}
+.script-valid.warn {
+  color: var(--amber);
+  border-color: rgba(245, 181, 74, 0.4);
+}
+.script-fmt {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: var(--radius-md);
+}
+
 /* Collapsible sidebar sections — click the header to expand/collapse. */
 .panel .grp > h2 {
   cursor: pointer;
