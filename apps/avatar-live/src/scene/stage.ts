@@ -178,15 +178,19 @@ export class Stage {
     const mz = (anchor.z + screen.z) / 2;
     const spread = Math.hypot(anchor.x - screen.x, anchor.z - screen.z);
     const fov = 40;
-    const dist = (spread + 1.7) / (2 * Math.tan((fov * Math.PI) / 360)); // fit both + margin
+    // Distance to fit both, sitting a little further back (matches the captured framing).
+    const dist = (spread + 2.75) / (2 * Math.tan((fov * Math.PI) / 360));
     const camZ = Math.max(anchor.z, screen.z) + dist;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
     }
     const k = 1 - Math.exp(-dt / 0.45);
-    this.controls.target.lerp(_afTgt.set(mx, 1.2, mz), k);
-    this.camera.position.lerp(_afCam.set(mx, 1.55, camZ), k);
+    // Captured composition: camera offset ~1.1 LEFT of the midpoint and raised to 1.75,
+    // looking slightly right/up and a touch forward — so the anchor reads on the left and
+    // the screen on the right (a news two-shot), following the anchor as it moves.
+    this.controls.target.lerp(_afTgt.set(mx + 0.1, 1.25, mz + 0.9), k);
+    this.camera.position.lerp(_afCam.set(mx - 1.1, 1.75, camZ), k);
     this.camera.lookAt(this.controls.target);
   }
 
