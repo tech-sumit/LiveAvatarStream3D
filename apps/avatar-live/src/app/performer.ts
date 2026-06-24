@@ -199,11 +199,33 @@ export class Performer {
     const prep = await this.prepareForExport();
     if (!prep) return; // buildNarration already logged why
     const fmt = deps.recording.currentFormat();
-    const codec = deps.recording.currentCodec();
     if (!(await canExportMp4(fmt.w, fmt.h))) {
       app.log('MP4/WebCodecs unavailable here — falling back to the webm quick preview.');
       void this.perform(true); // realtime MediaRecorder path (webm)
       return;
+    }
+    const blob = await this.exportMp4ToBlob();
+    if (blob) deps.recording.downloadClip(URL.createObjectURL(blob), 'avatar-take.mp4');
+  };
+
+  /**
+   * Render the offline MP4 and return the encoded Blob (no download) — the Studio
+   * Bridge uploads it to the MCP sink. Returns null if narration couldn't be built
+   * or MP4/WebCodecs is unavailable here. Mirrors exportMp4's framing exactly.
+   */
+  exportMp4ToBlob = async (): Promise<Blob | null> => {
+    const { app, deps } = this;
+    if (this.exporting || app.isBusy()) {
+      app.log('finish the current take before exporting.');
+      return null;
+    }
+    const prep = await this.prepareForExport();
+    if (!prep) return null; // buildNarration already logged why
+    const fmt = deps.recording.currentFormat();
+    const codec = deps.recording.currentCodec();
+    if (!(await canExportMp4(fmt.w, fmt.h))) {
+      app.log('MP4/WebCodecs unavailable here — can’t produce an MP4 blob.');
+      return null;
     }
     this.exporting = true;
     deps.recording.setExportUi(true);
@@ -226,10 +248,11 @@ export class Performer {
         },
         onProgress: (d, n) => deps.recording.setExportProgress(d, n),
       });
-      deps.recording.downloadClip(URL.createObjectURL(blob), 'avatar-take.mp4');
       app.log(`export ready · ${prep.durationSec.toFixed(1)}s ${fmt.w}×${fmt.h} mp4`);
+      return blob;
     } catch (err) {
       app.log(`export failed: ${String(err)}`);
+      return null;
     } finally {
       this.exporting = false;
       deps.recording.setExportUi(false);

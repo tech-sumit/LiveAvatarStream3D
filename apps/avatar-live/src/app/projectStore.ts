@@ -204,6 +204,22 @@ export class ProjectStore {
     this.app.log(`exported "${name}.project.json" to disk.`);
   }
 
+  /**
+   * Import a NewsReportDoc (v2) into the studio: validate via @las/protocol,
+   * compile to a ProjectDoc, and apply it. Public so the Studio Bridge can drive
+   * the same path the timeline-file change-handler uses for a dropped newscast.
+   * Returns the compiled project name (the newscast title, sanitized).
+   */
+  async importNewsReport(doc: unknown): Promise<string> {
+    const validated = validateNewsReportDoc(doc);
+    const { project } = compileNewsReport(validated);
+    await this.applyProject(project as ProjectDoc);
+    const title = validated.meta.title ?? 'untitled';
+    this.app.dom.projectNameEl.value = sanitize(title);
+    this.app.log(`imported newscast: ${title}`);
+    return title;
+  }
+
   private async applyProject(doc: ProjectDoc): Promise<void> {
     const { app, c } = this;
     const d = app.dom;
@@ -263,10 +279,8 @@ export class ProjectStore {
         const isProject = isObj && (typeof data.script === 'string' || (data.timeline && typeof data.timeline === 'object'));
         const isTimeline = isObj && Array.isArray(data.cues);
         if (isNewsReport) {
-          const { project } = compileNewsReport(validateNewsReportDoc(data));
-          await this.applyProject(project as ProjectDoc);
+          await this.importNewsReport(data);
           d.projectNameEl.value = file.name.replace(/\.newscast\.json$|\.(project|timeline)\.json$|\.json$/i, '');
-          this.app.log(`imported newscast: ${(data as { meta: { title?: string } }).meta.title ?? 'untitled'}`);
         } else if (isProject) {
           await this.applyProject(data as ProjectDoc);
           d.projectNameEl.value = file.name.replace(/\.(project|timeline)\.json$|\.json$/i, '');
