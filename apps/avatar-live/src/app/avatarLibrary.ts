@@ -105,9 +105,9 @@ export class AvatarLibrary {
     );
     if (loco.length) log(`locomotion: ${loco.length} clips (${loco.join(', ')}) — press M to walk`);
 
-    // Point gestures aim the right arm at the stand-mounted screen (to the anchor's right).
-    // The aim only engages while a point gesture is active, so this is safe to set once.
-    avatar.setPointTarget(SCREEN_STAND_POS);
+    // Screen reference walks the anchor to a mark just left-front of the stand-mounted
+    // screen (so it presents beside it, both in frame), then back to centre afterwards.
+    avatar.setScreenStation(SCREEN_STAND_POS.clone().set(SCREEN_STAND_POS.x - 1.2, 0, 0.25));
   };
 
   private discoverAvatars = async (): Promise<void> => {
