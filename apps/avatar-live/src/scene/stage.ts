@@ -337,8 +337,10 @@ export class Stage {
   }
 
   private setupLights(): void {
-    this.lights.key = new THREE.DirectionalLight(0xfff1e0, 1.6);
-    this.lights.key.position.set(1.8, 2.6, 2.4);
+    // Bright broadcast set: strong warm key + generous fill/ambient so the stage reads
+    // light and well-lit (not a dark void), a cool rim for separation, and a soft top wash.
+    this.lights.key = new THREE.DirectionalLight(0xfff4e8, 2.7);
+    this.lights.key.position.set(2.0, 3.0, 2.8);
     this.lights.key.castShadow = true;
     this.lights.key.shadow.mapSize.set(2048, 2048);
     this.lights.key.shadow.camera.near = 0.5;
@@ -346,16 +348,20 @@ export class Stage {
     this.lights.key.shadow.bias = -0.0004;
     this.scene.add(this.lights.key);
 
-    this.lights.fill = new THREE.DirectionalLight(0xdfe6ff, 0.35);
-    this.lights.fill.position.set(-2.4, 1.2, 1.6);
+    this.lights.fill = new THREE.DirectionalLight(0xeaf0ff, 1.15);
+    this.lights.fill.position.set(-2.6, 1.6, 1.8);
     this.scene.add(this.lights.fill);
 
-    this.lights.rim = new THREE.DirectionalLight(0xcfe0ff, 0.6);
-    this.lights.rim.position.set(-1, 2.4, -2.6);
+    this.lights.rim = new THREE.DirectionalLight(0xdce8ff, 1.0);
+    this.lights.rim.position.set(-1.2, 2.8, -2.8);
     this.scene.add(this.lights.rim);
 
-    this.lights.ambient = new THREE.HemisphereLight(0xbcc8e6, 0x20242e, 0.45);
+    this.lights.ambient = new THREE.HemisphereLight(0xdfe8ff, 0x3a4250, 0.95);
     this.scene.add(this.lights.ambient);
+
+    const top = new THREE.DirectionalLight(0xffffff, 0.5);
+    top.position.set(0, 5, 0.5);
+    this.scene.add(top);
   }
 
   /** Set a light's intensity (key/fill/rim/ambient). */
@@ -387,13 +393,28 @@ export class Stage {
   }
 
   private setupBackdrop(): void {
+    // Brighter, less mirror-like studio floor.
     const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(14, 64),
-      new THREE.MeshStandardMaterial({ color: 0x0d1422, roughness: 0.4, metalness: 0.5 }),
+      new THREE.CircleGeometry(18, 64),
+      new THREE.MeshStandardMaterial({ color: 0x222b3a, roughness: 0.6, metalness: 0.25 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.scene.add(floor);
+
+    // Curved cyclorama backdrop: the inner surface of a large cylinder arc wrapping behind
+    // the set, so the background reads as continuous curved "studio space" rather than a flat
+    // wall. Lit by the rig above.
+    const cyc = new THREE.Mesh(
+      new THREE.CylinderGeometry(11, 11, 9, 80, 1, true, Math.PI * 0.62, Math.PI * 1.26),
+      new THREE.MeshStandardMaterial({ color: 0x39455c, roughness: 0.95, metalness: 0.0, side: THREE.BackSide }),
+    );
+    cyc.position.set(0, 3.6, -1.2);
+    cyc.receiveShadow = true;
+    this.scene.add(cyc);
+
+    // Lift the scene background to match the lit set (no near-black void edges).
+    this.scene.background = new THREE.Color(0x2b3346);
   }
 
   private resize(): void {
