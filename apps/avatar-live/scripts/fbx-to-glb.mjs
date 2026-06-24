@@ -41,8 +41,13 @@ window.__convert = async (url, clipName) => {
   if (clip.duration < 0.1) {
     throw new Error('clip "' + clip.name + '" has no motion (' + clip.duration.toFixed(3) + 's) — this FBX is a static pose or character, not an animation. On Mixamo: Animations tab, pick a clip that PLAYS, download FBX Binary / Without Skin.');
   }
-  // rotation-only retarget by bone name: drop position tracks, strip mixamorig prefix
-  clip.tracks = clip.tracks.filter(t => !t.name.endsWith('.position'));
+  // Anchor gestures are UPPER-BODY ONLY: keep shoulders/arms/hands + neck/head, and DROP
+  // spine/hips/legs so the mocap's weight-shifts, leans, bends and turns don't fold or spin
+  // the standing-still anchor. (Position tracks dropped too — rotation-only retarget.)
+  const UPPER_BODY = /(Shoulder|Arm|Hand|Neck|Head)/;
+  clip.tracks = clip.tracks
+    .filter(t => !t.name.endsWith('.position'))
+    .filter(t => UPPER_BODY.test(t.name.replace(/^mixamorig:?/i, '').split('.')[0]));
   for (const t of clip.tracks) t.name = t.name.replace(/^mixamorig:?/i, '');
   clip.name = clipName;
   clip.resetDuration();
