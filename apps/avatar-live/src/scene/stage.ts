@@ -249,6 +249,22 @@ export class Stage {
   }
 
   /**
+   * Scrub the back-wall screen video to time t. The offline export calls this per frame
+   * so a wall montage advances in lockstep with the rendered frame index — the realtime
+   * <video> clock can't keep up while the main thread is busy encoding, so without this
+   * the wall appears frozen on an early frame. Loops via the video's duration.
+   */
+  seekScreen(t: number): void {
+    const v = this.screenVideo;
+    if (!v || !v.duration || !isFinite(v.duration)) return;
+    try {
+      v.currentTime = t % v.duration;
+    } catch {
+      /* not seekable yet */
+    }
+  }
+
+  /**
    * Render one output frame on demand (offline export) and return the capture
    * canvas. Mirrors the per-frame output render in the internal loop, but is
    * called synchronously by the exporter rather than by requestAnimationFrame.
