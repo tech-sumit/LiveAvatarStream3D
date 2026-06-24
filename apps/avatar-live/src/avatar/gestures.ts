@@ -14,20 +14,21 @@ export type Gesture =
   | 'hand_to_chest'
   | 'explain';
 
-// Map each gesture to an available RPM animation clip. The RPM library has no
-// literal wave/point clips, so several are expressive-talking approximations —
-// distinct enough that different cues read differently.
+// Each specific gesture has its OWN dedicated mocap clip (RPM Standing-Expression
+// mocap, fetched by scripts/fetch-animations.sh). These play once over the talking
+// motion and settle back (see avatarController.playGesture). 'none'/'explain' have
+// no dedicated gesture — they just talk, so they map to idle/talk fallbacks.
 export const GESTURE_CLIPS: Record<Gesture, string> = {
   none: 'idle_calm',
   explain: 'talk1',
-  open_palms: 'talk2',
-  point: 'talk3',
-  count: 'talk4',
-  wave: 'talk5',
-  thumbs_up: 'talk4',
-  shrug: 'talk2',
-  hand_to_chest: 'talk3',
-  nod: 'idle_calm',
+  open_palms: 'open_palms',
+  point: 'point',
+  count: 'count',
+  wave: 'wave',
+  thumbs_up: 'thumbs_up',
+  shrug: 'shrug',
+  hand_to_chest: 'hand_to_chest',
+  nod: 'nod',
 };
 
 // The gesture-tag vocabulary the script parser recognizes — derived from the clip
@@ -84,13 +85,18 @@ const BUCKETS: Record<'low' | 'med' | 'high', string[]> = {
 
 let rotation = 0;
 
+/** The dedicated one-shot gesture clip for a gesture, or null when it's plain
+ *  talking ('none'/'explain') — then no gesture overlay plays, just the base clip. */
+export function gestureClipFor(gesture: Gesture): string | null {
+  return SPECIFIC.has(gesture) ? GESTURE_CLIPS[gesture] : null;
+}
+
 /**
- * Pick the body clip for a spoken segment. An explicit/inferred gesture plays its
- * mapped clip; plain talking picks a variation by emotional energy, skipping the
- * last clip so it visibly varies.
+ * Pick the BASE talking-body clip for a spoken segment by emotional energy,
+ * skipping the last clip so it visibly varies. A dedicated gesture (if any) plays
+ * once OVER this base — see {@link gestureClipFor} + avatarController.playGesture.
  */
-export function selectTalkClip(gesture: Gesture, emotion: EmotionName, lastClip: string): string {
-  if (SPECIFIC.has(gesture)) return GESTURE_CLIPS[gesture];
+export function selectTalkClip(_gesture: Gesture, emotion: EmotionName, lastClip: string): string {
   const bucket = BUCKETS[ENERGY[emotion] ?? 'med'];
   const choices = bucket.filter((c) => c !== lastClip);
   const pick = (choices.length ? choices : bucket)[rotation % (choices.length || bucket.length)];
