@@ -59,10 +59,15 @@ const GESTURE_WEIGHT = 0.65;
 // The point-aim is now the PRIMARY mover (it raises the left arm from rest to the screen,
 // no clip), so the weights are strong; pointAimAmount ramps it in/out smoothly.
 const POINT_AIM_WEIGHT = 0.85;
-const POINT_FOREARM_WEIGHT = 0.6;
+const POINT_FOREARM_WEIGHT = 0.8; // straighten the forearm for a clean extended point
 const POINT_AIM_TAU = 0.2; // seconds; smoothing time constant toward the aim
 const POINT_HOLD = 2.2; // seconds the point is held before it releases back to talking
 const SCREEN_POINT_TURN = 0.5; // radians the body turns toward the screen while pointing
+// Palm-up present: the hand must roll ~180° (palm-down → palm-up). This rig has no twist
+// bones, so rolling any single joint that far candy-wraps the mesh. Instead distribute the
+// roll across the shoulder + forearm + wrist (~60° each) — the total is palm-up, but no one
+// joint twists enough to wrap. Each is rolled about its own down-the-bone (local Y) axis.
+const PALM_ROLL_PER_JOINT = Math.PI / 3;
 
 // Finger-counting: per-joint curl (proximal, middle, distal) folding a finger into
 // the palm about its local X axis (negative = fold, verified on the rig). Each number
@@ -503,12 +508,19 @@ export class AvatarController {
     const w = POINT_AIM_WEIGHT * this.pointAimAmount;
     arm.quaternion.slerp(_aimDesired, w);
 
-    // Straighten the forearm so the whole arm extends as a clean point.
+    // Palm-up present: distribute the ~180° supination across all three arm joints (each
+    // rolls about its own down-the-bone local-Y axis), so no single joint twists enough to
+    // candy-wrap the mesh. Ramped with the aim and applied after the pose is set each frame
+    // (rotateY here is not cumulative — the mixer + aim reset the bones every frame first).
+    const roll = PALM_ROLL_PER_JOINT * this.pointAimAmount;
+    arm.rotateY(roll);
     const fore = this.animRoot.getObjectByName('LeftForeArm');
     if (fore) {
-      _q.identity(); // aim the forearm roughly along the same bone axis (small)
+      _q.identity(); // straighten the forearm (extend the elbow) before its share of the roll
       fore.quaternion.slerp(_q, POINT_FOREARM_WEIGHT * this.pointAimAmount);
+      fore.rotateY(roll);
     }
+    this.animRoot.getObjectByName('LeftHand')?.rotateY(roll);
   }
 
   /**
