@@ -38,7 +38,7 @@ export class AvatarLibrary {
   }
 
   // bodyAnim true/false forces body animation on/off; undefined → humanoid auto-detect.
-  private loadAvatar = async (url: string, label: string, bodyAnim?: boolean): Promise<boolean> => {
+  private loadAvatar = async (url: string, label: string, bodyAnim?: boolean, avatarId?: string): Promise<boolean> => {
     const { avatar, stage, dom, log } = this.app;
     log(`loading ${label}…`);
     try {
@@ -54,7 +54,7 @@ export class AvatarLibrary {
       dom.statusEl.className = 'badge success';
       log(`loaded ${label} — ${res.detail}`);
       if (res.mode === 'jawbone') log('note: jaw-bone lipsync is open/close only (no visemes/expression).');
-      await this.setupBodyAnimation(bodyAnim ?? avatar.isReadyPlayerMe);
+      await this.setupBodyAnimation(bodyAnim ?? avatar.isReadyPlayerMe, avatarId);
       return true;
     } catch (err) {
       log(`failed to load ${label}: ${String(err)}`);
@@ -62,31 +62,29 @@ export class AvatarLibrary {
     }
   };
 
-  private setupBodyAnimation = async (enabled: boolean): Promise<void> => {
+  private setupBodyAnimation = async (enabled: boolean, avatarId?: string): Promise<void> => {
     const { avatar, log } = this.app;
     if (!enabled) {
       log('body animation: off for this avatar.');
       return;
     }
-    const got = await avatar.loadAnimations([
-      { name: 'idle', url: '/animations/idle.glb' },
-      { name: 'idle_calm', url: '/animations/idle_calm.glb' },
-      { name: 'talk1', url: '/animations/talk1.glb' },
-      { name: 'talk2', url: '/animations/talk2.glb' },
-      { name: 'talk3', url: '/animations/talk3.glb' },
-      { name: 'talk4', url: '/animations/talk4.glb' },
-      { name: 'talk5', url: '/animations/talk5.glb' },
-      // Dedicated gesture clips (DSL gesture vocabulary). Missing files are
-      // skipped silently by loadAnimations, so the app still runs without them.
-      { name: 'wave', url: '/animations/wave.glb' },
-      { name: 'point', url: '/animations/point.glb' },
-      { name: 'open_palms', url: '/animations/open_palms.glb' },
-      { name: 'count', url: '/animations/count.glb' },
-      { name: 'thumbs_up', url: '/animations/thumbs_up.glb' },
-      { name: 'shrug', url: '/animations/shrug.glb' },
-      { name: 'hand_to_chest', url: '/animations/hand_to_chest.glb' },
-      { name: 'nod', url: '/animations/nod.glb' },
-    ]);
+    // Body + gesture clip set (idle/talk variations + the DSL gesture vocabulary).
+    // Each clip loads from the AVATAR'S OWN folder first (`/<id>/animations/<name>.glb`,
+    // alongside its model.glb) and falls back to the shared `/animations/` set — so an
+    // avatar can ship its own retargeted gestures while reusing the generic idle/talk.
+    // Missing files are skipped silently, so the app still runs without them.
+    const CLIP_NAMES = [
+      'idle', 'idle_calm', 'talk1', 'talk2', 'talk3', 'talk4', 'talk5',
+      'wave', 'point', 'open_palms', 'count', 'thumbs_up', 'shrug', 'hand_to_chest', 'nod',
+    ];
+    const ownDir = avatarId ? `/${avatarId}/animations` : null;
+    const got = await avatar.loadAnimations(
+      CLIP_NAMES.map((name) => ({
+        name,
+        url: ownDir ? `${ownDir}/${name}.glb` : `/animations/${name}.glb`,
+        fallback: ownDir ? `/animations/${name}.glb` : undefined,
+      })),
+    );
     if (got.includes('idle')) avatar.playClip('idle', 0);
     log(
       got.length
@@ -145,7 +143,7 @@ export class AvatarLibrary {
     if (!cfg) return false;
     const prevShot = dom.shotSel.value;
     if (cfg.shot) dom.shotSel.value = cfg.shot; // so loadAvatar frames with the right shot
-    const ok = await this.loadAvatar(`/${id}/${cfg.model}`, cfg.label, cfg.bodyAnim);
+    const ok = await this.loadAvatar(`/${id}/${cfg.model}`, cfg.label, cfg.bodyAnim, id);
     if (ok) {
       this.currentAvatarId = id;
       this.adHocUrl = null;

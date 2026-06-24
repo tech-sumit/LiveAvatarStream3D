@@ -185,7 +185,7 @@ export class AvatarController {
    * config.bodyAnim, else the humanoid auto-detect) — the RPM animation library
    * is licensed for use with RPM-compatible avatars.
    */
-  async loadAnimations(clips: { name: string; url: string }[]): Promise<string[]> {
+  async loadAnimations(clips: { name: string; url: string; fallback?: string }[]): Promise<string[]> {
     if (!this.animRoot) return [];
     const loader = new GLTFLoader();
     this.mixer = new THREE.AnimationMixer(this.animRoot);
@@ -197,7 +197,14 @@ export class AvatarController {
     const loaded: string[] = [];
     for (const c of clips) {
       try {
-        const gltf = await loader.loadAsync(c.url);
+        // Prefer the per-avatar clip (its own folder); fall back to the shared set.
+        let gltf;
+        try {
+          gltf = await loader.loadAsync(c.url);
+        } catch (err) {
+          if (!c.fallback) throw err;
+          gltf = await loader.loadAsync(c.fallback);
+        }
         const clip = gltf.animations[0];
         if (!clip) continue;
         // Keep only tracks whose bone exists, and drop ALL position tracks:
