@@ -46,8 +46,8 @@ async function main() {
   await client.connect(transport);
   const { tools } = await client.listTools();
   log(`[demo] connected to newsroom-mcp · ${tools.length} tools available`);
-  const call = async (name: string, args: Record<string, unknown> = {}) => {
-    const r = await client.callTool({ name, arguments: args });
+  const call = async (name: string, args: Record<string, unknown> = {}, timeoutMs = 240_000) => {
+    const r = await client.callTool({ name, arguments: args }, undefined, { timeout: timeoutMs });
     if ((r as any).isError) log(`[demo] ✗ ${name}: ${textOf(r)}`);
     return r as any;
   };
@@ -96,6 +96,13 @@ async function main() {
     log(`[demo] ✓ screenshot saved → ${out}`);
   } else {
     log(`[demo] screenshot: ${textOf(shot)}`);
+  }
+
+  log('[demo] → export_mp4 (Tier-1 in-browser WebCodecs render → file) [best-effort]');
+  try {
+    log(textOf(await call('export_mp4', {}, 300_000)));
+  } catch (e) {
+    log(`[demo] export skipped (Tier-1 export needs a foreground/GPU browser; use render_master for headless): ${String(e)}`);
   }
 
   log('[demo] ✅ DONE — a full newscast authored end-to-end through MCP tools.');
