@@ -5,6 +5,7 @@ import { resolveGesture, selectTalkClip, gestureClipFor, type Gesture } from '..
 import { exportMp4Offline } from '../capture/offlineExporter.js';
 import { canExportMp4 } from '../capture/mp4Encoder.js';
 import { cueId, type Cue } from '../timeline/types.js';
+import { SCREEN_STAND_POS } from '../scene/studio.js';
 import type { EmotionName } from '../avatar/emotion.js';
 import type { MouthCue } from '../avatar/avatarController.js';
 import type { StudioContext } from './context.js';
@@ -409,9 +410,10 @@ export class Performer {
     if (this.exporting) return; // offline export drives the avatar; don't double-step
     const { app, deps } = this;
     const { avatar, stage } = app;
-    // Auto-align: keep the face centered while the user owns the camera.
+    // Auto-frame: keep the anchor AND the screen in shot together (presenter beside the
+    // screen), following the anchor as it walks — instead of a face close-up.
     if (deps.transform.isAutoAlign && !deps.timeline.isPreviewing && this.render == null && !deps.transform.isGizmoOn) {
-      stage.softAlignToFace(deps.transform.faceWorld());
+      stage.frameAnchorScreen(avatar.group.position, SCREEN_STAND_POS, dt);
     }
     deps.timeline.tickCamRec();
     if (deps.timeline.tickPreview(dt)) return;

@@ -27,6 +27,8 @@ export class AvatarTransform {
     this.gizmo.addEventListener('objectChange', () => {
       app.avatar.setPosition(this.gizmoProxy.position.x, this.gizmoProxy.position.y - this.chestY, this.gizmoProxy.position.z);
       app.avatar.group.quaternion.copy(this.gizmoProxy.quaternion);
+      // The hand-placed spot becomes the anchor's home, so walk-to-screen returns here.
+      app.avatar.setStageHome(app.avatar.group.position);
     });
   }
 
