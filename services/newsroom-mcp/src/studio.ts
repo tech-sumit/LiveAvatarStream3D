@@ -66,7 +66,19 @@ export async function connectStudio(opts: ConnectStudioOptions): Promise<StudioS
     const headless = opts.headless ?? true;
     // Lazy import keeps Playwright off the startup path (and out of attended mode).
     const { chromium } = await import('playwright');
-    browser = await chromium.launch({ headless });
+    browser = await chromium.launch({
+      headless,
+      // Keep the renderer at full speed even when the page isn't foreground, and let the
+      // AudioContext start without a user gesture — so screenshots don't stall and the
+      // narration mixdown + WebCodecs export run unthrottled in a headless context.
+      args: [
+        '--autoplay-policy=no-user-gesture-required',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=CalculateNativeWinOcclusion',
+      ],
+    });
     try {
       const page = await browser.newPage();
       const sep = studioUrl.includes('?') ? '&' : '?';
