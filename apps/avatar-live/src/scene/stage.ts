@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { buildLookChain, applyLookParams, DEFAULT_LOOK, type LookParams, type LookChain } from '../look/lookChain.js';
 
+const _afCam = new THREE.Vector3();
+const _afTgt = new THREE.Vector3();
+
 export type Shot = 'close' | 'medium' | 'wide';
 
 export interface CaptureFormat {
@@ -163,6 +166,28 @@ export class Stage {
   softAlignToFace(face: THREE.Vector3, k = 0.12): void {
     this.controls.target.lerp(face, k);
     this.camera.position.y += (face.y - this.camera.position.y) * k;
+  }
+
+  /**
+   * Frame the anchor and the screen side-by-side (a two-shot), dollying so both fit, and
+   * smoothly following the anchor as it walks. This is the presenter-beside-screen view —
+   * it replaces the face close-up so the screen is always in shot alongside the anchor.
+   */
+  frameAnchorScreen(anchor: THREE.Vector3, screen: THREE.Vector3, dt: number): void {
+    const mx = (anchor.x + screen.x) / 2;
+    const mz = (anchor.z + screen.z) / 2;
+    const spread = Math.hypot(anchor.x - screen.x, anchor.z - screen.z);
+    const fov = 40;
+    const dist = (spread + 1.7) / (2 * Math.tan((fov * Math.PI) / 360)); // fit both + margin
+    const camZ = Math.max(anchor.z, screen.z) + dist;
+    if (Math.abs(this.camera.fov - fov) > 0.01) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+    const k = 1 - Math.exp(-dt / 0.45);
+    this.controls.target.lerp(_afTgt.set(mx, 1.2, mz), k);
+    this.camera.position.lerp(_afCam.set(mx, 1.55, camZ), k);
+    this.camera.lookAt(this.controls.target);
   }
 
   setCaptureFormat(fmt: CaptureFormat): void {
