@@ -11,6 +11,7 @@ import { VoicePicker } from './app/voicePicker.js';
 import { AvatarLibrary } from './app/avatarLibrary.js';
 import { TimelineEditor } from './app/timelineEditor.js';
 import { Performer } from './app/performer.js';
+import { Locomotion } from './app/locomotion.js';
 import { ProjectStore } from './app/projectStore.js';
 import { initCollapsibleSections } from './app/collapsible.js';
 import { initSliderReadouts } from './app/sliderReadout.js';
@@ -31,6 +32,7 @@ const library = new AvatarLibrary(app);
 const timeline = new TimelineEditor(app);
 const performer = new Performer(app, { voices, recording, library, timeline, transform });
 timeline.attachPerformer(performer);
+const locomotion = new Locomotion(app);
 const projects = new ProjectStore(app, { library, voices, lighting, look, backScreen, timeline, performer });
 
 // Busy guard: block avatar switches / preview while performing, previewing, or recording.
@@ -42,6 +44,7 @@ recording.init();
 backScreen.init();
 transform.init();
 performer.init();
+locomotion.init();
 timeline.init();
 void voices.init();
 void library.init();
