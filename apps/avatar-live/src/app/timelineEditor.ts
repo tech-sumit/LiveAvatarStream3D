@@ -294,6 +294,81 @@ export class TimelineEditor {
   serialize(): { timeline: { duration: number; cues: Cue[] } } {
     return { timeline: { duration: this.timeline.duration, cues: this.timeline.cues } };
   }
+
+  // ── Programmatic cue API (used by the Studio Bridge) ──────────────────────
+  /** The current cue list (read-only snapshot). */
+  listCues(): Cue[] {
+    return this.timeline.cues.map((c) => ({ ...c }));
+  }
+  /** Add a cue on a track; returns its generated id. */
+  addCue(track: Cue['track'], type: string, start: number, duration?: number): string {
+    const id = cueId();
+    const dur = Math.max(0.1, duration ?? CATALOG[type]?.defaultDuration ?? 1.5);
+    this.timeline.cues.push({ id, track, type, start: Math.max(0, start), duration: dur });
+    this.timeline.duration = Math.max(this.timeline.duration, Math.ceil(start + dur) + 1);
+    this.player.load(this.timeline);
+    this.buildUI();
+    this.ui?.reload();
+    return id;
+  }
+  /** Update an existing cue's timing. Returns false if not found. */
+  updateCue(id: string, patch: { start?: number; duration?: number }): boolean {
+    const cue = this.timeline.cues.find((c) => c.id === id);
+    if (!cue) return false;
+    if (patch.start != null) cue.start = Math.max(0, patch.start);
+    if (patch.duration != null) cue.duration = Math.max(0.1, patch.duration);
+    this.player.load(this.timeline);
+    this.ui?.refresh();
+    return true;
+  }
+  /** Remove a cue by id. Returns false if not found. */
+  removeCue(id: string): boolean {
+    const before = this.timeline.cues.length;
+    this.timeline.cues = this.timeline.cues.filter((c) => c.id !== id);
+    if (this.timeline.cues.length === before) return false;
+    if (this.selectedCue?.id === id) this.selectedCue = null;
+    this.player.load(this.timeline);
+    this.ui?.reload();
+    return true;
+  }
+  /** Set the overall timeline length (seconds). */
+  setTimelineLength(seconds: number): void {
+    this.timeline.duration = Math.max(2, Math.round(seconds));
+    this.player.load(this.timeline);
+    this.buildUI();
+    this.ui?.reload();
+  }
+  /** Remove every cue. */
+  clearTimeline(): void {
+    this.timeline.cues = [];
+    this.selectedCue = null;
+    this.player.load(this.timeline);
+    this.buildUI();
+    this.ui?.reload();
+  }
+  /** Capture the live camera view as a Custom-view camera cue; returns its id. */
+  captureView(label?: string): string {
+    const id = cueId();
+    this.timeline.cues.push({
+      id,
+      track: 'camera',
+      type: 'cam.custom',
+      start: Math.round(this.playheadT * 10) / 10,
+      duration: 1.5,
+      pose: poseToTuple(this.app.stage.getCameraPose()),
+      ...(label ? { label } : {}),
+    });
+    this.player.load(this.timeline);
+    this.buildUI();
+    this.ui?.reload();
+    return id;
+  }
+  /** Start (or restart) the timeline preview programmatically. */
+  startPreviewPublic(): void {
+    const p = this.performer;
+    if (p?.hasNarration) void p.perform(false);
+    else this.startPreview();
+  }
   applyTimelineDoc(data: { duration?: number; cues?: Cue[] } | null | undefined): void {
     const cues = Array.isArray(data?.cues) ? data.cues : [];
     this.timeline.duration = Math.max(2, Number(data?.duration) || 26);

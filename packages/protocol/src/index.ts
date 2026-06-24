@@ -10,3 +10,4 @@ export * from './session.js';
 export * from './scene.js';
 export * from './newsreport.js';
 export * from './newsreportCompile.js';
+export * from './bridge.js';
