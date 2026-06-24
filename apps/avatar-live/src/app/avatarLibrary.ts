@@ -91,6 +91,18 @@ export class AvatarLibrary {
         ? `body animation: ${got.length} clips (${got.join(', ')})`
         : 'body animation: no clips found — run scripts/fetch-animations.sh',
     );
+
+    // Full-body walk/turn locomotion clips (for realtime arrow-key walking — press M).
+    // Same per-avatar-then-shared fallback as the body clips; missing files are skipped.
+    const LOCO_NAMES = ['walk', 'walk_back', 'turn_left', 'turn_180'];
+    const loco = await avatar.loadLocomotion(
+      LOCO_NAMES.map((name) => ({
+        name,
+        url: ownDir ? `${ownDir}/${name}.glb` : `/animations/${name}.glb`,
+        fallback: ownDir ? `/animations/${name}.glb` : undefined,
+      })),
+    );
+    if (loco.length) log(`locomotion: ${loco.length} clips (${loco.join(', ')}) — press M to walk`);
   };
 
   private discoverAvatars = async (): Promise<void> => {
