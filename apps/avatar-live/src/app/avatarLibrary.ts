@@ -1,4 +1,5 @@
 import { type Shot } from '../scene/stage.js';
+import { SCREEN_STAND_POS } from '../scene/studio.js';
 import type { StudioContext } from './context.js';
 
 // Folders are auto-indexed by the Vite avatar plugin (→ /avatars.json). Each avatar
@@ -103,6 +104,10 @@ export class AvatarLibrary {
       })),
     );
     if (loco.length) log(`locomotion: ${loco.length} clips (${loco.join(', ')}) — press M to walk`);
+
+    // Point gestures aim the right arm at the stand-mounted screen (to the anchor's right).
+    // The aim only engages while a point gesture is active, so this is safe to set once.
+    avatar.setPointTarget(SCREEN_STAND_POS);
   };
 
   private discoverAvatars = async (): Promise<void> => {
