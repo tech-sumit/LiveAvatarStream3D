@@ -233,6 +233,44 @@ export class AvatarController {
     this.idleHoldT = 0; // re-settle the new pose before freezing (idle-motion off)
   }
 
+  /** Pending "settle back to talking" handler queued after a one-shot gesture. */
+  private gestureReturn: ((e: { type: string; action?: unknown }) => void) | null = null;
+
+  /**
+   * Play a dedicated gesture clip ONCE over the talking motion, then crossfade
+   * back into `baseClip` when it finishes — so a wave waves once and returns to
+   * talking instead of looping forever. Falls back to just playing the base clip
+   * if the gesture clip isn't loaded (e.g. fetch-animations.sh wasn't run).
+   */
+  playGesture(gestureName: string, baseClip: string, fade = 0.25): void {
+    const g = this.actions[gestureName];
+    if (!g || !this.mixer) {
+      this.playClip(baseClip, fade);
+      return;
+    }
+    // Cancel a previous gesture's pending return so it can't yank us off this one.
+    if (this.gestureReturn) {
+      this.mixer.removeEventListener('finished', this.gestureReturn);
+      this.gestureReturn = null;
+    }
+    const prev = this.actions[this.currentClip];
+    g.reset();
+    g.setLoop(THREE.LoopOnce, 1);
+    g.clampWhenFinished = true;
+    g.setEffectiveWeight(1).fadeIn(fade).play();
+    if (prev && prev !== g) prev.fadeOut(fade);
+    this.currentClip = gestureName;
+    this.idleHoldT = 0;
+    const onFinished = (e: { type: string; action?: unknown }): void => {
+      if (e.action !== g) return;
+      this.mixer?.removeEventListener('finished', onFinished);
+      this.gestureReturn = null;
+      this.playClip(baseClip, 0.35);
+    };
+    this.gestureReturn = onFinished;
+    this.mixer.addEventListener('finished', onFinished);
+  }
+
   /** Idle breathing/sway. Off → the avatar settles into a still standing pose. */
   setIdleMotion(on: boolean): void {
     this.idleMotion = on;

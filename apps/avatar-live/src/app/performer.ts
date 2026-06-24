@@ -1,7 +1,7 @@
 import { BoundaryLipsync } from '../lipsync/boundaryLipsync.js';
 import { AudioAnalyserLipsync } from '../lipsync/audioLipsync.js';
 import { RealtimeSession } from '../session/realtimeSession.js';
-import { resolveGesture, selectTalkClip, type Gesture } from '../avatar/gestures.js';
+import { resolveGesture, selectTalkClip, gestureClipFor, type Gesture } from '../avatar/gestures.js';
 import { exportMp4Offline } from '../capture/offlineExporter.js';
 import { canExportMp4 } from '../capture/mp4Encoder.js';
 import { cueId, type Cue } from '../timeline/types.js';
@@ -68,7 +68,9 @@ export class Performer {
           if (emotion) app.avatar.setEmotion(emo);
           if (app.avatar.animationClips.length) {
             this.lastTalkClip = selectTalkClip((gesture as Gesture) ?? 'explain', emo, this.lastTalkClip);
-            app.avatar.playClip(this.lastTalkClip);
+            const g = gestureClipFor((gesture as Gesture) ?? 'none');
+            if (g) app.avatar.playGesture(g, this.lastTalkClip);
+            else app.avatar.playClip(this.lastTalkClip);
           }
         },
         onIdle: () => {
@@ -394,7 +396,9 @@ export class Performer {
       avatar.setEmotion(emo);
       if (avatar.animationClips.length) {
         this.lastTalkClip = selectTalkClip(seg.gesture as Gesture, emo, this.lastTalkClip);
-        avatar.playClip(this.lastTalkClip);
+        const g = gestureClipFor((seg.gesture as Gesture) ?? 'none');
+        if (g) avatar.playGesture(g, this.lastTalkClip);
+        else avatar.playClip(this.lastTalkClip);
       }
     }
     avatar.update(dt);
