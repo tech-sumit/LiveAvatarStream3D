@@ -198,6 +198,17 @@ export function startUploadServer(): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const server = createServer((req, res) => {
       void (async () => {
+        // The browser studio (e.g. http://localhost:5175) POSTs binary uploads here
+        // cross-origin (different host/port), which triggers a CORS preflight. Allow
+        // any origin and answer OPTIONS, else the browser blocks the upload ("Failed
+        // to fetch"). This sink is bound to 127.0.0.1 only, so * is acceptable.
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', '*');
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204).end();
+          return;
+        }
         if (req.method !== 'POST' || !req.url?.startsWith('/upload/')) {
           res.writeHead(404).end();
           return;
