@@ -221,6 +221,7 @@ export class Performer {
         codec,
         driveFrame: (t, dt, mouth) => {
           deps.timeline.playerUpdate(t); // camera / motion / screen cuts
+          app.stage.seekScreen(t); // keep a back-wall montage in sync with the frame clock
           this.driveAvatarFrame(t, dt, mouth, prep.segs, cursor);
         },
         onProgress: (d, n) => deps.recording.setExportProgress(d, n),
