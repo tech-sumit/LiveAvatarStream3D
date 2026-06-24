@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_TTS_URL?: string;
+  /** Studio Bridge: when set (a port, "1", or "true"), connect to ws://127.0.0.1:<port>. */
+  readonly VITE_BRIDGE?: string;
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv;

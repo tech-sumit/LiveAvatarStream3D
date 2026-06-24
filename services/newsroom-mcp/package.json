@@ -1,0 +1,27 @@
+{
+  "name": "@las/newsroom-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Newsroom MCP server: a stdio MCP that drives an avatar-live studio over the Studio Bridge WS protocol.",
+  "bin": {
+    "newsroom-mcp": "dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@las/protocol": "*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "playwright": "^1.49.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.6.2"
+  }
+}
