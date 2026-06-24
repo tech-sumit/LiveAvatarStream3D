@@ -56,9 +56,13 @@ const GESTURE_WEIGHT = 0.65;
 
 // How strongly the right arm aims at a point target while a point gesture plays.
 // Kept subtle and smoothed so the arm never snaps and never overrides the clip.
-const POINT_AIM_WEIGHT = 0.55;
-const POINT_FOREARM_WEIGHT = 0.35;
-const POINT_AIM_TAU = 0.18; // seconds; smoothing time constant toward the aim
+// The point-aim is now the PRIMARY mover (it raises the left arm from rest to the screen,
+// no clip), so the weights are strong; pointAimAmount ramps it in/out smoothly.
+const POINT_AIM_WEIGHT = 0.85;
+const POINT_FOREARM_WEIGHT = 0.6;
+const POINT_AIM_TAU = 0.2; // seconds; smoothing time constant toward the aim
+const POINT_HOLD = 2.2; // seconds the point is held before it releases back to talking
+const SCREEN_POINT_TURN = 0.5; // radians the body turns toward the screen while pointing
 
 // Finger-counting: per-joint curl (proximal, middle, distal) folding a finger into
 // the palm about its local X axis (negative = fold, verified on the rig). Each number
@@ -121,12 +125,14 @@ export class AvatarController {
   private locoActions: Record<string, THREE.AnimationAction> = {};
 
   // Point-aiming: when a point gesture is active AND a world-space target is set,
-  // the right arm is additively rotated to aim the hand at the target. `pointing`
-  // gates the effect so it only engages during a point gesture and never fights
-  // other gestures. `pointAimAmount` ramps the effect in/out smoothly (0..1).
+  // the LEFT arm (the one on the screen's side — the screen sits to the anchor's left,
+  // camera-right) is rotated to aim the hand at the target, so nothing crosses the
+  // chest. `pointing` gates the effect; `pointAimAmount` ramps it in/out (0..1);
+  // `pointT` holds the point for a beat then releases it.
   private pointTarget: THREE.Vector3 | null = null;
   private pointing = false;
   private pointAimAmount = 0;
+  private pointT = 0;
 
   // Procedural finger-counting: the 'count' gesture poses the right hand 1 → 2 → 3
   // fingers (index, then +middle, then +ring) while the clip raises the arm. We curl
@@ -355,6 +361,17 @@ export class AvatarController {
    * if the gesture clip isn't loaded (e.g. fetch-animations.sh wasn't run).
    */
   playGesture(gestureName: string, baseClip: string, fade = 0.25): void {
+    // Screen-point is handled procedurally: keep the talking base and aim the LEFT arm
+    // at the screen (the right-arm point clip would cross the body to a left-side screen
+    // and clip through the chest). The body also turns slightly toward the screen.
+    if (/(^|_)point/i.test(gestureName)) {
+      this.playClip(baseClip, fade);
+      this.pointing = true;
+      this.pointT = 0;
+      this.counting = false;
+      this.setTurn(SCREEN_POINT_TURN);
+      return;
+    }
     const g = this.actions[gestureName];
     if (!g || !this.mixer) {
       this.playClip(baseClip, fade);
@@ -376,10 +393,8 @@ export class AvatarController {
     if (prev && prev !== g) prev.fadeOut(fade);
     this.currentClip = gestureName;
     this.idleHoldT = 0;
-    // Engage point-aiming ONLY while a point gesture is the active one-shot, so the
-    // arm-aim override never fights wave/count/etc. The name is treated as a point
-    // gesture if it is (or starts with) "point".
-    this.pointing = /(^|_)point/i.test(gestureName);
+    // A non-point gesture: stop any point-aim and let the body face front again.
+    this.pointing = false;
     // Start procedural finger-counting if this is the count gesture.
     this.counting = /count/i.test(gestureName);
     if (this.counting) {
@@ -432,21 +447,30 @@ export class AvatarController {
   }
 
   /**
-   * Aim the right arm at the stored world-space point target. Only engages while a
-   * point gesture is active (`this.pointing`) AND a target is set; otherwise it
-   * ramps the override out so the clip's own arm pose resumes. The arm bone is
-   * rotated toward "shoulder → target" expressed in the bone's PARENT space, then
-   * slerped from the clip's current local rotation by a smoothed, capped weight —
-   * subtle and stable, never a snap, and capped so it never fully replaces the clip.
+   * Aim the LEFT arm at the stored world-space point target (the screen sits on the
+   * anchor's left, so the left arm reaches it without crossing the chest). Only engages
+   * while a point gesture is active (`this.pointing`) AND a target is set; otherwise it
+   * ramps out so the talking base resumes. The arm bone is rotated toward "shoulder →
+   * target" expressed in the bone's PARENT space, then slerped from the current local
+   * rotation by a smoothed, ramped weight — smooth in/out, never a snap.
    */
   private applyPointing(dt: number): void {
+    // Hold the point for a beat, then release it (face front, drop the arm).
+    if (this.pointing) {
+      this.pointT += dt;
+      if (this.pointT > POINT_HOLD) {
+        this.pointing = false;
+        this.setTurn(0);
+      }
+    }
     // Ramp the aim amount toward 1 while pointing, toward 0 otherwise.
     const want = this.pointing && this.pointTarget ? 1 : 0;
     const rate = 1 - Math.exp(-dt / POINT_AIM_TAU);
     this.pointAimAmount += (want - this.pointAimAmount) * rate;
     if (this.pointAimAmount < 0.001 || !this.animRoot || !this.pointTarget) return;
 
-    const arm = this.animRoot.getObjectByName('RightArm');
+    // The LEFT arm (on the screen's side) does the pointing so nothing crosses the chest.
+    const arm = this.animRoot.getObjectByName('LeftArm');
     if (!arm || !arm.parent) return;
     const parent = arm.parent;
 
@@ -479,8 +503,8 @@ export class AvatarController {
     const w = POINT_AIM_WEIGHT * this.pointAimAmount;
     arm.quaternion.slerp(_aimDesired, w);
 
-    // Optionally straighten the forearm a touch so the hand reads as pointing.
-    const fore = this.animRoot.getObjectByName('RightForeArm');
+    // Straighten the forearm so the whole arm extends as a clean point.
+    const fore = this.animRoot.getObjectByName('LeftForeArm');
     if (fore) {
       _q.identity(); // aim the forearm roughly along the same bone axis (small)
       fore.quaternion.slerp(_q, POINT_FOREARM_WEIGHT * this.pointAimAmount);
