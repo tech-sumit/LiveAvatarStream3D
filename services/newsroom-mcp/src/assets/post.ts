@@ -149,12 +149,15 @@ async function buildIntroClip(card: string, seconds: number, basename: string): 
     '-y',
     '-loop',
     '1',
-    '-t',
-    String(seconds),
     '-i',
     card,
     '-vf',
     filter,
+    // `-t` here is an OUTPUT limit: hold the looped card for exactly `seconds`.
+    // (As an input option before -i it would, with zoompan d=frames, blow the
+    // clip up to seconds*frames long and bury the body under the intro.)
+    '-t',
+    String(seconds),
     '-c:v',
     'libx264',
     '-pix_fmt',

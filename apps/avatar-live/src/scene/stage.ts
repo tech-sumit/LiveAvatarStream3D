@@ -137,11 +137,11 @@ export class Stage {
   /** Aim the camera at the face (head center) at eye level; distance from the
    *  head height + shot. Camera height is aligned to the face for every shot. */
   frame(headCenter: THREE.Vector3, headHeight: number, shot: Shot = 'medium', snap = true): void {
-    // News framing: eye-level camera; the look-at drops toward the chest (more on wider
-    // shots) so the frame reveals neck + torso and the head sits in the upper third,
-    // instead of centering on the face.
-    const factor = shot === 'close' ? 4.0 : shot === 'medium' ? 6.0 : 10.0;
-    const drop = shot === 'close' ? 0.6 : shot === 'medium' ? 1.4 : 2.2;
+    // News framing: eye-level camera; the look-at drops slightly toward the chest (more
+    // on wider shots) so the frame reveals neck + torso while keeping the FACE comfortably
+    // in the upper third — a head-and-shoulders anchor shot, not a torso crop.
+    const factor = shot === 'close' ? 4.0 : shot === 'medium' ? 5.5 : 8.0;
+    const drop = shot === 'close' ? 0.25 : shot === 'medium' ? 0.6 : 1.1;
     const dist = headHeight * factor;
     this.controls.target.set(headCenter.x, headCenter.y - headHeight * drop, headCenter.z);
     if (snap) {
