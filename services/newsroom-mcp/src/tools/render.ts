@@ -32,7 +32,9 @@ const exportMp4 = defineTool({
     'and its size in bytes.',
   inputSchema: {},
   async handler() {
-    const r = (await callBridge('exportMp4', {})) as { ref: string; bytes: number };
+    // The offline render (TTS mixdown + per-frame WebCodecs encode) routinely exceeds the
+    // default bridge timeout, so give it a generous window.
+    const r = (await callBridge('exportMp4', {}, { timeoutMs: 280_000 })) as { ref: string; bytes: number };
     const path = uploadedPath(r.ref);
     if (!path) {
       return {
