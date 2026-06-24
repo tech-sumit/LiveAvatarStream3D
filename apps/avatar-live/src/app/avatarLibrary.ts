@@ -76,6 +76,16 @@ export class AvatarLibrary {
       { name: 'talk3', url: '/animations/talk3.glb' },
       { name: 'talk4', url: '/animations/talk4.glb' },
       { name: 'talk5', url: '/animations/talk5.glb' },
+      // Dedicated gesture clips (DSL gesture vocabulary). Missing files are
+      // skipped silently by loadAnimations, so the app still runs without them.
+      { name: 'wave', url: '/animations/wave.glb' },
+      { name: 'point', url: '/animations/point.glb' },
+      { name: 'open_palms', url: '/animations/open_palms.glb' },
+      { name: 'count', url: '/animations/count.glb' },
+      { name: 'thumbs_up', url: '/animations/thumbs_up.glb' },
+      { name: 'shrug', url: '/animations/shrug.glb' },
+      { name: 'hand_to_chest', url: '/animations/hand_to_chest.glb' },
+      { name: 'nod', url: '/animations/nod.glb' },
     ]);
     if (got.includes('idle')) avatar.playClip('idle', 0);
     log(
