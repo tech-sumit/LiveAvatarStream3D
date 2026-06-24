@@ -37,6 +37,29 @@ const _up = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
+// scratch objects for point-aiming math (avoid per-frame allocation)
+const _aimTarget = new THREE.Vector3();
+const _aimDir = new THREE.Vector3();
+const _aimParentInv = new THREE.Quaternion();
+const _aimParentWorld = new THREE.Quaternion();
+const _aimDesired = new THREE.Quaternion();
+const _aimMat = new THREE.Matrix4();
+const _aimX = new THREE.Vector3();
+const _aimY = new THREE.Vector3();
+const _aimZ = new THREE.Vector3();
+const _aimShoulder = new THREE.Vector3();
+
+// One-shot gestures blend in at a REDUCED weight so they read as understated and
+// stable while the talking base still shows through — full weight (1.0) made them
+// over-animated. Tune here.
+const GESTURE_WEIGHT = 0.65;
+
+// How strongly the right arm aims at a point target while a point gesture plays.
+// Kept subtle and smoothed so the arm never snaps and never overrides the clip.
+const POINT_AIM_WEIGHT = 0.55;
+const POINT_FOREARM_WEIGHT = 0.35;
+const POINT_AIM_TAU = 0.18; // seconds; smoothing time constant toward the aim
+
 const EYE_LOOK = [
   'eyeLookInLeft',
   'eyeLookOutLeft',
@@ -84,6 +107,19 @@ export class AvatarController {
   private mixer: THREE.AnimationMixer | null = null;
   private actions: Record<string, THREE.AnimationAction> = {};
   private currentClip = '';
+
+  // Full-body locomotion clips (walk/turn) loaded into the SAME mixer as `actions`.
+  // A separate map so the walk controller can enumerate them without picking up
+  // talk/gesture clips, but they live on one mixer so crossfades blend correctly.
+  private locoActions: Record<string, THREE.AnimationAction> = {};
+
+  // Point-aiming: when a point gesture is active AND a world-space target is set,
+  // the right arm is additively rotated to aim the hand at the target. `pointing`
+  // gates the effect so it only engages during a point gesture and never fights
+  // other gestures. `pointAimAmount` ramps the effect in/out smoothly (0..1).
+  private pointTarget: THREE.Vector3 | null = null;
+  private pointing = false;
+  private pointAimAmount = 0;
 
   constructor() {
     const head = createProceduralHead();
@@ -165,7 +201,10 @@ export class AvatarController {
     this.animRoot = root;
     this.mixer = null;
     this.actions = {};
+    this.locoActions = {};
     this.currentClip = '';
+    this.pointing = false;
+    this.pointAimAmount = 0;
     // Auto-detect a retargetable humanoid: the core RPM/Mixamo bones the body
     // clips target. Used for ad-hoc (file/URL) loads; discovered avatars override
     // this via config.bodyAnim, because identical bone names don't guarantee a
@@ -187,8 +226,43 @@ export class AvatarController {
    */
   async loadAnimations(clips: { name: string; url: string; fallback?: string }[]): Promise<string[]> {
     if (!this.animRoot) return [];
-    const loader = new GLTFLoader();
     this.mixer = new THREE.AnimationMixer(this.animRoot);
+    const loaded = await this.bindClips(clips, this.actions);
+    // Rest in a natural standing pose instead of the skeleton's T-pose bind: start a
+    // neutral idle clip as soon as one binds. Idle motion only layers breathing/sway on
+    // top of the playing body clip, so without this the avatar holds its arms-wide bind.
+    if (!this.currentClip) this.restToIdle(0);
+    return loaded;
+  }
+
+  /**
+   * Load full-body locomotion clips (walk / walk_back / turn_left / turn_180 …)
+   * into the SAME mixer as `actions`, using the identical track-binding logic
+   * (drop `.position` tracks, bind by bone name, LoopRepeat). Stored in a parallel
+   * `locoActions` map so a walk controller can drive them independently of talk /
+   * gesture clips. Returns the names that bound. Does NOT move the avatar group —
+   * the walk controller owns root translation.
+   */
+  async loadLocomotion(clips: { name: string; url: string; fallback?: string }[]): Promise<string[]> {
+    if (!this.animRoot) return [];
+    // Reuse the existing mixer if animations are already loaded; otherwise create one
+    // so locomotion can be loaded standalone.
+    if (!this.mixer) this.mixer = new THREE.AnimationMixer(this.animRoot);
+    return this.bindClips(clips, this.locoActions);
+  }
+
+  /**
+   * Shared track-binding loop: load each clip's first AnimationClip, keep only
+   * rotation tracks whose bone exists on this skeleton, and register the bound
+   * AnimationAction (LoopRepeat) into `into`. Rotation-only retargeting is robust;
+   * dropping `.position` keeps a clip's hip translation from displacing the avatar.
+   */
+  private async bindClips(
+    clips: { name: string; url: string; fallback?: string }[],
+    into: Record<string, THREE.AnimationAction>,
+  ): Promise<string[]> {
+    if (!this.animRoot || !this.mixer) return [];
+    const loader = new GLTFLoader();
     // Names of nodes that actually exist, to drop tracks for bones this skeleton
     // lacks (e.g. Avaturn has no fingertip bones) — avoids noisy PropertyBinding
     // warnings while still animating every bone that's present.
@@ -216,24 +290,38 @@ export class AvatarController {
         );
         const action = this.mixer.clipAction(clip, this.animRoot as THREE.Object3D);
         action.setLoop(THREE.LoopRepeat, Infinity);
-        this.actions[c.name] = action;
+        into[c.name] = action;
         loaded.push(c.name);
       } catch {
         /* skip a clip that fails to load */
       }
     }
-    // Rest in a natural standing pose instead of the skeleton's T-pose bind: start a
-    // neutral idle clip as soon as one binds. Idle motion only layers breathing/sway on
-    // top of the playing body clip, so without this the avatar holds its arms-wide bind.
-    if (!this.currentClip) this.restToIdle(0);
     return loaded;
+  }
+
+  /** Crossfade to a named locomotion clip (looping). No-op if it isn't loaded. */
+  playLocomotion(name: string, fade = 0.25): void {
+    const next = this.locoActions[name];
+    if (!next || !this.mixer || this.currentClip === name) return;
+    const prev = this.actions[this.currentClip] ?? this.locoActions[this.currentClip];
+    next.reset().setLoop(THREE.LoopRepeat, Infinity).setEffectiveWeight(1).fadeIn(fade).play();
+    if (prev && prev !== next) prev.fadeOut(fade);
+    this.currentClip = name;
+    this.idleHoldT = 0;
+  }
+
+  /** Crossfade back from locomotion into the resting idle pose. */
+  stopLocomotion(fade = 0.3): void {
+    // Only the active clip matters; restToIdle crossfades out whatever is playing.
+    this.restToIdle(fade);
   }
 
   /** Crossfade to a named body clip (no-op if it isn't loaded). */
   playClip(name: string, fade = 0.3): void {
     const next = this.actions[name];
     if (!next || this.currentClip === name) return;
-    const prev = this.actions[this.currentClip];
+    // The outgoing clip may be a talk/gesture clip OR a locomotion clip.
+    const prev = this.actions[this.currentClip] ?? this.locoActions[this.currentClip];
     next.reset().setEffectiveWeight(1).fadeIn(fade).play();
     if (prev) prev.fadeOut(fade);
     this.currentClip = name;
@@ -260,22 +348,40 @@ export class AvatarController {
       this.mixer.removeEventListener('finished', this.gestureReturn);
       this.gestureReturn = null;
     }
-    const prev = this.actions[this.currentClip];
+    const prev = this.actions[this.currentClip] ?? this.locoActions[this.currentClip];
     g.reset();
     g.setLoop(THREE.LoopOnce, 1);
     g.clampWhenFinished = true;
-    g.setEffectiveWeight(1).fadeIn(fade).play();
+    // Blend the one-shot gesture in at a REDUCED weight so it reads but stays
+    // understated and stable — the talking base shows through. (Was 1.0, which
+    // looked over-animated.)
+    g.setEffectiveWeight(GESTURE_WEIGHT).fadeIn(fade).play();
     if (prev && prev !== g) prev.fadeOut(fade);
     this.currentClip = gestureName;
     this.idleHoldT = 0;
+    // Engage point-aiming ONLY while a point gesture is the active one-shot, so the
+    // arm-aim override never fights wave/count/etc. The name is treated as a point
+    // gesture if it is (or starts with) "point".
+    this.pointing = /(^|_)point/i.test(gestureName);
     const onFinished = (e: { type: string; action?: unknown }): void => {
       if (e.action !== g) return;
       this.mixer?.removeEventListener('finished', onFinished);
       this.gestureReturn = null;
+      this.pointing = false; // point gesture finished → stop aiming, ramp back out
       this.playClip(baseClip, 0.35);
     };
     this.gestureReturn = onFinished;
     this.mixer.addEventListener('finished', onFinished);
+  }
+
+  /**
+   * Set the world-space point target the right arm aims at while a point gesture
+   * plays. null clears it. Aiming is gated on `this.pointing` (set true only when
+   * playGesture runs a point clip), so a stale target never moves the arm outside
+   * a point gesture.
+   */
+  setPointTarget(target: THREE.Vector3 | null): void {
+    this.pointTarget = target ? target.clone() : null;
   }
 
   /** Idle breathing/sway. Off → the avatar settles into a still standing pose. */
@@ -288,12 +394,73 @@ export class AvatarController {
     return Object.keys(this.actions);
   }
 
+  /** Names of the loaded full-body locomotion clips (walk/turn), for the walk controller. */
+  get locomotionClips(): string[] {
+    return Object.keys(this.locoActions);
+  }
+
   /** Settle into a resting idle pose. Reuses the loader's idle → idle_calm → first-clip
    *  fallback — playClip is a no-op for a missing clip, so 'idle' alone isn't safe (a
    *  partial asset load could leave only talk clips). No-op if no body clip is loaded. */
   restToIdle(fade = 0.3): void {
     const rest = this.actions['idle'] ? 'idle' : this.actions['idle_calm'] ? 'idle_calm' : Object.keys(this.actions)[0];
     if (rest) this.playClip(rest, fade);
+  }
+
+  /**
+   * Aim the right arm at the stored world-space point target. Only engages while a
+   * point gesture is active (`this.pointing`) AND a target is set; otherwise it
+   * ramps the override out so the clip's own arm pose resumes. The arm bone is
+   * rotated toward "shoulder → target" expressed in the bone's PARENT space, then
+   * slerped from the clip's current local rotation by a smoothed, capped weight —
+   * subtle and stable, never a snap, and capped so it never fully replaces the clip.
+   */
+  private applyPointing(dt: number): void {
+    // Ramp the aim amount toward 1 while pointing, toward 0 otherwise.
+    const want = this.pointing && this.pointTarget ? 1 : 0;
+    const rate = 1 - Math.exp(-dt / POINT_AIM_TAU);
+    this.pointAimAmount += (want - this.pointAimAmount) * rate;
+    if (this.pointAimAmount < 0.001 || !this.animRoot || !this.pointTarget) return;
+
+    const arm = this.animRoot.getObjectByName('RightArm');
+    if (!arm || !arm.parent) return;
+    const parent = arm.parent;
+
+    // World-space shoulder position and aim direction (shoulder → target).
+    arm.getWorldPosition(_aimShoulder);
+    _aimTarget.copy(this.pointTarget);
+    _aimDir.subVectors(_aimTarget, _aimShoulder);
+    if (_aimDir.lengthSq() < 1e-8) return;
+    _aimDir.normalize();
+
+    // Express the aim direction in the arm's PARENT space (the space the bone's
+    // local quaternion lives in), so the result composes cleanly with the rig.
+    parent.getWorldQuaternion(_aimParentWorld);
+    _aimParentInv.copy(_aimParentWorld).invert();
+    _aimDir.applyQuaternion(_aimParentInv).normalize();
+
+    // Build a desired local rotation whose +Y axis (the down-the-bone axis for RPM
+    // arm bones) points along the aim direction. We pick a stable up reference and
+    // orthonormalize to avoid gimbal flips, then read the rotation off the basis.
+    _aimY.copy(_aimDir);
+    _aimZ.set(0, 0, 1);
+    if (Math.abs(_aimY.dot(_aimZ)) > 0.99) _aimZ.set(1, 0, 0); // avoid degeneracy
+    _aimX.crossVectors(_aimY, _aimZ).normalize();
+    _aimZ.crossVectors(_aimX, _aimY).normalize();
+    _aimMat.makeBasis(_aimX, _aimY, _aimZ);
+    _aimDesired.setFromRotationMatrix(_aimMat);
+
+    // Slerp from the clip's current local rotation toward the aim by a capped,
+    // ramped weight — understated and stable, never overriding the clip entirely.
+    const w = POINT_AIM_WEIGHT * this.pointAimAmount;
+    arm.quaternion.slerp(_aimDesired, w);
+
+    // Optionally straighten the forearm a touch so the hand reads as pointing.
+    const fore = this.animRoot.getObjectByName('RightForeArm');
+    if (fore) {
+      _q.identity(); // aim the forearm roughly along the same bone axis (small)
+      fore.quaternion.slerp(_q, POINT_FOREARM_WEIGHT * this.pointAimAmount);
+    }
   }
 
   setEmotion(name: EmotionName, intensity = 1): void {
@@ -400,6 +567,9 @@ export class AvatarController {
       else adv = 0; // hold the settled pose
     }
     this.mixer?.update(adv);
+    // Aim the right arm at the point target (only during a point gesture). Runs
+    // AFTER the mixer so it overrides the clip's arm pose for that frame.
+    this.applyPointing(dt);
 
     // A2F-3D / ARKit full-face path: the timeline already carries jaw, visemes,
     // brows, blinks and emotion, so apply it directly and only add idle motion.

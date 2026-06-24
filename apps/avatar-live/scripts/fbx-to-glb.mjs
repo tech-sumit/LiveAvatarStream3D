@@ -8,16 +8,24 @@
  * and re-export just the skeleton + clip as a small GLB. The result binds directly to
  * our RPM/Avaturn avatars, like the ReadyPlayerMe clips.
  *
- * Usage: node scripts/fbx-to-glb.mjs <input.fbx> <output.glb> [clipName]
+ * Usage: node scripts/fbx-to-glb.mjs <input.fbx> <output.glb> [clipName] [--full-body]
+ *
+ * By default tracks are filtered to UPPER-BODY ONLY (gestures must not move the legs).
+ * Pass --full-body to keep ALL rotation tracks (legs, hips, spine) — needed for walk/turn
+ * locomotion clips. Position tracks are still dropped and the `mixamorig:` prefix stripped
+ * in both modes.
  */
 import { chromium } from 'playwright';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { createServer } from 'node:http';
 
-const [, , inPath, outPath, clipNameArg] = process.argv;
+const rawArgs = process.argv.slice(2);
+const fullBody = rawArgs.some((a) => a === '--full-body' || a === '--fullBody' || a === 'fullBody');
+const positional = rawArgs.filter((a) => !a.startsWith('--') && a !== 'fullBody');
+const [inPath, outPath, clipNameArg] = positional;
 if (!inPath || !outPath) {
-  console.error('usage: node scripts/fbx-to-glb.mjs <input.fbx> <output.glb> [clipName]');
+  console.error('usage: node scripts/fbx-to-glb.mjs <input.fbx> <output.glb> [clipName] [--full-body]');
   process.exit(1);
 }
 const clipName = clipNameArg || basename(outPath).replace(/\.glb$/i, '');
@@ -31,7 +39,7 @@ const HTML = `<!doctype html><html><head>
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
-window.__convert = async (url, clipName) => {
+window.__convert = async (url, clipName, fullBody) => {
   const ab = await (await fetch(url)).arrayBuffer();
   const grp = new FBXLoader().parse(ab, '');
   if (!grp.animations.length) throw new Error('no animation in FBX');
@@ -44,10 +52,11 @@ window.__convert = async (url, clipName) => {
   // Anchor gestures are UPPER-BODY ONLY: keep shoulders/arms/hands + neck/head, and DROP
   // spine/hips/legs so the mocap's weight-shifts, leans, bends and turns don't fold or spin
   // the standing-still anchor. (Position tracks dropped too — rotation-only retarget.)
+  // fullBody (walk/turn locomotion) keeps ALL rotation tracks — legs/hips/spine included.
   const UPPER_BODY = /(Shoulder|Arm|Hand|Neck|Head)/;
   clip.tracks = clip.tracks
     .filter(t => !t.name.endsWith('.position'))
-    .filter(t => UPPER_BODY.test(t.name.replace(/^mixamorig:?/i, '').split('.')[0]));
+    .filter(t => fullBody || UPPER_BODY.test(t.name.replace(/^mixamorig:?/i, '').split('.')[0]));
   for (const t of clip.tracks) t.name = t.name.replace(/^mixamorig:?/i, '');
   clip.name = clipName;
   clip.resetDuration();
@@ -89,8 +98,8 @@ try {
   await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'load' });
   await page.waitForFunction('window.__ready === true', { timeout: 30000 });
   const r = await page.evaluate(
-    async (name) => window.__convert('/input.fbx', name),
-    clipName,
+    async ({ name, fullBody }) => window.__convert('/input.fbx', name, fullBody),
+    { name: clipName, fullBody },
   );
   writeFileSync(outPath, Buffer.from(r.b64, 'base64'));
   console.log(`✓ ${basename(inPath)} → ${outPath}  (clip "${clipName}", ${r.dur.toFixed(2)}s, ${r.tracks} tracks, ${(Buffer.from(r.b64,'base64').length/1024).toFixed(0)} KB)`);

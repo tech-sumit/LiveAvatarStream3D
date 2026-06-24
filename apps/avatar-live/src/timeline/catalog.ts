@@ -79,7 +79,9 @@ export function poseFor(type: string, hc: THREE.Vector3, hh: number): CameraPose
       // Standard news medium: eye-level camera, look-at dropped to the chest so the frame
       // reads head (slight headroom) → torso/waist, with the head in the upper third.
       // (Factors are bone head-heights; visible head + hair is ~1.5x, so these run wider.)
-      return { pos: v(hc.x, eye, hc.z + hh * 5.5), target: v(hc.x, eye - hh * 0.6, hc.z), fov: 35 };
+      // Two-shot "anchor-left / screen-right" set: pull back + offset right so the anchor
+      // sits in the left third and the stand-mounted screen reads on the right.
+      return { pos: v(hc.x + 0.7, eye + 0.05, hc.z + 5.2), target: v(hc.x + 0.85, eye - 0.18, hc.z), fov: 32 };
   }
 }
 

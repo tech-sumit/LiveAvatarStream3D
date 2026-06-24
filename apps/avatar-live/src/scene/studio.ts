@@ -14,92 +14,66 @@ export interface NewsStudio {
   screen: THREE.Mesh;
 }
 
+/** Where the stand-mounted screen sits (anchor stands to its LEFT). Exported so the
+ *  camera presets can frame the two-shot and the point gesture can aim at it. */
+export const SCREEN_STAND_POS = new THREE.Vector3(1.95, 1.62, -0.35);
+
 export function buildNewsStudio(): NewsStudio {
   const group = new THREE.Group();
   group.name = 'NewsStudio';
 
-  // (Floor is provided by the Stage so it persists when the studio is hidden.)
+  // (Floor + the curved cyclorama backdrop / bright lighting are provided by the Stage so
+  //  they persist when the studio set is hidden. This module builds the on-stage props:
+  //  a stand-mounted screen to the anchor's RIGHT — an "anchor-left / screen-right" set.)
 
-  // ── Curved backdrop wall behind the anchor ──────────────────────────────────
-  const backdrop = new THREE.Mesh(
-    new THREE.CylinderGeometry(5, 5, 6, 48, 1, true, Math.PI * 0.75, Math.PI * 1.5),
-    new THREE.MeshStandardMaterial({ color: 0x10182b, roughness: 0.9, side: THREE.BackSide }),
-  );
-  backdrop.position.set(0, 3, -1.2);
-  backdrop.receiveShadow = true;
-  group.add(backdrop);
-
-  // ── Big video wall (emissive, canvas headline) ──────────────────────────────
+  // ── Stand-mounted video screen, to the anchor's right ───────────────────────
   const screenCanvas = document.createElement('canvas');
   screenCanvas.width = 1024;
   screenCanvas.height = 576;
   const screenTex = new THREE.CanvasTexture(screenCanvas);
   screenTex.colorSpace = THREE.SRGBColorSpace;
   const screenMat = new THREE.MeshBasicMaterial({ map: screenTex, toneMapped: false });
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 2.36), screenMat);
-  screen.position.set(0, 1.95, -2.55);
-  group.add(screen);
   let videoTex: THREE.VideoTexture | null = null;
-  // thin bezel
+
+  const stand = new THREE.Group();
+  stand.position.set(SCREEN_STAND_POS.x, 0, SCREEN_STAND_POS.z);
+  stand.rotation.y = -0.42; // angle the screen toward the anchor + camera
+  group.add(stand);
+
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.35), screenMat);
+  screen.position.set(0, SCREEN_STAND_POS.y, 0.012);
+  stand.add(screen);
   const bezel = new THREE.Mesh(
-    new THREE.PlaneGeometry(4.4, 2.56),
-    new THREE.MeshStandardMaterial({ color: 0x05080f, roughness: 0.6 }),
+    new THREE.PlaneGeometry(2.56, 1.5),
+    new THREE.MeshStandardMaterial({ color: 0x05080f, roughness: 0.5, metalness: 0.4 }),
   );
-  bezel.position.set(0, 1.95, -2.57);
-  group.add(bezel);
-
-  // ── Two angled accent side panels with glowing edge strips ─────────────────
-  for (const side of [-1, 1]) {
-    const panel = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.2, 3.4),
-      new THREE.MeshStandardMaterial({ color: 0x121c30, roughness: 0.85, side: THREE.DoubleSide }),
-    );
-    panel.position.set(side * 3.1, 1.7, -1.6);
-    panel.rotation.y = side * -0.5;
-    group.add(panel);
-
-    const strip = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.06, 3.4),
-      new THREE.MeshBasicMaterial({ color: 0x2f6bff, toneMapped: false }),
-    );
-    strip.position.set(side * 2.0, 1.7, -1.55);
-    strip.rotation.y = side * -0.5;
-    group.add(strip);
-  }
-
-  // ── Anchor desk in front of the avatar ──────────────────────────────────────
-  const desk = new THREE.Group();
-  const deskBody = new THREE.Mesh(
-    new THREE.BoxGeometry(2.4, 1.0, 0.7),
-    new THREE.MeshStandardMaterial({ color: 0x16203a, roughness: 0.5, metalness: 0.3 }),
-  );
-  deskBody.position.y = 0.5;
-  deskBody.castShadow = true;
-  deskBody.receiveShadow = true;
-  desk.add(deskBody);
-  const deskTop = new THREE.Mesh(
-    new THREE.BoxGeometry(2.6, 0.06, 0.8),
-    new THREE.MeshStandardMaterial({ color: 0x0c1322, roughness: 0.25, metalness: 0.6 }),
-  );
-  deskTop.position.y = 1.0;
-  desk.add(deskTop);
-  // glowing front accent
-  const deskGlow = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.4, 0.12),
+  bezel.position.set(0, SCREEN_STAND_POS.y, 0);
+  stand.add(bezel);
+  const strip = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.4, 0.045),
     new THREE.MeshBasicMaterial({ color: 0x2f6bff, toneMapped: false }),
   );
-  deskGlow.position.set(0, 0.62, 0.351);
-  desk.add(deskGlow);
-  desk.position.set(0, 0, 0.75); // just in front of the anchor
-  group.add(desk);
+  strip.position.set(0, SCREEN_STAND_POS.y - 0.72, 0.013);
+  stand.add(strip);
+  // post + base
+  const standMat = new THREE.MeshStandardMaterial({ color: 0x1b2436, roughness: 0.4, metalness: 0.6 });
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.95, 0.14), standMat);
+  post.position.set(0, 0.47, 0);
+  post.castShadow = true;
+  stand.add(post);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.52, 0.08, 28), standMat);
+  base.position.set(0, 0.04, 0);
+  base.castShadow = true;
+  base.receiveShadow = true;
+  stand.add(base);
 
-  // ── Ceiling light bars (emissive, for ambiance in wide shots) ──────────────
+  // ── Ceiling light bars (emissive ambiance for wide shots) ──────────────────
   for (let i = -1; i <= 1; i++) {
     const bar = new THREE.Mesh(
       new THREE.BoxGeometry(2.6, 0.05, 0.16),
-      new THREE.MeshBasicMaterial({ color: 0x6f86c9, toneMapped: false }),
+      new THREE.MeshBasicMaterial({ color: 0xaebfe8, toneMapped: false }),
     );
-    bar.position.set(i * 1.7, 3.4, -0.5);
+    bar.position.set(i * 1.9 - 0.4, 3.5, -0.7);
     bar.rotation.x = 0.25;
     group.add(bar);
   }

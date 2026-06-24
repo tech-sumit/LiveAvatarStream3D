@@ -14,7 +14,7 @@ function mixColor(a: number, b: number, t: number): number {
 }
 
 const LIGHT_PRESETS: Record<string, { key: number; fill: number; rim: number; amb: number; exp: number; warm: number }> = {
-  studio: { key: 1.6, fill: 0.35, rim: 0.6, amb: 0.45, exp: 1.05, warm: 55 },
+  studio: { key: 2.6, fill: 1.0, rim: 0.8, amb: 0.95, exp: 1.15, warm: 55 },
   soft: { key: 1.0, fill: 0.9, rim: 0.3, amb: 0.85, exp: 1.1, warm: 50 },
   dramatic: { key: 2.6, fill: 0.08, rim: 1.3, amb: 0.12, exp: 1.0, warm: 48 },
   warm: { key: 1.8, fill: 0.4, rim: 0.5, amb: 0.5, exp: 1.05, warm: 82 },
