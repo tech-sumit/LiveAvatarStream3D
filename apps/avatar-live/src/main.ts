@@ -16,6 +16,7 @@ import { initCollapsibleSections } from './app/collapsible.js';
 import { initSliderReadouts } from './app/sliderReadout.js';
 import { initScriptEditor } from './app/scriptEditor.js';
 import { initCameraQuickAccess } from './app/cameraQuickAccess.js';
+import { initBridge } from './bridge/index.js';
 
 const app = new StudioContext();
 
@@ -61,3 +62,7 @@ app.log(`ready · avatar: ${app.avatar.description}`);
   studio: app.studio,
   wallVideo: backScreen.video,
 };
+
+// Studio Bridge — no-op unless enabled via ?bridge=<port> or VITE_BRIDGE. When
+// enabled, a reconnecting WS client lets the Newsroom MCP server drive this studio.
+initBridge(app, { lighting, look, recording, backScreen, transform, voices, library, timeline, performer, projects });

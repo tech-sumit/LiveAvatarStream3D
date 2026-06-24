@@ -8,6 +8,7 @@
     "packages/*",
     "services/control-api",
     "services/engine-three",
+    "services/newsroom-mcp",
     "apps/web",
     "apps/scene-editor",
     "apps/avatar-live"
