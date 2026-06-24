@@ -73,6 +73,61 @@ client rather than run by hand. Example client config:
   `http://localhost:5175`), and waits for it to register. The browser is held
   open for the session and torn down on disconnect. Use this for automated runs.
 
+## Resources (read-only)
+
+`src/resources.ts` registers read-only MCP **resources** (addressed by
+`newsroom://…` URIs, always `application/json`). The orchestrator calls
+`registerResources(server)` inside `createServer`. They split into two groups:
+
+**Static catalog** (sourced from `@las/protocol` enums — the vocabulary the
+director/editor can use):
+
+| URI | Contents |
+|-----|----------|
+| `newsroom://catalog/cues` | Camera shots & moves, plus the studio cue keys: camera (`cam.*`) and motion/gesture (`motion.*`). |
+| `newsroom://catalog/emotions` | The enumerated `EMOTIONS`. |
+| `newsroom://catalog/gestures` | The enumerated `GESTURES` (+ postures). |
+| `newsroom://catalog/presets` | Look presets (broadcast/flat/cinematic/warm/noir), lighting presets (studio/soft/dramatic/warm/cool), capture resolutions & codecs. |
+
+**Live studio** (round-trip `getState` over the bridge; degrade gracefully to a
+JSON note when no studio is connected):
+
+| URI | Contents |
+|-----|----------|
+| `newsroom://studio/state` | The full live `getState` payload. |
+| `newsroom://studio/avatars` | Avatars the connected studio knows about. |
+| `newsroom://studio/voices` | Voices the connected studio knows about. |
+
+> The `cam.*` / `motion.*` cue keys are inlined in `resources.ts` (mirrored from
+> `apps/avatar-live/src/timeline/catalog.ts`) so this Node service does not have
+> to import browser code (which pulls in `three`). Keep them in sync if that
+> catalog grows.
+
+## End-to-end smoke test
+
+`src/scripts/smoke.ts` exercises the whole path **without** the MCP stdio layer:
+start the transport → connect a **headless** studio (Playwright Chromium →
+avatar-live with `?bridge`) → apply a small Fable/Mythos `NewsReportDoc` →
+screenshot the output → `exportMp4` → `ffprobe` the uploaded mp4 → print
+**PASS/FAIL**.
+
+```bash
+# 1) start the avatar-live dev server (separate terminal), must be reachable at :5175
+npm run dev:avatar          # → http://localhost:5175  (the MCP loads it headless with ?bridge)
+
+# 2) build + run the smoke
+npm run build --workspace @las/newsroom-mcp
+npm run smoke --workspace @las/newsroom-mcp
+```
+
+It **degrades gracefully**: if Playwright/Chromium, the studio on `:5175`, or
+`ffprobe` (ffmpeg) is unavailable, it prints `SMOKE skipped: <reason>` and exits
+`0`. It exits non-zero only on a real **FAIL** (the pipeline ran but produced a
+bad/empty mp4). Overrides: `SMOKE_STUDIO_URL`, `SMOKE_CONNECT_TIMEOUT_MS`.
+
+Playwright Chromium must be installed for the headless path
+(`npx playwright install chromium`); ffmpeg provides `ffprobe`.
+
 ## Extending (NM-4 / NM-5 / NM-6)
 
 Tool modules export `ToolDef[]` and register through the same path as

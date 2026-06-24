@@ -26,6 +26,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z, type ZodRawShape } from 'zod';
 
 import { connectStudio, type StudioMode } from './studio.js';
+import { documentTools } from './tools/document.js';
+import { performTools } from './tools/perform.js';
+import { timelineTools } from './tools/timeline.js';
+import { backscreenTools } from './tools/backscreen.js';
+import { feedbackTools } from './tools/feedback.js';
+import { renderTools } from './tools/render.js';
+import { escapeTools } from './tools/escape.js';
+import { registerResources } from './resources.js';
 
 // ---------------------------------------------------------------------------
 // Tool definition + registry (the extension point for NM-4/NM-5/NM-6).
@@ -142,7 +150,16 @@ const connectStudioTool = defineTool({
  *   export const TOOL_MODULES = [connectStudioTool, ...documentTools, ...timelineTools];
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const TOOL_MODULES: ToolDef<any>[] = [connectStudioTool];
+export const TOOL_MODULES: ToolDef<any>[] = [
+  connectStudioTool,
+  ...documentTools,
+  ...performTools,
+  ...timelineTools,
+  ...backscreenTools,
+  ...feedbackTools,
+  ...renderTools,
+  ...escapeTools,
+];
 
 /** Register every tool in {@link TOOL_MODULES} on the server. */
 export function registerAllTools(server: McpServer): void {
@@ -161,6 +178,7 @@ export function createServer(): McpServer {
     version: '0.0.0',
   });
   registerAllTools(server);
+  registerResources(server);
   return server;
 }
 
