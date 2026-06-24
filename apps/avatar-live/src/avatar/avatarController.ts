@@ -60,6 +60,13 @@ const POINT_AIM_WEIGHT = 0.55;
 const POINT_FOREARM_WEIGHT = 0.35;
 const POINT_AIM_TAU = 0.18; // seconds; smoothing time constant toward the aim
 
+// Finger-counting: per-joint curl (proximal, middle, distal) folding a finger into
+// the palm about its local X axis (negative = fold, verified on the rig). Each number
+// is held for COUNT_PHASE seconds; the whole count releases after COUNT_TOTAL.
+const FINGER_CURL = [-1.0, -1.45, -1.2];
+const COUNT_PHASE = 0.75; // seconds each of 1, 2, 3 is shown (the 3 is then held)
+const COUNT_TOTAL = 3.4; // seconds before releasing the fingers back to the clip
+
 const EYE_LOOK = [
   'eyeLookInLeft',
   'eyeLookOutLeft',
@@ -120,6 +127,16 @@ export class AvatarController {
   private pointTarget: THREE.Vector3 | null = null;
   private pointing = false;
   private pointAimAmount = 0;
+
+  // Procedural finger-counting: the 'count' gesture poses the right hand 1 → 2 → 3
+  // fingers (index, then +middle, then +ring) while the clip raises the arm. We curl
+  // the unused fingers into the palm about each joint's local X axis (negative = fold,
+  // verified on the rig). `fingerExt[f]` (0 curled .. 1 extended) is lerped per finger
+  // so the count reads as a stable, deliberate 1-2-3 instead of a snap.
+  private counting = false;
+  private countT = 0;
+  private fingerExt = [0, 0, 0, 0]; // index, middle, ring, pinky
+  private fingerBones: THREE.Object3D[][] | null = null; // [finger][joint]
 
   constructor() {
     const head = createProceduralHead();
@@ -363,11 +380,18 @@ export class AvatarController {
     // arm-aim override never fights wave/count/etc. The name is treated as a point
     // gesture if it is (or starts with) "point".
     this.pointing = /(^|_)point/i.test(gestureName);
+    // Start procedural finger-counting if this is the count gesture.
+    this.counting = /count/i.test(gestureName);
+    if (this.counting) {
+      this.countT = 0;
+      this.fingerExt = [0, 0, 0, 0];
+    }
     const onFinished = (e: { type: string; action?: unknown }): void => {
       if (e.action !== g) return;
       this.mixer?.removeEventListener('finished', onFinished);
       this.gestureReturn = null;
       this.pointing = false; // point gesture finished → stop aiming, ramp back out
+      this.counting = false; // release the counted fingers back to the clip/idle
       this.playClip(baseClip, 0.35);
     };
     this.gestureReturn = onFinished;
@@ -461,6 +485,49 @@ export class AvatarController {
       _q.identity(); // aim the forearm roughly along the same bone axis (small)
       fore.quaternion.slerp(_q, POINT_FOREARM_WEIGHT * this.pointAimAmount);
     }
+  }
+
+  /**
+   * Procedurally pose the right hand to count 1 → 2 → 3 over the count gesture.
+   * Runs after the mixer so it overrides whatever the count clip does to the fingers.
+   * Each non-counted finger curls into the palm (local X, negative); `fingerExt` is
+   * lerped so transitions between numbers are smooth and the held number is stable.
+   */
+  private applyCounting(dt: number): void {
+    if (!this.counting) return;
+    this.countT += dt;
+    if (this.countT > COUNT_TOTAL) {
+      this.counting = false; // hand back to the clip/idle
+      return;
+    }
+    if (!this.fingerBones) this.cacheFingerBones();
+    if (!this.fingerBones) return;
+
+    // How many fingers are up right now (1, then 2, then 3), held on the last.
+    const n = this.countT < COUNT_PHASE ? 1 : this.countT < 2 * COUNT_PHASE ? 2 : 3;
+    // Targets per finger: index, middle, ring (counted) + pinky (always curled).
+    const target = [n >= 1 ? 1 : 0, n >= 2 ? 1 : 0, n >= 3 ? 1 : 0, 0];
+    const k = 1 - Math.exp(-dt / 0.12); // smoothing toward the target
+    for (let f = 0; f < 4; f++) {
+      this.fingerExt[f] += (target[f] - this.fingerExt[f]) * k;
+      const ext = this.fingerExt[f];
+      const joints = this.fingerBones[f];
+      for (let j = 0; j < joints.length; j++) joints[j].rotation.x = FINGER_CURL[j] * (1 - ext);
+    }
+  }
+
+  private cacheFingerBones(): void {
+    if (!this.animRoot) return;
+    const fingers = ['Index', 'Middle', 'Ring', 'Pinky'];
+    const bones: THREE.Object3D[][] = fingers.map((name) => {
+      const joints: THREE.Object3D[] = [];
+      for (let j = 1; j <= 3; j++) {
+        const b = this.animRoot!.getObjectByName(`RightHand${name}${j}`);
+        if (b) joints.push(b);
+      }
+      return joints;
+    });
+    this.fingerBones = bones.every((j) => j.length === 3) ? bones : null;
   }
 
   setEmotion(name: EmotionName, intensity = 1): void {
@@ -570,6 +637,8 @@ export class AvatarController {
     // Aim the right arm at the point target (only during a point gesture). Runs
     // AFTER the mixer so it overrides the clip's arm pose for that frame.
     this.applyPointing(dt);
+    // Pose the right-hand fingers for the count gesture (also after the mixer).
+    this.applyCounting(dt);
 
     // A2F-3D / ARKit full-face path: the timeline already carries jaw, visemes,
     // brows, blinks and emotion, so apply it directly and only add idle motion.
