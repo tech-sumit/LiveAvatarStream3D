@@ -451,6 +451,15 @@ export class AvatarController {
     this.stationTarget.copy(this.homePos);
   }
 
+  /** The user hand-placed the anchor (3D move gizmo): adopt that spot as the new home
+   *  (centre) so it returns there — not to the original spawn — and isn't auto-walked off
+   *  it. Parks it there immediately (no walk). */
+  setStageHome(pos: THREE.Vector3): void {
+    this.homePos.copy(pos);
+    this.stationTarget.copy(pos);
+    this.walkingToStation = false;
+  }
+
   /**
    * Drive the anchor between stage stations (centre ↔ beside the screen). While more than
    * STATION_ARRIVE from the target it walks toward it (faces the travel direction, plays the
