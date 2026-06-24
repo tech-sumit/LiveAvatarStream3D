@@ -8,7 +8,6 @@ const TURN_SPEED = 1.7; // rad/s
 const BOUND = 6; // clamp the avatar to the stage floor
 
 const _fwd = new THREE.Vector3();
-const _look = new THREE.Vector3();
 
 /**
  * Realtime arrow-key locomotion. Press **M** to toggle "walk mode"; while on,
@@ -100,11 +99,6 @@ export class Locomotion {
     else if (down) avatar.playLocomotion('walk_back');
     else if (left || right) avatar.playLocomotion('walk'); // legs shuffle while turning
     else avatar.stopLocomotion();
-
-    // Keep the avatar in view while it's actually moving: gently pan the camera
-    // target to follow (the camera position stays; orbit/zoom still work).
-    if (up || down || left || right) {
-      this.app.stage.controls.target.lerp(_look.set(pos.x, 1.5, pos.z), 0.07);
-    }
+    // Camera follow is handled centrally by the two-shot auto-frame (anchor + screen).
   }
 }
