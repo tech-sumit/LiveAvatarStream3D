@@ -62,7 +62,12 @@ const POINT_AIM_WEIGHT = 0.85;
 const POINT_FOREARM_WEIGHT = 0.8; // straighten the forearm for a clean extended point
 const POINT_AIM_TAU = 0.2; // seconds; smoothing time constant toward the aim
 const POINT_HOLD = 2.2; // seconds the point is held before it releases back to talking
-const SCREEN_POINT_TURN = 0.5; // radians the body turns toward the screen while pointing
+
+// "Stand by the screen" walk: the anchor walks from centre stage to a mark beside the
+// screen to present, then walks back. Speed + arrival tolerance for that move.
+const STATION_SPEED = 1.2; // m/s
+const STATION_ARRIVE = 0.08; // metres — close enough; stop + face front
+const _toStation = new THREE.Vector3();
 
 // Finger-counting: per-joint curl (proximal, middle, distal) folding a finger into
 // the palm about its local X axis (negative = fold, verified on the rig). Each number
@@ -133,6 +138,14 @@ export class AvatarController {
   private pointing = false;
   private pointAimAmount = 0;
   private pointT = 0;
+
+  // Stage stations: the anchor walks between centre stage (home) and a mark beside the
+  // screen. `stationTarget` is where it's currently headed; `walkingToStation` is true
+  // while in motion (so we know to stop + face front on arrival).
+  private homePos = new THREE.Vector3(0, 0, 0);
+  private screenStation = new THREE.Vector3(0.75, 0, 0.25);
+  private stationTarget = new THREE.Vector3(0, 0, 0);
+  private walkingToStation = false;
 
   // Procedural finger-counting: the 'count' gesture poses the right hand 1 → 2 → 3
   // fingers (index, then +middle, then +ring) while the clip raises the arm. We curl
@@ -361,17 +374,17 @@ export class AvatarController {
    * if the gesture clip isn't loaded (e.g. fetch-animations.sh wasn't run).
    */
   playGesture(gestureName: string, baseClip: string, fade = 0.25): void {
-    // Screen-point is handled procedurally: keep the talking base and aim the LEFT arm
-    // at the screen (the right-arm point clip would cross the body to a left-side screen
-    // and clip through the chest). The body also turns slightly toward the screen.
-    if (/(^|_)point/i.test(gestureName)) {
+    // Screen reference: instead of pointing, the anchor WALKS over to present from beside
+    // the screen. Keep the talking base — the walk + facing are driven by updateStation.
+    if (/(^|_)point|screen/i.test(gestureName)) {
       this.playClip(baseClip, fade);
-      this.pointing = true;
-      this.pointT = 0;
+      this.pointing = false;
       this.counting = false;
-      this.setTurn(SCREEN_POINT_TURN);
+      this.goToScreen();
       return;
     }
+    // Any other gesture: if the anchor is parked by the screen, walk it back to centre.
+    this.returnToCenter();
     const g = this.actions[gestureName];
     if (!g || !this.mixer) {
       this.playClip(baseClip, fade);
@@ -421,6 +434,48 @@ export class AvatarController {
    */
   setPointTarget(target: THREE.Vector3 | null): void {
     this.pointTarget = target ? target.clone() : null;
+  }
+
+  /** Set the floor mark beside the screen the anchor walks to when presenting it. */
+  setScreenStation(pos: THREE.Vector3): void {
+    this.screenStation.copy(pos);
+  }
+
+  /** Walk over to present from beside the screen. */
+  goToScreen(): void {
+    this.stationTarget.copy(this.screenStation);
+  }
+
+  /** Walk back to centre stage. */
+  returnToCenter(): void {
+    this.stationTarget.copy(this.homePos);
+  }
+
+  /**
+   * Drive the anchor between stage stations (centre ↔ beside the screen). While more than
+   * STATION_ARRIVE from the target it walks toward it (faces the travel direction, plays the
+   * walk clip, advances the group position); on arrival it stops, faces the camera, and idles.
+   * Runs every frame; a no-op once parked at the current target.
+   */
+  private updateStation(dt: number): void {
+    const pos = this.group.position;
+    _toStation.set(this.stationTarget.x - pos.x, 0, this.stationTarget.z - pos.z);
+    const dist = _toStation.length();
+    if (dist > STATION_ARRIVE) {
+      _toStation.divideScalar(dist); // normalise
+      this.turnTarget = Math.atan2(_toStation.x, _toStation.z); // face the way we're walking
+      const step = Math.min(STATION_SPEED * dt, dist);
+      pos.x += _toStation.x * step;
+      pos.z += _toStation.z * step;
+      this.playLocomotion('walk');
+      this.walkingToStation = true;
+    } else if (this.walkingToStation) {
+      pos.x = this.stationTarget.x;
+      pos.z = this.stationTarget.z;
+      this.turnTarget = 0; // arrived → face the camera to deliver
+      this.stopLocomotion();
+      this.walkingToStation = false;
+    }
   }
 
   /** Idle breathing/sway. Off → the avatar settles into a still standing pose. */
@@ -650,11 +705,13 @@ export class AvatarController {
   }
 
   update(dt: number): void {
+    // Walk between stage stations (centre ↔ beside the screen) before posing this frame.
+    this.updateStation(dt);
     // Advance skeletal body animation. With idle motion OFF, let the current clip
     // settle into a still pose then freeze it (no breathing/weight-shift) — but
-    // always animate while speaking so gestures play.
+    // always animate while speaking, or while walking to a station, so the legs move.
     let adv = dt;
-    if (!this.idleMotion && !this.speaking) {
+    if (!this.idleMotion && !this.speaking && !this.walkingToStation) {
       if (this.idleHoldT < 1.6) this.idleHoldT += dt;
       else adv = 0; // hold the settled pose
     }
