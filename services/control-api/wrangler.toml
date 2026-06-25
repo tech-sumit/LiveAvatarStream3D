@@ -10,13 +10,9 @@ GPU_PROVIDER = "runpod"
 GPU_PROVIDER_BASE_URL = "https://<pod-id>-8080.proxy.runpod.net"
 DIRECTOR_LLM_PROVIDER = "openrouter"
 DIRECTOR_LLM_MODEL = "anthropic/claude-opus-4.8"
-# Cloudflare Realtime SFU (Calls) app id + TURN key id — non-secret resource ids.
-CF_REALTIME_APP_ID = "cb5a16b8ca895b69e37cf990b7fcee90"
-CF_TURN_KEY_ID = "fc13e873fef9310a7e8119c6af5d9355"
 
 # Secrets (set via `wrangler secret put`):
-#   INTERNAL_SERVICE_TOKEN, GPU_PROVIDER_TOKEN, ANTHROPIC_API_KEY,
-#   CF_REALTIME_APP_SECRET (SFU app secret), CF_TURN_KEY_API_TOKEN (TURN key API token)
+#   INTERNAL_SERVICE_TOKEN, GPU_PROVIDER_TOKEN, ANTHROPIC_API_KEY
 
 [[d1_databases]]
 binding = "DB"
@@ -58,10 +54,6 @@ max_retries = 2
 name = "JOB_DO"
 class_name = "JobDO"
 
-[[durable_objects.bindings]]
-name = "SESSION_DO"
-class_name = "SessionDO"
-
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["JobDO", "SessionDO"]
+new_sqlite_classes = ["JobDO"]
