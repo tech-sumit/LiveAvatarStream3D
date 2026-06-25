@@ -11,7 +11,6 @@ export interface Env {
   // Async + coordination
   JOBS: Queue;
   JOB_DO: DurableObjectNamespace;
-  SESSION_DO: DurableObjectNamespace;
 
   // Config / secrets (wrangler vars + secrets)
   INTERNAL_SERVICE_TOKEN: string;
@@ -21,11 +20,5 @@ export interface Env {
   DIRECTOR_LLM_PROVIDER: string;
   DIRECTOR_LLM_MODEL: string;
   ANTHROPIC_API_KEY: string;
-  // Cloudflare Realtime SFU (Calls) app — drives WHIP/WHEP + sessions/tracks.
-  CF_REALTIME_APP_ID: string;
-  CF_REALTIME_APP_SECRET: string;
-  // Cloudflare TURN key — a separate resource used only to mint ephemeral ICE creds.
-  CF_TURN_KEY_ID: string;
-  CF_TURN_KEY_API_TOKEN: string;
   R2_PUBLIC_BASE?: string;
 }

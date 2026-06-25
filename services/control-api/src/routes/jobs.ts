@@ -1,31 +1,10 @@
 import { Hono } from 'hono';
-import { CreateRenderJobRequest, type QueueMessage } from '@las/protocol';
+import type { QueueMessage } from '@las/protocol';
 import type { Env } from '../env.js';
 import { ensureUser, rowToJob, rowToJobEvent } from '../lib/db.js';
 import { newId, now } from '../lib/ids.js';
 
 export const jobs = new Hono<{ Bindings: Env }>();
-
-/** Create an offline render job and enqueue it. */
-jobs.post('/api/jobs', async (c) => {
-  const body = CreateRenderJobRequest.parse(await c.req.json());
-  await ensureUser(c.env, body.userId);
-
-  const id = newId('job');
-  const ts = now();
-  await c.env.DB.prepare(
-    'INSERT INTO jobs (id, user_id, kind, status, spec_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?)',
-  )
-    .bind(id, body.userId, 'offline_render', 'queued', JSON.stringify(body.spec), ts, ts)
-    .run();
-
-  const msg: QueueMessage = { jobId: id, kind: 'offline_render', userId: body.userId, spec: body.spec };
-  await c.env.JOBS.send(msg);
-
-  const row = await c.env.DB.prepare('SELECT * FROM jobs WHERE id = ?').bind(id).first();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return c.json(rowToJob(row as any));
-});
 
 /** Enqueue a GPU health-check job (Phase 0 round-trip proof). */
 jobs.post('/api/_health/gpu', async (c) => {

@@ -6,7 +6,6 @@ import { avatars } from './routes/avatars.js';
 import { voices } from './routes/voices.js';
 import { jobs } from './routes/jobs.js';
 import { director } from './routes/director.js';
-import { sessions } from './routes/sessions.js';
 import { internal } from './routes/internal.js';
 import { handleQueue } from './orchestrator.js';
 
@@ -21,7 +20,6 @@ app.route('/', avatars);
 app.route('/', voices);
 app.route('/', jobs);
 app.route('/', director);
-app.route('/', sessions);
 app.route('/', internal);
 
 export default {
@@ -33,4 +31,3 @@ export default {
 };
 
 export { JobDO } from './do/JobDO.js';
-export { SessionDO } from './do/SessionDO.js';

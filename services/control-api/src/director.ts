@@ -9,8 +9,8 @@ import type { Env } from './env.js';
 /**
  * Director LLM client. Default provider is Anthropic (Claude Opus 4.8), behind
  * a small interface so it is swappable. Used in two modes:
- *  - draft  (offline): produce a full Script from a plain prompt.
- *  - stream (realtime): SessionDO streams DSL segments (see SessionDO).
+ *  - draft: produce a full Script from a plain prompt.
+ *  - stream: yields DSL segments as raw text chunks for incremental consumers.
  */
 export interface DirectorLLM {
   draft(prompt: string, persona: string, language: string): Promise<Script>;

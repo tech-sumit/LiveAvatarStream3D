@@ -5,7 +5,6 @@ export * from './voicePresets.js';
 export * from './jobs.js';
 export * from './events.js';
 export * from './director.js';
-export * from './session.js';
 export * from './newsreport.js';
 export * from './newsreportCompile.js';
 export * from './bridge.js';

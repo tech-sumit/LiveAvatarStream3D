@@ -15,7 +15,6 @@ import {
   VoiceProfile,
   CloneVoiceRequest,
   Job,
-  OfflineRenderSpec,
   PostProcessingSpec,
   CameraCue,
   QueueMessage,
@@ -23,8 +22,6 @@ import {
   JobProgressWebhook,
   DirectorRequest,
   DirectorStreamChunk,
-  RealtimeSession,
-  SessionMedia,
   NewsReportDoc,
 } from '../src/index.js';
 
@@ -41,7 +38,6 @@ const schemas = {
   VoiceProfile,
   CloneVoiceRequest,
   Job,
-  OfflineRenderSpec,
   PostProcessingSpec,
   CameraCue,
   QueueMessage,
@@ -49,8 +45,6 @@ const schemas = {
   JobProgressWebhook,
   DirectorRequest,
   DirectorStreamChunk,
-  RealtimeSession,
-  SessionMedia,
   NewsReportDoc,
 } as const;
 
