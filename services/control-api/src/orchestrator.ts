@@ -1,4 +1,4 @@
-import type { JobStatus, QueueMessage, OfflineRenderSpec, JobEvent } from '@las/protocol';
+import type { JobStatus, QueueMessage, JobEvent } from '@las/protocol';
 import type { Env } from './env.js';
 import { makeGpuProvider } from './gpu/provider.js';
 import { fetchWithRetry, type RetryOpts } from './lib/retry.js';
@@ -57,70 +57,6 @@ async function setStatus(
 
   const stub = env.JOB_DO.get(env.JOB_DO.idFromName(jobId));
   await stub.fetch('https://do/append', { method: 'POST', body: JSON.stringify(event) }).catch(() => undefined);
-}
-
-interface AvatarRef {
-  r2_prefix: string;
-  tier: string;
-}
-interface VoiceRef {
-  r2_prefix: string;
-  engine: string;
-}
-
-async function runOfflineRender(env: Env, jobId: string, userId: string, spec: OfflineRenderSpec): Promise<void> {
-  const provider = makeGpuProvider(env);
-
-  const avatar = await env.DB.prepare('SELECT r2_prefix, tier FROM avatars WHERE id = ? AND user_id = ?')
-    .bind(spec.avatarId, userId)
-    .first<AvatarRef>();
-  const voice = await env.DB.prepare('SELECT r2_prefix, engine FROM voices WHERE id = ? AND user_id = ?')
-    .bind(spec.voiceId, userId)
-    .first<VoiceRef>();
-  if (!avatar || !voice) throw new Error('avatar or voice not found');
-
-  const outPrefix = `work/${jobId}`;
-
-  // 1) TTS with DSL prosody.
-  await setStatus(env, jobId, 'tts', { progress: 0.1, message: 'Synthesizing voice' });
-  const { audioKey } = await provider.call<{ audioKey: string }>(
-    'voice',
-    '/tts',
-    {
-      jobId,
-      voicePrefix: voice.r2_prefix,
-      engine: voice.engine,
-      script: spec.script,
-      outPrefix,
-    },
-    COLD_START_RETRY,
-  );
-
-  // 2) Talking-head synthesis -> finishing, both off the proxied request path.
-  // A premium EchoMimicV3 render alone runs ~3min, past the RunPod proxy's ~100s
-  // ceiling, so /render is fire-and-forget: it returns 202 immediately, renders
-  // on a daemon thread, then chains directly into the finishing service over the
-  // pod's localhost (unproxied). Finishing then drives the job to its terminal
-  // state (succeeded with outputKey, or failed) over the progress webhook. We
-  // hand it the outputKey + fps up front, set an intermediate status, and STOP —
-  // the webhook owns the terminal transition, so there is no double-status race.
-  const outputKey = `${jobId}.mp4`;
-  await setStatus(env, jobId, 'talking_head', { progress: 0.4, message: 'Generating talking-head frames' });
-  await provider.call(
-    'avatar-video',
-    '/render',
-    {
-      jobId,
-      avatarPrefix: avatar.r2_prefix,
-      audioKey,
-      script: spec.script,
-      tier: spec.tier,
-      outPrefix,
-      fps: spec.fps,
-      outputKey,
-    },
-    COLD_START_RETRY,
-  );
 }
 
 interface AvatarBuildSpec {
@@ -229,10 +165,6 @@ export async function handleQueue(batch: MessageBatch, env: Env): Promise<void> 
     const job = msg.body as QueueMessage;
     try {
       switch (job.kind) {
-        case 'offline_render':
-          await setStatus(env, job.jobId, 'running', { progress: 0.02, message: 'Picked up' });
-          await runOfflineRender(env, job.jobId, job.userId, job.spec as OfflineRenderSpec);
-          break;
         case 'health_check':
           await setStatus(env, job.jobId, 'running', { progress: 0.02, message: 'Picked up' });
           await runHealthCheck(env, job.jobId);

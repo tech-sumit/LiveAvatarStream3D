@@ -8,7 +8,6 @@
     "packages/*",
     "services/control-api",
     "services/newsroom-mcp",
-    "apps/web",
     "apps/avatar-live"
   ],
   "scripts": {

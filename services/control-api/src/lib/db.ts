@@ -1,5 +1,5 @@
 import type { Env } from '../env.js';
-import type { AvatarProfile, VoiceProfile, Job, JobEvent, RealtimeSession } from '@las/protocol';
+import type { AvatarProfile, VoiceProfile, Job, JobEvent } from '@las/protocol';
 
 /** Mapping helpers between D1 rows (snake_case) and protocol types (camelCase). */
 
@@ -107,32 +107,6 @@ export function rowToJobEvent(r: JobEventRow): JobEvent {
     message: r.message ?? undefined,
     data: r.data_json ? JSON.parse(r.data_json) : undefined,
     at: r.at,
-  };
-}
-
-interface SessionRow {
-  id: string;
-  user_id: string;
-  avatar_id: string;
-  voice_id: string;
-  status: string;
-  persona: string | null;
-  gpu_node: string | null;
-  started_at: number | null;
-  ended_at: number | null;
-}
-
-export function rowToSession(r: SessionRow): RealtimeSession {
-  return {
-    id: r.id,
-    userId: r.user_id,
-    avatarId: r.avatar_id,
-    voiceId: r.voice_id,
-    status: r.status as RealtimeSession['status'],
-    persona: r.persona ?? '',
-    gpuNode: r.gpu_node ?? undefined,
-    startedAt: r.started_at ?? undefined,
-    endedAt: r.ended_at ?? undefined,
   };
 }
 
