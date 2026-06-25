@@ -173,7 +173,7 @@ export class Stage {
    * smoothly following the anchor as it walks. This is the presenter-beside-screen view —
    * it replaces the face close-up so the screen is always in shot alongside the anchor.
    */
-  frameAnchorScreen(anchor: THREE.Vector3, screen: THREE.Vector3, dt: number): void {
+  frameAnchorScreen(anchor: THREE.Vector3, screen: THREE.Vector3, dt: number, snap = false): void {
     const mx = (anchor.x + screen.x) / 2;
     const mz = (anchor.z + screen.z) / 2;
     const spread = Math.hypot(anchor.x - screen.x, anchor.z - screen.z);
@@ -185,7 +185,9 @@ export class Stage {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
     }
-    const k = 1 - Math.exp(-dt / 0.45);
+    // snap = set exactly (offline export, where the cue camera is reset each frame); else a
+    // smoothed live follow.
+    const k = snap ? 1 : 1 - Math.exp(-dt / 0.45);
     // Captured composition: camera offset ~1.1 LEFT of the midpoint and raised to 1.75,
     // looking slightly right/up and a touch forward — so the anchor reads on the left and
     // the screen on the right (a news two-shot), following the anchor as it moves.
