@@ -102,7 +102,7 @@ async function main() {
   try {
     log(textOf(await call('export_mp4', {}, 300_000)));
   } catch (e) {
-    log(`[demo] export skipped (Tier-1 export needs a foreground/GPU browser; use render_master for headless): ${String(e)}`);
+    log(`[demo] export skipped (Tier-1 export needs a foreground/GPU browser): ${String(e)}`);
   }
 
   log('[demo] ✅ DONE — a full newscast authored end-to-end through MCP tools.');

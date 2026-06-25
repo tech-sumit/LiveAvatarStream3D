@@ -38,7 +38,6 @@ import { montageTools } from './tools/montage.js';
 import { musicTools } from './tools/music.js';
 import { postTools } from './tools/post.js';
 import { externalTools } from './tools/external.js';
-import { masterTools } from './tools/master.js';
 import { registerResources } from './resources.js';
 
 // ---------------------------------------------------------------------------
@@ -170,7 +169,6 @@ export const TOOL_MODULES: ToolDef<any>[] = [
   ...musicTools,
   ...postTools,
   ...externalTools,
-  ...masterTools,
 ];
 
 /** Register every tool in {@link TOOL_MODULES} on the server. */
