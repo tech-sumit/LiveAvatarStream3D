@@ -1,6 +1,23 @@
 import { z } from 'zod';
 import { Emotion, Gesture, CameraCue } from './dsl.js';
-import { PostProcessingSpec } from './scene.js';
+
+/** Cinematic post-processing "look" applied to the captured output. */
+export const PostProcessingSpec = z.object({
+  enabled: z.boolean().default(true),
+  preset: z.enum(['broadcast', 'flat', 'cinematic', 'warm', 'noir']).default('broadcast'),
+  toneMapping: z
+    .enum(['aces_filmic', 'reinhard2', 'uncharted2', 'optimized_cineon', 'linear'])
+    .default('aces_filmic'), // r152-safe (no agx/neutral)
+  exposure: z.number().min(0.1).max(3).default(1.05),
+  bloomIntensity: z.number().min(0).max(2).default(0.3),
+  bloomThreshold: z.number().min(0).max(1).default(0.85),
+  contrast: z.number().min(-1).max(1).default(0.06),
+  saturation: z.number().min(-1).max(1).default(0.06),
+  vignetteOffset: z.number().min(0).max(1).default(0.32),
+  vignetteDarkness: z.number().min(0).max(1).default(0.45),
+  grain: z.number().min(0).max(1).default(0.04),
+});
+export type PostProcessingSpec = z.infer<typeof PostProcessingSpec>;
 
 /** A presenter. `avatarUrl` is a folder id (e.g. 'avaturn-model') or an http(s) URL. */
 export const Anchor = z.object({

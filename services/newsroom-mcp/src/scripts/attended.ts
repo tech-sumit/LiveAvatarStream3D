@@ -58,7 +58,7 @@ async function main() {
   } catch (e) {
     process.stderr.write(
       `[attended] export skipped: ${String(e)}\n` +
-        '[attended] (Tier-1 WebCodecs export needs a foreground/GPU browser; use Tier-3/engine-three for headless. ' +
+        '[attended] (Tier-1 WebCodecs export needs a foreground/GPU browser. ' +
         'Bridge surface validated: connect, applyNewscast, getState, screenshot, executeJs, setCaptureFormat.)\n' +
         '[attended] PASS ✅ bridge surface\n',
     );
