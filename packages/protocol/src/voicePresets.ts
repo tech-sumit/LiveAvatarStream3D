@@ -5,7 +5,7 @@ export interface VoiceEnginePreset {
   engine: TtsEngine;
   label: string;
   description: string;
-  /** Recommended for cinematic / engine_render jobs. */
+  /** Recommended for cinematic renders. */
   recommended?: boolean;
 }
 

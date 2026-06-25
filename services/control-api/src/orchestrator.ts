@@ -1,5 +1,4 @@
-import type { JobStatus, QueueMessage, OfflineRenderSpec, EngineRenderSpec, JobEvent } from '@las/protocol';
-import { compileManifest, type BeatAudioTiming } from '@las/protocol';
+import type { JobStatus, QueueMessage, OfflineRenderSpec, JobEvent } from '@las/protocol';
 import type { Env } from './env.js';
 import { makeGpuProvider } from './gpu/provider.js';
 import { fetchWithRetry, type RetryOpts } from './lib/retry.js';
@@ -124,90 +123,6 @@ async function runOfflineRender(env: Env, jobId: string, userId: string, spec: O
   );
 }
 
-/** Words-per-second fallback when the voice service does not return per-segment
- * timings, so the manifest still lays out coherent (if approximate) timing. */
-const FALLBACK_WPS = 2.6;
-function estimateTimings(spec: EngineRenderSpec): BeatAudioTiming[] {
-  return spec.script.segments.map((s) => {
-    const words = s.text.trim().split(/\s+/).filter(Boolean).length;
-    return { durationS: Math.max(0.4, words / FALLBACK_WPS) };
-  });
-}
-
-interface TtsTimedResult {
-  audioKey: string;
-  durationS?: number;
-  sampleRate?: number;
-  /** Per-segment spoken durations, in segment order (voice service extension). */
-  segments?: { durationS: number }[];
-}
-
-/**
- * 3D-engine cinematic render. Reuses our TTS, compiles a PerformanceManifest
- * from the director DSL + audio timing, persists it to R2, then dispatches it
- * to a Three.js render node on an RTX/L40S box. The render node owns
- * the terminal transition via the progress webhook, so this stops at 'rendering'
- * — exactly like runOfflineRender hands finishing the terminal state. When no
- * render node is configured, the manifest is still compiled + persisted and the
- * job parks at 'rendering' for inspection (the codeable half runs end-to-end).
- */
-async function runEngineRender(env: Env, jobId: string, userId: string, spec: EngineRenderSpec): Promise<void> {
-  const provider = makeGpuProvider(env);
-
-  const voice = await env.DB.prepare('SELECT r2_prefix, engine FROM voices WHERE id = ? AND user_id = ?')
-    .bind(spec.voiceId, userId)
-    .first<VoiceRef>();
-  if (!voice) throw new Error('voice not found');
-
-  const outPrefix = `work/${jobId}`;
-
-  // 1) TTS with DSL prosody (shared with offline_render); request per-segment
-  // timings so the manifest can lay out absolute beat timing.
-  await setStatus(env, jobId, 'tts', { progress: 0.1, message: 'Synthesizing voice' });
-  const tts = await provider.call<TtsTimedResult>(
-    'voice',
-    '/tts',
-    { jobId, voicePrefix: voice.r2_prefix, engine: voice.engine, script: spec.script, outPrefix, withTimings: true },
-    COLD_START_RETRY,
-  );
-
-  // 2) Compile the performance manifest (the engine hand-off contract).
-  await setStatus(env, jobId, 'compiling', { progress: 0.4, message: 'Compiling performance manifest' });
-  const timings: BeatAudioTiming[] = tts.segments?.length === spec.script.segments.length
-    ? tts.segments.map((s) => ({ durationS: s.durationS }))
-    : estimateTimings(spec);
-  const totalS = timings.reduce((a, t) => a + t.durationS, 0);
-
-  const manifest = compileManifest({
-    jobId,
-    script: spec.script,
-    stage: { level: spec.stage.level, lighting: spec.stage.lighting, avatarId: spec.avatarId },
-    audio: { r2Key: tts.audioKey, durationS: tts.durationS ?? totalS, sampleRate: tts.sampleRate ?? 24000 },
-    timings,
-    fps: spec.fps,
-    resolution: spec.resolution,
-    scene: spec.scene,
-  });
-
-  const manifestKey = `${outPrefix}/manifest.json`;
-  await env.OUTPUTS.put(manifestKey, JSON.stringify(manifest), {
-    httpMetadata: { contentType: 'application/json' },
-  });
-
-  const outputKey = `${jobId}.mp4`;
-  await setStatus(env, jobId, 'rendering', {
-    progress: 0.5,
-    message: 'Dispatching to Three.js render node',
-    outputKey: undefined,
-  });
-  await provider.call(
-    'engine-three',
-    '/render',
-    { jobId, manifestKey, outputKey },
-    COLD_START_RETRY,
-  );
-}
-
 interface AvatarBuildSpec {
   avatarId: string;
   userId: string;
@@ -317,10 +232,6 @@ export async function handleQueue(batch: MessageBatch, env: Env): Promise<void> 
         case 'offline_render':
           await setStatus(env, job.jobId, 'running', { progress: 0.02, message: 'Picked up' });
           await runOfflineRender(env, job.jobId, job.userId, job.spec as OfflineRenderSpec);
-          break;
-        case 'engine_render':
-          await setStatus(env, job.jobId, 'running', { progress: 0.02, message: 'Picked up' });
-          await runEngineRender(env, job.jobId, job.userId, job.spec as EngineRenderSpec);
           break;
         case 'health_check':
           await setStatus(env, job.jobId, 'running', { progress: 0.02, message: 'Picked up' });
