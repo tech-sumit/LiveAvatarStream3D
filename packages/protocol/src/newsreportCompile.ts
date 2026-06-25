@@ -1,5 +1,4 @@
-import type { NewsReportDoc, Section, DocDefaults } from './newsreport.js';
-import type { PostProcessingSpec } from './scene.js';
+import type { NewsReportDoc, Section, DocDefaults, PostProcessingSpec } from './newsreport.js';
 import type { CameraCue } from './dsl.js';
 
 // ── Structural mirrors of avatar-live's private types (compiler stays three.js-free) ──

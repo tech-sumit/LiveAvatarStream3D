@@ -1,8 +1,6 @@
 import { z } from 'zod';
 import { Script } from './dsl.js';
 import { AvatarTier } from './avatar.js';
-import { Resolution } from './manifest.js';
-import { SceneDocument, PostProcessingSpec } from './scene.js';
 
 /** Kinds of GPU work the orchestrator can dispatch. */
 export const JobKind = z.enum([
@@ -10,9 +8,6 @@ export const JobKind = z.enum([
   'avatar_build',
   'voice_clone',
   'offline_render',
-  // 3D-engine cinematic path: TTS -> performance manifest -> Three.js render
-  // node on RTX/L40S. See docs/specs/2026-06-20-project-context.md.
-  'engine_render',
 ]);
 export type JobKind = z.infer<typeof JobKind>;
 
@@ -40,40 +35,6 @@ export const OfflineRenderSpec = z.object({
   fps: z.number().int().min(24).max(60).default(30),
 });
 export type OfflineRenderSpec = z.infer<typeof OfflineRenderSpec>;
-
-/**
- * Payload for a 3D-engine cinematic render. Mirrors OfflineRenderSpec but
- * targets the Three.js + glTF avatar + ACE Audio2Face path: the orchestrator runs
- * TTS, compiles a PerformanceManifest, and dispatches it to the render node. The
- * `script` may carry per-beat `camera` cues (see dsl.ts CameraCue).
- */
-export const EngineRenderSpec = z.object({
-  /** Avatar asset id (maps to assets/avatars/<id>.glb on the render node). */
-  avatarId: z.string(),
-  voiceId: z.string(),
-  script: Script,
-  stage: z
-    .object({
-      level: z.string().default('L_Stage'),
-      lighting: z.string().default('three_point_warm'),
-    })
-    .default({}),
-  resolution: Resolution.default({}),
-  /** Cinematic frame rate for the Three.js render. */
-  fps: z.number().int().min(24).max(60).default(24),
-  /** Full editor scene graph — when set, the render node uses WYSIWYG camera + layout. */
-  scene: SceneDocument.optional(),
-  /** Optional cinematic post-processing "look" applied to the render. */
-  look: PostProcessingSpec.optional(),
-});
-export type EngineRenderSpec = z.infer<typeof EngineRenderSpec>;
-
-/** Body of POST /api/engine-jobs for a 3D-engine cinematic render. */
-export const CreateEngineRenderJobRequest = z.object({
-  userId: z.string(),
-  spec: EngineRenderSpec,
-});
-export type CreateEngineRenderJobRequest = z.infer<typeof CreateEngineRenderJobRequest>;
 
 export const Job = z.object({
   id: z.string(),
