@@ -245,9 +245,12 @@ export class Performer {
         height: fmt.h,
         codec,
         driveFrame: (t, dt, mouth) => {
-          deps.timeline.playerUpdate(t); // camera / motion / screen cuts
+          deps.timeline.playerUpdate(t); // motion / screen cuts (camera overridden below)
           app.stage.seekScreen(t); // keep a back-wall montage in sync with the frame clock
-          this.driveAvatarFrame(t, dt, mouth, prep.segs, cursor);
+          this.driveAvatarFrame(t, dt, mouth, prep.segs, cursor); // also walks the anchor
+          // Two-shot follow: frame the anchor + screen alongside, overriding the cue camera
+          // (snapped, since playerUpdate reset it this frame). Follows the walked position.
+          app.stage.frameAnchorScreen(app.avatar.group.position, SCREEN_STAND_POS, dt, true);
         },
         onProgress: (d, n) => deps.recording.setExportProgress(d, n),
       });
