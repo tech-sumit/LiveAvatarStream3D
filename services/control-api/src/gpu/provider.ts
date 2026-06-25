@@ -1,31 +1,17 @@
 import type { Env } from '../env.js';
-import type { IceServer, StartSessionRequest } from '@las/protocol';
 import { fetchWithRetry, type RetryOpts } from '../lib/retry.js';
 
 export type GpuService =
   | 'avatar-build'
   | 'image-gen'
   | 'voice'
-  | 'avatar-video'
   | 'finishing'
-  | 'realtime'
   | 'engine-three';
-
-/** SFU connection info the control plane hands to the GPU worker. The GPU
- *  drives the SFU itself via the control-plane /rt/* routes; it only needs
- *  ICE servers for NAT traversal. */
-export interface SessionMediaInfo {
-  iceServers: IceServer[];
-}
-
-export interface SessionAllocation {
-  node: string;
-}
 
 /**
  * Abstraction over where GPU inference runs. Modal (serverless, autoscale-to-
- * zero) backs offline jobs; Runpod/CoreWeave persistent pods back the realtime
- * warm pool. Swapping providers means swapping this implementation only.
+ * zero) backs offline jobs; Runpod/CoreWeave persistent pods back the engine
+ * renderer. Swapping providers means swapping this implementation only.
  */
 export interface GpuProvider {
   /** Resolve the base URL for a given containerized service. */
@@ -38,14 +24,6 @@ export interface GpuProvider {
   call<T>(service: GpuService, path: string, body: unknown, retry?: RetryOpts): Promise<T>;
   /** End-to-end health-check used by the Phase 0 round-trip. */
   health(): Promise<boolean>;
-  /** Allocate a warm realtime node and hand it the SFU connection info. */
-  startSession(
-    sessionId: string,
-    req: StartSessionRequest,
-    media: SessionMediaInfo,
-  ): Promise<SessionAllocation>;
-  /** Release a realtime node back to the pool. */
-  stopSession(node: string, sessionId?: string): Promise<void>;
 }
 
 class HttpGpuProvider implements GpuProvider {
@@ -53,7 +31,6 @@ class HttpGpuProvider implements GpuProvider {
     private baseUrl: string,
     private token: string,
     private internalToken: string,
-    private realtimeAppId: string,
   ) {}
 
   serviceUrl(service: GpuService): string {
@@ -94,21 +71,6 @@ class HttpGpuProvider implements GpuProvider {
       return false;
     }
   }
-
-  async startSession(
-    sessionId: string,
-    req: StartSessionRequest,
-    media: SessionMediaInfo,
-  ): Promise<SessionAllocation> {
-    // `call` retries via fetchWithRetry; this is safe only because the GPU
-    // /sessions endpoint is idempotent on sessionId — a retry after a lost
-    // response returns the existing allocation instead of double-allocating.
-    return this.call<SessionAllocation>('realtime', '/sessions', { sessionId, ...req, media });
-  }
-
-  async stopSession(node: string, sessionId?: string): Promise<void> {
-    await this.call('realtime', '/sessions/stop', { node, sessionId }).catch(() => undefined);
-  }
 }
 
 export function makeGpuProvider(env: Env): GpuProvider {
@@ -118,6 +80,5 @@ export function makeGpuProvider(env: Env): GpuProvider {
     env.GPU_PROVIDER_BASE_URL,
     env.GPU_PROVIDER_TOKEN ?? '',
     env.INTERNAL_SERVICE_TOKEN,
-    env.CF_REALTIME_APP_ID,
   );
 }
