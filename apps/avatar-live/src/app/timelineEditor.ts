@@ -90,6 +90,17 @@ export class TimelineEditor {
   playerUpdate(t: number): void {
     this.player.update(t);
   }
+  /**
+   * The authored "cut to screen" windows (the `cam.screenSource` cues) as plain
+   * {start,duration} — fed into the Performance `screen` channel (Phase 4c) so the
+   * back-wall montage cut fires from the unified score.drive path on both the live and
+   * export clocks (was player.updateScreenSource interpreting the cue inline).
+   */
+  screenWindows(): { start: number; duration: number }[] {
+    return this.timeline.cues
+      .filter((c) => c.type === 'cam.screenSource')
+      .map((c) => ({ start: c.start, duration: c.duration }));
+  }
   setUiPlayhead(t: number): void {
     this.ui?.setPlayhead(t);
   }

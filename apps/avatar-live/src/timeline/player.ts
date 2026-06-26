@@ -51,13 +51,21 @@ export class TimelinePlayer {
     return this.timeline.cues.some((c) => c.track === 'camera' && c.type !== 'cam.screenSource');
   }
 
+  // PREVIEW-ONLY since Phase 4c: the unified live-narration + offline-export path no
+  // longer calls update() — it drives camera + gesture + the screen cut from the compiled
+  // `Performance` via app/scoreDrive.ts (the screen cut lives in `Performance.screen`, the
+  // gesture one-shots in `Performance.gestures`, sourced through TimelineEditor.screenWindows
+  // → buildNarrationPerformance). update() now runs ONLY for the silent timeline rehearsal
+  // (tickPreview), so fireMotion's once-latch + updateScreenSource's window stay here to
+  // serve that preview without touching the unified score.drive path.
   update(t: number): void {
     this.updateCamera(t);
     this.fireMotion(t);
     this.updateScreenSource(t);
   }
 
-  // "Cut to screen" cues toggle the recorded output to the wall/cast video.
+  // "Cut to screen" cues toggle the recorded output to the wall/cast video. (Preview-only;
+  // the live/export screen cut is driven from Performance.screen by ScoreDrive — see above.)
   // When no such cue is authored we don't touch the output (manual toggle wins).
   private updateScreenSource(t: number): void {
     const cues = this.timeline.cues.filter((c) => c.type === 'cam.screenSource');
