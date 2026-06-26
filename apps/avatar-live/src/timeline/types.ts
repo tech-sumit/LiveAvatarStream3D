@@ -3,7 +3,9 @@
 // framing eased over their duration; motion cues fire once at their start;
 // narration blocks mark spoken sentences (timed from the synthesized audio);
 // audio cues schedule background music/SFX with volume + fade envelopes.
-export type TrackKind = 'narration' | 'camera' | 'motion' | 'audio';
+import type { SlideContent } from '@las/protocol';
+
+export type TrackKind = 'narration' | 'camera' | 'motion' | 'audio' | 'graphics';
 
 // A camera framing: [posX,posY,posZ, targetX,targetY,targetZ, fov]. Serializable.
 export type PoseTuple = [number, number, number, number, number, number, number];
@@ -28,6 +30,10 @@ export interface Cue {
   volume?: number; // 0..1 base gain (default 0.8)
   fadeIn?: number; // seconds (default 0)
   fadeOut?: number; // seconds (default 1.0)
+
+  // Graphics cues (the wall slide deck): the PowerPoint-style slide painted on the video
+  // wall at `start`, swapping per newscast section in lockstep with the narration.
+  slide?: SlideContent;
 }
 
 export interface Timeline {

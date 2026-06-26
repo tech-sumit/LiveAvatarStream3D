@@ -264,6 +264,18 @@ export class ProjectStore {
     await c.library.apply(doc);
     c.timeline.applyTimelineDoc(doc.timeline);
     await c.timeline.loadAudioAssets((src) => this.fetchAssetBlob(src));
+    // Resolve the wall-slide backdrop images (R2 keys / relative paths → final urls) and preload
+    // them so the slide deck renders with imagery. Rewrite each graphics cue to its resolved url
+    // so the studio's url-keyed cache hits when score.drive fires the slide (live == export).
+    const slideUrls = new Set<string>();
+    for (const cue of c.timeline.timeline.cues) {
+      if (cue.track === 'graphics' && cue.slide?.image) {
+        const url = this.assetUrl(cue.slide.image);
+        cue.slide.image = url;
+        slideUrls.add(url);
+      }
+    }
+    if (slideUrls.size) await app.studio.preloadSlideImages([...slideUrls]);
     c.backScreen.apply(doc, r2Url);
     app.log(`loaded project "${doc.name}" — ${c.timeline.timeline.cues.length} cue(s).`);
   }
