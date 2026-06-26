@@ -1,5 +1,5 @@
 import { validateNewsReportDoc, compileNewsReport, validateScore, compileScore } from '@las/protocol';
-import type { Stage, AudioTimings, Performance } from '@las/protocol';
+import type { Stage, AudioTimings, Performance, AudioCue } from '@las/protocol';
 import { r2Available, r2GetJson, r2List, r2PutBlob, r2PutJson, r2Url } from '../storage/r2.js';
 import type { Cue } from '../timeline/types.js';
 import type { StudioContext } from './context.js';
@@ -229,9 +229,9 @@ export class ProjectStore {
    * and the offline export consume. This is the *defined consumer* of a compiled Performance
    * (the path the original plan left unwired). Returns the compiled `Performance`.
    */
-  async importScore(doc: unknown, stage: Stage, timings: AudioTimings): Promise<Performance> {
+  async importScore(doc: unknown, stage: Stage, timings: AudioTimings, audio?: AudioCue[]): Promise<Performance> {
     const score = validateScore(doc);
-    const perf = compileScore(stage, score, timings);
+    const perf = compileScore(stage, score, timings, undefined, audio && audio.length ? { audio } : undefined);
     this.c.performer.loadPerformance(perf);
     this.app.log(`imported Score → ${perf.beats.length} beat(s) on stage "${stage.id}".`);
     return perf;
