@@ -86,7 +86,12 @@ export class Performer {
           // fresh run loads (resets cursors); subsequent segments reload (KEEP cursors) so
           // only the newly-appended gesture fires — prior gestures don't replay.
           this.liveSegs.push({ t: this.liveClock, gesture: (gesture as Gesture) ?? 'explain', emotion: emo });
-          const perf = buildNarrationPerformance(this.liveSegs, this.liveClock + 1e6, [], emo);
+          // followCamera honors the Auto-align toggle: with it OFF the live Speak Performance
+          // emits NO follow keyframe, so the user's manually-framed camera is preserved (instead
+          // of being yanked to the two-shot). Narration/export always frame (default true).
+          const perf = buildNarrationPerformance(this.liveSegs, this.liveClock + 1e6, [], emo, {
+            followCamera: deps.transform.isAutoAlign,
+          });
           if (fresh) this.score.load(perf, emo);
           else this.score.reload(perf, emo);
         },
@@ -250,13 +255,20 @@ export class Performer {
     deps.recording.setExportUi(true);
     app.log(`export: rendering ${prep.durationSec.toFixed(1)}s @ ${fmt.w}×${fmt.h} ${codec.toUpperCase()} …`);
     try {
-      // ONE Performance feeds the export — the SAME object the live narration tick drives
-      // (loaded in perform()). The camera is the Performance's follow keyframe (no more
-      // snap-override discarding the cue camera each frame); the screen channel carries the
-      // montage cut; the gesture/emotion one-shots fire off the frame clock. The two-shot
-      // follow now uses the SAME 1-exp(-dt/0.45) damping as the live path — export no longer
-      // snaps. The whole drive is one `score.drive(t, dt, mouth)` call (headless-parity-pinned).
-      this.score.load(buildNarrationPerformance(prep.segs, prep.durationSec, deps.timeline.screenWindows()), this.fallbackEmotion());
+      // ONE Performance feeds the export — the SAME builder/shape the live narration tick
+      // drives. The timeline's motion-track cues (turn/point/wave/…) + authored camera framing
+      // cues are folded into the Performance (motionCues/cameraCues, mirroring screenWindows),
+      // so they render on the unified path on both clocks; the screen channel carries the
+      // montage cut. The two-shot follow snaps EXACTLY on frame 0 (restored) then uses the SAME
+      // 1-exp(-dt/0.45) damping as live. The whole drive is one `score.drive(t, dt, mouth)` call.
+      this.score.load(
+        buildNarrationPerformance(prep.segs, prep.durationSec, deps.timeline.screenWindows(), undefined, {
+          motionCues: deps.timeline.motionCues(),
+          cameraCues: deps.timeline.cameraCues(),
+        }),
+        this.fallbackEmotion(),
+      );
+      deps.timeline.beginNarration(); // take the camera (authored framing cues) for the export loop
       const blob = await exportMp4Offline({
         stage: app.stage,
         narration: prep.buffer,
@@ -278,7 +290,9 @@ export class Performer {
       this.exporting = false;
       deps.recording.setExportUi(false);
       deps.recording.setExportProgress(0, 0);
-      // The offline loop left the avatar on the last beat's gesture — rest to idle.
+      // Release the camera back to OrbitControls + clear any screen cut, then rest to idle
+      // (the offline loop left the avatar on the last beat's gesture).
+      deps.timeline.endPlayback();
       app.avatar.setSilent();
       app.avatar.setTurn(0);
       app.avatar.restToIdle();
@@ -337,7 +351,10 @@ export class Performer {
     // (the live/export divergence is closed here). Loaded fresh so its one-shot cursors
     // re-arm for this take.
     this.score.load(
-      buildNarrationPerformance(this.narrationSegs, out.length / out.sampleRate, deps.timeline.screenWindows()),
+      buildNarrationPerformance(this.narrationSegs, out.length / out.sampleRate, deps.timeline.screenWindows(), undefined, {
+        motionCues: deps.timeline.motionCues(),
+        cameraCues: deps.timeline.cameraCues(),
+      }),
       this.fallbackEmotion(),
     );
 
@@ -363,7 +380,7 @@ export class Performer {
 
     // If anything in the start path throws, reset state so the busy guard can't wedge.
     try {
-      deps.timeline.beginPlayback(); // camera (if framing cues) + motion + screen cuts off the clock
+      deps.timeline.beginNarration(); // take the camera; motion/camera/screen cues flow via score.drive
       deps.timeline.scheduleAudioCues(ctx, startAt); // background-music / SFX clips, mixed + captured
       deps.timeline.setUiPlaying(!record);
       app.log(

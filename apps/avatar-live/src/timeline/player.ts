@@ -11,6 +11,11 @@ export class TimelinePlayer {
   private timeline: Timeline = { duration: 0, cues: [] };
   private firedMotion = new Set<string>();
   private playClip: (name: string) => void = () => {};
+  // Reusable CameraPose buffers for the per-frame from→to ease (rule C). They must be
+  // DISTINCT (updateCamera holds both at once and lerpPose reads both), so poseFor writes
+  // each preset into its own buffer instead of allocating a fresh pose every frame.
+  private _poseTo: CameraPose = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 0 };
+  private _poseFrom: CameraPose = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 0 };
 
   constructor(
     private stage: Stage,
@@ -30,6 +35,18 @@ export class TimelinePlayer {
     this.firedMotion.clear();
     this.stage.setDirector(this.hasFramingCues());
     this.update(0);
+  }
+
+  /**
+   * Begin a unified live-narration / export TAKE. Unlike begin() (the silent rehearsal),
+   * this does NOT call update(0) — camera, motion cues, and the screen cut all flow from the
+   * compiled Performance via app/scoreDrive.ts during the take, so firing them here too would
+   * double-drive (e.g. a t=0 motion cue would setTurn twice). It only takes the camera
+   * (director on) so the score's per-frame framing isn't fought by OrbitControls.update().
+   */
+  beginNarration(): void {
+    this.firedMotion.clear();
+    this.stage.setDirector(true); // the score owns the camera for the whole take
   }
 
   /** Release the camera back to OrbitControls and end any screen cut. */
@@ -97,8 +114,8 @@ export class TimelinePlayer {
       return;
     }
 
-    const to = this.resolvePose(active, hc, hh);
-    const from = idx > 0 ? this.resolvePose(cam[idx - 1], hc, hh) : to;
+    const to = this.resolvePose(active, hc, hh, this._poseTo);
+    const from = idx > 0 ? this.resolvePose(cam[idx - 1], hc, hh, this._poseFrom) : to;
     const e = easeInOut(active.duration > 0 ? clamp01((t - active.start) / active.duration) : 1);
     const pose = lerpPose(from, to, e);
     this.stage.setCameraPose(pose.pos, pose.target, pose.fov);
@@ -108,10 +125,10 @@ export class TimelinePlayer {
   // Preset framings come from `poseFor`, which now resolves size presets through
   // performer-core `composeShot` (subjectsForCue + compositionFor) via the core
   // adapter — the captured-pose / recorded-path branches stay as solver overrides.
-  private resolvePose(cue: Cue, hc: THREE.Vector3, hh: number): CameraPose {
+  private resolvePose(cue: Cue, hc: THREE.Vector3, hh: number, out?: CameraPose): CameraPose {
     if (cue.path && cue.path.length) return tupleToPose(cue.path[cue.path.length - 1].p);
     if (cue.pose) return tupleToPose(cue.pose);
-    return poseFor(cue.type, hc, hh);
+    return poseFor(cue.type, hc, hh, out);
   }
 
   private fireMotion(t: number): void {

@@ -35,6 +35,8 @@ class FakeStage implements StageLike {
   camTarget: Vec3 = [0, 1.5, 0];
   camFov = 35;
   camLog: { pos: Vec3; target: Vec3; fov: number }[] = [];
+  snaps: boolean[] = []; // the snap flag passed to each frameAnchorScreen (frame-0 export snap pin)
+  poses: { pos: Vec3; target: Vec3; fov?: number }[] = []; // authored setCameraPose calls
   screenCuts: { active: boolean }[] = [];
   seeks: number[] = [];
   private cam = { x: 0, y: 1.5, z: 5 };
@@ -43,6 +45,7 @@ class FakeStage implements StageLike {
     return { x: this.cam.x, y: this.cam.y, z: this.cam.z };
   }
   frameAnchorScreen(anchor: Vec3Like, screen: Vec3Like, dt: number, snap = false): void {
+    this.snaps.push(snap);
     const pose = composeShot([{ pos: [anchor.x, anchor.y, anchor.z] }, { pos: [screen.x, screen.y, screen.z] }], { follow: true });
     if (Math.abs(this.camFov - pose.fov) > 0.01) this.camFov = pose.fov;
     const k = snap ? 1 : 1 - Math.exp(-dt / TAU);
@@ -52,6 +55,10 @@ class FakeStage implements StageLike {
     }
     this.cam = { x: this.camPos[0], y: this.camPos[1], z: this.camPos[2] };
     this.camLog.push({ pos: [...this.camPos] as Vec3, target: [...this.camTarget] as Vec3, fov: this.camFov });
+  }
+  setCameraPose(pos: Vec3Like, target: Vec3Like, fov?: number): void {
+    // Copy (don't store the caller's reused scratch by reference) so the log is a faithful trace.
+    this.poses.push({ pos: [pos.x, pos.y, pos.z], target: [target.x, target.y, target.z], fov });
   }
   seekScreen(t: number): void {
     this.seeks.push(t);
@@ -368,6 +375,141 @@ describe('scoreDrive: per-frame allocation budget (rule C — no steady-state ch
     // Coarse GC-churn guard: ScoreDrive's per-frame path allocates only the small gaze
     // target object + the follow anchor read; well under a few KB/frame even before GC.
     expect(perFrame).toBeLessThan(4096);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// g3 regression suite — the behaviors the Phase-4c unification DROPPED, restored
+// through the SAME score.drive path (live==export), pinned here so they can't regress.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('scoreDrive g3: timeline motion cues restored through the unified path', () => {
+  const fps = 30;
+
+  it('a timeline turnScreen cue → IDENTICAL setTurn(0.6) on the live and export clocks', () => {
+    // motion.turnScreen at t=1s, folded into the Performance turns channel by
+    // buildNarrationPerformance (the cue the cutover dropped — the avatar never turned).
+    const perf = buildNarrationPerformance([{ t: 0, gesture: 'explain', emotion: 'neutral' }], 5, [], 'neutral', {
+      motionCues: [{ t: 1.0, type: 'motion.turnScreen' }],
+    });
+    const exp = driveExport(perf, fps, 5);
+    const live = driveLive(perf, fps, 5);
+    // Fires exactly once, the SAME value, on both clocks — restoring catalog.applyMotion's 0.6.
+    expect(exp.avatar.turns).toEqual([0.6]);
+    expect(live.avatar.turns).toEqual([0.6]);
+  });
+
+  it('motion.faceFront → setTurn(0); motion.point → setTurn(0.6*0.7) + a point gesture', () => {
+    const perf = buildNarrationPerformance([{ t: 0, gesture: 'explain', emotion: 'neutral' }], 5, [], 'neutral', {
+      motionCues: [
+        { t: 0.5, type: 'motion.point' },
+        { t: 2.0, type: 'motion.faceFront' },
+      ],
+    });
+    const { avatar } = driveExport(perf, fps, 5);
+    // point yaw then faceFront yaw, ascending — matching motionCueTurn (the shared vocabulary).
+    expect(avatar.turns).toEqual([0.6 * 0.7, 0]);
+    // point also plays the point IK overlay gesture (not just a turn).
+    expect(avatar.gestures.some((g) => g.gesture === 'point')).toBe(true);
+  });
+});
+
+describe('scoreDrive g3: authored static (follow:false) camera keyframe is applied, not dropped', () => {
+  const fps = 30;
+
+  it('lands the authored absolute pose via setCameraPose (no ease-in from a stale pose)', () => {
+    const perf = buildNarrationPerformance([{ t: 0, gesture: 'explain', emotion: 'neutral' }], 2, [], 'neutral', {
+      cameraCues: [{ tSec: 0.5, pos: [1, 2, 3], target: [4, 5, 6], fov: 33 }],
+      followCamera: false, // isolate the authored static keyframe (no two-shot follow)
+    });
+    const { stage } = driveExport(perf, fps, 2);
+    // Before t=0.5 there is no active keyframe → no camera command at all (not dropped silently
+    // onto a wrong pose); from t=0.5 onward the EXACT authored pose is applied every frame.
+    expect(stage.poses.length).toBeGreaterThan(0);
+    const last = stage.poses[stage.poses.length - 1]!;
+    expect(last.pos).toEqual([1, 2, 3]);
+    expect(last.target).toEqual([4, 5, 6]);
+    expect(last.fov).toBe(33);
+    // No follow keyframe emitted → frameAnchorScreen never ran.
+    expect(stage.snaps.length).toBe(0);
+  });
+
+  it('an authored cue at the same tSec as the follow keyframe WINS (follow covers only the gap)', () => {
+    const perf = buildNarrationPerformance([{ t: 0, gesture: 'explain', emotion: 'neutral' }], 2, [], 'neutral', {
+      cameraCues: [{ tSec: 0, pos: [7, 8, 9], target: [0, 0, 0], fov: 40 }],
+      // followCamera default true → follow@0 + static@0; the static (later index) wins at t=0.
+    });
+    const { stage } = driveExport(perf, fps, 2);
+    expect(stage.poses[0]!.pos).toEqual([7, 8, 9]);
+  });
+});
+
+describe('scoreDrive g3: export opens snapped to the frame-0 two-shot (restored snap-override)', () => {
+  const fps = 30;
+
+  it('frame 0 snaps (snap=true) then every later frame uses the smoothed follow (snap=false)', () => {
+    const perf = buildNarrationPerformance([{ t: 0, gesture: 'explain', emotion: 'neutral' }], 2, []);
+    const exp = driveExport(perf, fps, 2);
+    const live = driveLive(perf, fps, 2);
+    // Frame 0 is the EXACT two-shot on both clocks (no ~1s ease-in from a stale orbit pose);
+    // frames ≥1 share the unified 1-exp(-dt/0.45) ease.
+    expect(exp.stage.snaps[0]).toBe(true);
+    expect(live.stage.snaps[0]).toBe(true);
+    expect(exp.stage.snaps.slice(1).every((s) => s === false)).toBe(true);
+    expect(exp.stage.snaps.length).toBeGreaterThan(2);
+    // Frame 0 already sits at the composed two-shot for the anchor at the origin.
+    const want = composeShot([{ pos: [0, 0, 0] }, { pos: [SCREEN.x, SCREEN.y, SCREEN.z] }], { follow: true });
+    for (let k = 0; k < 3; k++) expect(exp.stage.camLog[0]!.pos[k]!).toBeCloseTo(want.pos[k]!, 9);
+  });
+});
+
+describe('scoreDrive g3: overlapping screen-cut windows keep the outer cut open (union semantics)', () => {
+  const fps = 30;
+
+  it('a nested window closing does NOT end a still-open outer window', () => {
+    // W1=[0,10] fully contains W2=[5,7]. The old updateScreenSource used a .some() union, so
+    // t=8 stayed cut-to-screen; the latest-mark-wins reducer would (without merging) cut back
+    // to the scene at 7. buildNarrationPerformance now MERGES the windows → one [0,10] cut.
+    const perf = buildNarrationPerformance([{ t: 0, gesture: 'explain', emotion: 'neutral' }], 12, [
+      { start: 0, duration: 10 },
+      { start: 5, duration: 2 },
+    ]);
+    const { stage } = driveExport(perf, fps, 12);
+    // Transitions only: off (frame 0, before t=0… actually starts active at 0), then the single
+    // merged window: cut on at 0, cut off at 10. No spurious off at 7.
+    expect(stage.screenCuts.map((c) => c.active)).toEqual([true, false]);
+  });
+});
+
+describe('scoreDrive g3: alloc-free per-frame even with an authored look (rule C)', () => {
+  it('drives 300 steady-state frames with a non-empty looks array at a small heap delta', () => {
+    // A self.face look makes advanceLook → resolveTarget run EVERY frame; it must reuse the
+    // gaze scratch (not allocate a fresh {x,y,z} literal per frame).
+    const base = buildNarrationPerformance([{ t: 0, gesture: 'explain', emotion: 'neutral' }], 100, []);
+    const perf: Performance = { ...base, looks: [{ tSec: 0, target: { bind: 'face' } }] };
+    const stage = new FakeStage();
+    const avatar = new FakeAvatar();
+    const sd = new ScoreDrive(stage, avatar, SCREEN_ANCHOR);
+    sd.load(perf);
+    const dt = 1 / 30;
+    for (let i = 0; i < 60; i++) sd.drive(i * dt, dt, SILENT);
+    stage.camLog.length = 0;
+    stage.snaps.length = 0;
+    stage.seeks.length = 0;
+    avatar.mouths.length = 0;
+    avatar.gazes.length = 0;
+    avatar.updates.length = 0;
+    const before = heapUsed();
+    for (let i = 60; i < 360; i++) {
+      sd.drive(i * dt, dt, SILENT);
+      if (stage.camLog.length > 1) stage.camLog.length = 0;
+      if (stage.snaps.length > 1) stage.snaps.length = 0;
+      if (stage.seeks.length > 1) stage.seeks.length = 0;
+      if (avatar.mouths.length > 1) avatar.mouths.length = 0;
+      if (avatar.gazes.length > 1) avatar.gazes.length = 0;
+      if (avatar.updates.length > 1) avatar.updates.length = 0;
+    }
+    const after = heapUsed();
+    expect((after - before) / 300).toBeLessThan(4096);
   });
 });
 
