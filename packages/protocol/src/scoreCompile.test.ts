@@ -5,8 +5,10 @@ import { Score, AudioTimings, GestureKind } from './score.js';
 import { Performance } from './performance.js';
 import { compileScore, compileNewsReportToScore, newsReportAudio } from './scoreCompile.js';
 import { GESTURE_KIND_TO_CLIP } from './presets.js';
+import * as presets from './presets.js';
 import { NewsReportDoc } from './newsreport.js';
 import { compileNewsReport } from './newsreportCompile.js';
+import { composeShot } from '@las/performer-core';
 
 // ── Golden fixture ────────────────────────────────────────────────────────────
 const STAGE = Stage.parse({
@@ -298,5 +300,162 @@ describe('compileNewsReportToScore (bridge + equivalence)', () => {
     const audio = newsReportAudio(DOC, legacy.project.timeline.duration);
     const bed = audio.find((a) => a.label === 'music bed');
     expect(bed?.src).toBe(legacyBed?.src);
+  });
+});
+
+// ── g1 regression tests ───────────────────────────────────────────────────────
+
+// g1[0]: section-relative section.audio start must be re-based to ABSOLUTE (sectionStart + a.start)
+// byte-identically to compileNewsReport. Pre-fix newsReportAudio kept start=0.5 (section-relative).
+describe('g1: newsReportAudio re-bases section audio to absolute (parity with compileNewsReport)', () => {
+  const SFX_DOC = NewsReportDoc.parse({
+    version: 2,
+    meta: { title: 'X', anchors: [{ id: 'a1', name: 'Ava', avatarUrl: 'm', voiceId: 'v' }] },
+    rundown: [
+      // a non-trivial first section so section[1] starts well past t=0
+      { id: 's1', slug: 'one', beats: [{ id: 'b1', text: 'Good evening everyone and welcome to the broadcast tonight' }] },
+      {
+        id: 's2',
+        slug: 'two',
+        beats: [{ id: 'b3', text: 'Markets rose today across the board' }],
+        // section-relative start: 0.5s INTO section 2 (which itself starts several seconds in)
+        audio: [{ id: 'sfx1', kind: 'sfx', src: '/sfx/whoosh.mp3', start: 0.5, duration: 1 }],
+      },
+    ],
+  });
+
+  it('matches compileNewsReport absolute start byte-for-byte and is NOT section-relative', () => {
+    const legacy = compileNewsReport(SFX_DOC);
+    const legacySfx = legacy.cues.find((c) => c.track === 'audio' && c.src === '/sfx/whoosh.mp3');
+    expect(legacySfx).toBeDefined();
+    const audio = newsReportAudio(SFX_DOC, legacy.project.timeline.duration);
+    const sfx = audio.find((a) => a.src === '/sfx/whoosh.mp3');
+    expect(sfx).toBeDefined();
+    // byte-identical to the legacy absolute clock
+    expect(sfx!.start).toBe(legacySfx!.start);
+    // section[1] starts past t=0, so absolute start must be strictly greater than the 0.5 offset
+    expect(sfx!.start).toBeGreaterThan(0.5);
+    // pre-fix bug emitted the raw section-relative value
+    expect(sfx!.start).not.toBe(0.5);
+  });
+});
+
+// g1[1]: the default camera must only SEED the opening; after an authored camera cut, a
+// camera-less beat must HOLD the last shot, not snap back to the default.
+describe('g1: sticky default camera does not snap back after an authored camera', () => {
+  it('keeps the authored close-up and emits NO default wide keyframe on a later camera-less beat', () => {
+    const stage = Stage.parse({ id: 's', marks: [{ id: 'center', pos: [0, 0, 0] }] });
+    const score = Score.parse({
+      stage: 's',
+      // default camera = wide
+      defaults: { camera: { frame: { subjects: ['self.face'], size: 'wide' } } },
+      beats: [
+        // beat[0] authors an explicit close-up
+        { text: 'first beat here', cues: [{ camera: { frame: { subjects: ['self.face'], size: 'cu' } } }] },
+        // beat[1] authors NO camera — must hold the close-up, NOT revert to wide
+        { text: 'second beat here', cues: [] },
+      ],
+    });
+    const timings = AudioTimings.parse({
+      beats: [
+        { startSec: 0, endSec: 2, words: [{ word: 'first', startSec: 0, endSec: 1 }, { word: 'beat', startSec: 1, endSec: 2 }] },
+        { startSec: 2, endSec: 4, words: [{ word: 'second', startSec: 2, endSec: 3 }, { word: 'beat', startSec: 3, endSec: 4 }] },
+      ],
+    });
+    const perf = compileScore(stage, score, timings);
+    // exactly one camera keyframe: the authored close-up. No default-wide seed anywhere.
+    expect(perf.camera).toHaveLength(1);
+    const cu = perf.camera[0]!;
+    expect(cu.tSec).toBe(0);
+    expect(cu.fov).toBe(30); // SIZE_TABLE.cu fov — proves it's the close-up, not the wide (fov 40)
+    // and crucially nothing was emitted at beat[1].startSec (2s)
+    expect(perf.camera.some((c) => c.tSec === 2)).toBe(false);
+  });
+});
+
+// g1[2]: a node-bound Target (pos undefined, node set) must compile to a late-bound {node} ref,
+// NOT silently to {pos:[0,0,0]}.
+describe('g1: node-bound Target compiles to a late-bound {node} ref', () => {
+  it('carries Target.node through instead of rooting at [0,0,0]', () => {
+    const stage = Stage.parse({
+      id: 's',
+      marks: [{ id: 'center', pos: [0, 0, 0] }],
+      targets: [{ id: 'newsAnchor', kind: 'anchorBody', node: 'spine' }], // no pos
+    });
+    const score = Score.parse({
+      stage: 's',
+      beats: [{ text: 'look over there now', cues: [{ at: { word: 1 }, look: { at: 'newsAnchor' } }] }],
+    });
+    const timings = AudioTimings.parse({
+      beats: [{ startSec: 0, endSec: 2, words: [
+        { word: 'look', startSec: 0, endSec: 0.5 },
+        { word: 'over', startSec: 0.5, endSec: 1.0 },
+        { word: 'there', startSec: 1.0, endSec: 1.5 },
+        { word: 'now', startSec: 1.5, endSec: 2.0 },
+      ] }],
+    });
+    const perf = compileScore(stage, score, timings);
+    expect(perf.looks).toHaveLength(1);
+    expect(perf.looks[0]!.target).toEqual({ node: 'spine' });
+    // explicitly NOT the silent world-root fallback
+    expect(perf.looks[0]!.target).not.toEqual({ pos: [0, 0, 0] });
+  });
+});
+
+// g1[3]: a gesture's `amount` hint must flow to baseEnergy (via energyFromAmount), not be discarded.
+describe('g1: gesture amount hint flows to baseEnergy', () => {
+  function gestureEnergy(amount: number): string | undefined {
+    const stage = Stage.parse({ id: 's', marks: [{ id: 'center', pos: [0, 0, 0] }] });
+    const score = Score.parse({
+      stage: 's',
+      beats: [{ text: 'hello there friend', cues: [{ gesture: { kind: 'wave', amount } }] }],
+    });
+    const timings = AudioTimings.parse({
+      beats: [{ startSec: 0, endSec: 2, words: [
+        { word: 'hello', startSec: 0, endSec: 0.7 },
+        { word: 'there', startSec: 0.7, endSec: 1.3 },
+        { word: 'friend', startSec: 1.3, endSec: 2.0 },
+      ] }],
+    });
+    return compileScore(stage, score, timings).gestures[0]!.drive.baseEnergy;
+  }
+
+  it('high amount → high energy, low amount → low energy (not byte-identical)', () => {
+    expect(gestureEnergy(0.9)).toBe('high');
+    expect(gestureEnergy(0.1)).toBe('low');
+    expect(gestureEnergy(0.9)).not.toBe(gestureEnergy(0.1)); // pre-fix both were the same emotion bucket
+  });
+});
+
+// g1[4]: the drifted protocol-side CAMERA_SIZE_PRESET was removed; composeShot's SIZE_TABLE is now
+// the single source of truth for size→framing.
+describe('g1: CAMERA_SIZE_PRESET removed; composeShot is the single source for size framing', () => {
+  it('no longer exports CAMERA_SIZE_PRESET from the protocol public API', () => {
+    expect((presets as Record<string, unknown>).CAMERA_SIZE_PRESET).toBeUndefined();
+  });
+
+  it("compileScore framing for size 'medium' matches composeShot exactly", () => {
+    const stage = Stage.parse({
+      id: 's',
+      marks: [{ id: 'center', pos: [0, 0, 0] }],
+      targets: [{ id: 'p', kind: 'point', pos: [2, 1, -3] }],
+    });
+    const score = Score.parse({
+      stage: 's',
+      beats: [{ text: 'frame me medium', cues: [{ camera: { frame: { subjects: ['p'], size: 'medium' } } }] }],
+    });
+    const timings = AudioTimings.parse({
+      beats: [{ startSec: 0, endSec: 2, words: [
+        { word: 'frame', startSec: 0, endSec: 0.7 },
+        { word: 'me', startSec: 0.7, endSec: 1.3 },
+        { word: 'medium', startSec: 1.3, endSec: 2.0 },
+      ] }],
+    });
+    const perf = compileScore(stage, score, timings);
+    const kf = perf.camera[0]!;
+    const expected = composeShot([{ pos: [2, 1, -3] }], { size: 'medium' });
+    expect(kf.pos).toEqual([expected.pos[0], expected.pos[1], expected.pos[2]]);
+    expect(kf.target).toEqual([expected.target[0], expected.target[1], expected.target[2]]);
+    expect(kf.fov).toBe(expected.fov);
   });
 });

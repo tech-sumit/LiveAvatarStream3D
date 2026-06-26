@@ -30,10 +30,11 @@ import { resolveGesture as resolveGestureCue } from '@las/performer-core';
 import type { Performance } from './performance.js';
 import type { Posture } from './dsl.js';
 import type { AudioCue, NewsReportDoc, DocDefaults } from './newsreport.js';
-import { CAMERA_SIZE_PRESET, EMOTION_ENERGY } from './presets.js';
+import { estDuration, round1 } from './newsreportCompile.js';
+import { EMOTION_ENERGY } from './presets.js';
 
 // ── Resolved-ref shapes (mirror performance.ts ResolvedTargetRef without importing the zod value) ──
-type ResolvedTargetRef = { pos: Vec3 } | { bind: 'face' | 'chest' | 'root' };
+type ResolvedTargetRef = { pos: Vec3 } | { bind: 'face' | 'chest' | 'root' } | { node: string };
 
 // ── Output keyframe/path shapes (mirror performance.ts; the function returns a parsed-shape object) ──
 type CameraKeyframe = {
@@ -110,6 +111,19 @@ function atOr<T>(arr: readonly T[], i: number, fallback: T): T {
 }
 
 let warnedWordAnchor = false;
+let warnedNodeCompilePos = false;
+/**
+ * A node-bound target has no static world position at compile time — warn once per compile so
+ * the late-bind fallback (body root for framing/aim math) is visible rather than silent.
+ */
+function warnNodeCompilePos(ref: string, node: string): void {
+  if (warnedNodeCompilePos) return;
+  console.warn(
+    `compileScore: node-bound target '${ref}' (node '${node}') has no compile-time position; ` +
+      `late-binding at runtime, using body root for compile-time framing/aim`,
+  );
+  warnedNodeCompilePos = true;
+}
 /**
  * Absolute start time (sec) of a beat's Nth word. Under noUncheckedIndexedAccess
  * `beat.words[idx]` is `WordTiming | undefined`; an out-of-range anchor is a DEFINED
@@ -162,6 +176,7 @@ export function compileScore(
   extra?: { audio?: AudioCue[]; screen?: ScreenCut[] },
 ): Performance {
   warnedWordAnchor = false;
+  warnedNodeCompilePos = false;
   const idx = indexStage(stage);
   const bodyPos = {
     face: body?.face ?? DEFAULT_BODY.face,
@@ -170,14 +185,22 @@ export function compileScore(
   };
   const defaults = score.defaults ?? {};
 
-  // resolveRef → late-bound BodyRef for self.*, static {pos} for marks/targets/shots.
+  // resolveRef → late-bound BodyRef for self.*, late-bound NodeRef for node-bound targets,
+  // static {pos} for marks/pos-targets/shots.
   function resolveRef(ref: string): ResolvedTargetRef {
     const bind = SELF_BINDS[ref];
     if (bind) return { bind };
     const mark = idx.marks.get(ref);
     if (mark) return { pos: mark.pos };
     const target = idx.targets.get(ref);
-    if (target?.pos) return { pos: target.pos };
+    if (target) {
+      if (target.pos) return { pos: target.pos };
+      // Node-bound target (pos undefined, node set): carry the node name late-bound — like
+      // self.*, score.drive re-resolves it per-frame against the live GLB. NEVER bake [0,0,0].
+      if (target.node) return { node: target.node };
+      // A target with neither pos nor node is malformed — surface it loudly, don't silently root.
+      throw new Error(`compileScore: Target '${ref}' has neither pos nor node`);
+    }
     const shot = idx.shots.get(ref);
     if (shot) return { pos: shot.pose.pos };
     // Unknown ref → fall back to body root (defined, deterministic; never throws).
@@ -186,11 +209,18 @@ export function compileScore(
 
   // Static world position for compile-time math (composeShot subjects, turnToward).
   // self.* uses the documented body fallback (the ONLY compile-time use of `body`).
+  // Node-bound targets have no static compile-time world position; they late-bind at runtime,
+  // so compile-time math (framing/aim) warns once and uses the body root rather than a silent,
+  // un-signalled [0,0,0]. The resolveRef path still carries the {node} for the runtime to honor.
   function refPos(ref: string): Vec3 {
     const bind = SELF_BINDS[ref];
     if (bind) return bodyPos[bind];
     const r = resolveRef(ref);
-    return 'pos' in r ? r.pos : bodyPos[r.bind];
+    if ('pos' in r) return r.pos;
+    if ('bind' in r) return bodyPos[r.bind];
+    // node-bound: no compile-time position.
+    warnNodeCompilePos(ref, r.node);
+    return bodyPos.root;
   }
 
   // Mark facing (number yaw | TargetRef) → yaw radians at the destination.
@@ -215,10 +245,12 @@ export function compileScore(
   let avatarPos: Vec3 = [bodyPos.root[0], bodyPos.root[1], bodyPos.root[2]];
   let durationSec = 0;
 
-  // Sticky default camera (carry-forward, like newsreportCompile): beats with no camera cue
-  // inherit defaults.camera once. The default is fixed for the run, so it stays const.
+  // Sticky default camera (carry-forward, like newsreportCompile): the default ONLY seeds the
+  // opening, before any authored camera. Once ANY camera keyframe has been emitted (authored or
+  // default), camera-less beats hold the last shot — they don't snap back to the default. The
+  // default is fixed for the run, so it stays const.
   const stickyCamera: CameraDirective | undefined = defaults.camera;
-  let emittedDefaultCamera = false;
+  let emittedAnyCamera = false;
 
   for (let bi = 0; bi < score.beats.length; bi++) {
     const beat = score.beats[bi];
@@ -286,8 +318,10 @@ export function compileScore(
           ...(g.hold !== undefined ? { hold: g.hold } : {}),
           ...(g.amount !== undefined ? { amount: g.amount } : {}),
         });
-        // Energy from the beat emotion bucket (deterministic; not a global counter).
-        const baseEnergy = EMOTION_ENERGY[beatEmotion];
+        // Energy: an explicit per-gesture `amount` hint wins (resolveGestureCue already mapped it
+        // to drive.baseEnergy via energyFromAmount); else fall back to the beat emotion bucket.
+        // Both are deterministic (no global counter).
+        const baseEnergy = g.amount !== undefined ? drive.baseEnergy : EMOTION_ENERGY[beatEmotion];
         const rg: ResolvedGesture = {
           tSec,
           kind: g.kind,
@@ -322,15 +356,18 @@ export function compileScore(
       if ('camera' in cue) {
         const kf = compileCamera(cue.camera, tSec, resolveRef, refPos, idx);
         if (kf) cameraKfs.push(kf);
+        // An authored camera establishes the shot — the default must never seed/snap after it.
+        emittedAnyCamera = true;
         continue;
       }
     }
 
-    // Sticky default camera: a beat with no camera cue inherits defaults.camera once.
-    if (!hasCameraCue && stickyCamera && !emittedDefaultCamera) {
+    // Sticky default camera: seed defaults.camera only on the opening beats, before any authored
+    // camera. Once a shot exists, a camera-less beat holds it (no keyframe) instead of reverting.
+    if (!hasCameraCue && stickyCamera && !emittedAnyCamera) {
       const kf = compileCamera(stickyCamera, beatStart, resolveRef, refPos, idx);
       if (kf) cameraKfs.push(kf);
-      emittedDefaultCamera = true;
+      emittedAnyCamera = true;
     }
 
     // 2D-safe projection (§10): emotion (sticky), intensity (from emote), gesture, posture.
@@ -406,8 +443,7 @@ function compileCamera(
   if (frame.height !== undefined) composition.height = frame.height;
   if (frame.balance !== undefined) composition.balance = frame.balance;
   if (frame.lens !== undefined) composition.lens = frame.lens;
-  // size presets are pinned in CAMERA_SIZE_PRESET; composeShot reproduces them.
-  void CAMERA_SIZE_PRESET;
+  // composeShot's SIZE_TABLE is the single source of truth for size→framing.
   const pose = composeShot(subjects, composition);
   const follow = dir.follow ?? false;
   const kf: CameraKeyframe = {
@@ -505,13 +541,24 @@ export function compileNewsReportToScore(doc: NewsReportDoc): Score {
 
 /**
  * Extract the NewsReport's music beds / SFX as AudioCue[] so they survive the Score path.
- * `section.audio` keeps section-relative `start`; `defaults.music` becomes a full-timeline bed.
+ * Each `section.audio` cue's section-relative `start` is re-based to an ABSOLUTE start
+ * (`sectionStart + a.start`) using the SAME running clock + round1 as compileNewsReport, so the
+ * two audio paths stay byte-identical; `defaults.music` becomes a full-timeline bed.
  * Pass the result as `compileScore(stage, score, timings, body, { audio })`.
  */
 export function newsReportAudio(doc: NewsReportDoc, totalDuration: number): AudioCue[] {
   const out: AudioCue[] = [];
+  // Mirror compileNewsReport's absolute timeline clock: t advances per beat by the estimated
+  // duration plus the beat's trailing pause; sectionStart is captured before each section's beats.
+  let t = 0;
   for (const section of doc.rundown) {
-    for (const a of section.audio) out.push({ ...a });
+    const sectionStart = t;
+    for (const beat of section.beats) {
+      t += estDuration(beat.text) + (beat.pause_ms_after ?? 0) / 1000;
+    }
+    for (const a of section.audio) {
+      out.push({ ...a, start: round1(sectionStart + a.start) });
+    }
   }
   const music = doc.defaults?.music;
   if (music) {

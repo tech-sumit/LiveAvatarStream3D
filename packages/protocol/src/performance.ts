@@ -7,9 +7,15 @@ import { AudioCue } from './newsreport.js'; // REUSE the existing audio-cue sche
 // Late-bound avatar-relative target: resolved per-frame by score.drive against the live GLB.
 export const BodyRef = z.object({ bind: z.enum(['face', 'chest', 'root']) });
 
+// Late-bound scene-node target: a node-bound Stage Target (kind 'anchorBody'/'point' with a
+// `node` and no `pos`). Carried by name and re-resolved per-frame against the live GLB node —
+// NEVER baked to a static [0,0,0] at compile time.
+export const NodeRef = z.object({ node: z.string() });
+
 export const ResolvedTargetRef = z.union([
   z.object({ pos: Vec3 }), // static world point (resolved at compile time)
   BodyRef, // tracks the loaded/walked avatar (resolved at runtime)
+  NodeRef, // tracks a named live scene node (resolved at runtime)
 ]);
 
 export const CameraKeyframe = z.object({
