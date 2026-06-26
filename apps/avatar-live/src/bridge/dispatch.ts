@@ -7,7 +7,9 @@
 //
 // This module is self-contained and only imported when the bridge is enabled, so
 // it never runs in the default (bridge-off) studio.
-import { validateNewsReportDoc } from '@las/protocol';
+import { validateNewsReportDoc, validateScore, compileNewsReportToScore } from '@las/protocol';
+import type { Stage, AudioTimings, Score } from '@las/protocol';
+import { SCREEN_STAND_POS } from '../scene/studio.js';
 import type { StudioContext } from '../app/context.js';
 import type { Lighting } from '../app/lighting.js';
 import type { Look } from '../app/look.js';
@@ -64,6 +66,46 @@ function mapTrack(track: string): Cue['track'] | null {
   }
 }
 
+// The studio has no Stage-authoring surface yet (Phase 5), so a newscast Score lands on a
+// default Stage matching the live set: the presenter at the origin + a `screen` target at
+// the back-wall stand. Scores reference these ids; any unknown ref falls back to the body
+// root in compileScore (deterministic, never throws), so this default is always sufficient.
+function defaultStage(stageId: string): Stage {
+  return {
+    id: stageId,
+    marks: [{ id: 'center', pos: [0, 0, 0] }],
+    targets: [{ id: 'screen', kind: 'point', pos: [SCREEN_STAND_POS.x, SCREEN_STAND_POS.y, SCREEN_STAND_POS.z] }],
+    cameras: [],
+    lights: [],
+    props: [],
+    savedShots: [],
+  };
+}
+
+// Derive per-word AudioTimings from a Score before real TTS timing exists: lay each beat's
+// text out evenly across a fixed per-beat window so WordAnchor cues (`at: { word }`) resolve
+// to a deterministic time. compileScore clamps an out-of-range anchor, so a coarse layout is
+// safe — it only sets WHEN a mid-beat cue fires, not the rendered audio.
+function timingsFromScore(score: Score): AudioTimings {
+  const BEAT_SEC = 3;
+  const beats: AudioTimings['beats'] = [];
+  for (let i = 0; i < score.beats.length; i++) {
+    const beat = score.beats[i];
+    if (!beat) continue;
+    const startSec = i * BEAT_SEC;
+    const endSec = startSec + BEAT_SEC;
+    const words = beat.text.split(/\s+/).filter(Boolean);
+    const n = Math.max(words.length, 1);
+    const wordTimings = words.map((word, w) => ({
+      word,
+      startSec: startSec + (w / n) * BEAT_SEC,
+      endSec: startSec + ((w + 1) / n) * BEAT_SEC,
+    }));
+    beats.push({ startSec, endSec, words: wordTimings });
+  }
+  return { beats };
+}
+
 async function blobFromCanvas(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('canvas.toBlob returned null'))), 'image/png');
@@ -95,28 +137,38 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
   return async function dispatch(cmd: string, params: Record<string, unknown>): Promise<unknown> {
     switch (cmd) {
       // ── Newscast import / validate / patch ─────────────────────────────────
+      // A newscast `doc` is a Score (preferred) OR a legacy NewsReportDoc, which is
+      // auto-lowered through compileNewsReportToScore. BOTH flow through the SAME Score
+      // runtime (projectStore.importScore → compileScore → the Performer's ScoreDrive),
+      // so the proven old path is no longer a parallel compileNewsReport/applyProject.
       case 'applyNewscast': {
-        const title = await c.projects.importNewsReport(params.doc);
+        const out = await applyScoreDoc(c, params.doc);
         lastNewscast = params.doc;
-        return { applied: true, title };
+        return { applied: true, ...out };
       }
       case 'validateNewscast': {
+        // Validate-only: try Score, then auto-lower NewsReportDoc. Never lands a Performance.
         try {
-          const doc = validateNewsReportDoc(params.doc);
-          return { valid: true, title: doc.meta.title };
-        } catch (err) {
-          return { valid: false, error: String(err instanceof Error ? err.message : err) };
+          validateScore(params.doc);
+          return { valid: true, kind: 'score' };
+        } catch (scoreErr) {
+          try {
+            const doc = validateNewsReportDoc(params.doc);
+            compileNewsReportToScore(doc); // prove it lowers to a Score
+            return { valid: true, kind: 'newsreport', title: doc.meta.title };
+          } catch {
+            return { valid: false, error: String(scoreErr instanceof Error ? scoreErr.message : scoreErr) };
+          }
         }
       }
       case 'patchNewscast': {
-        // Merge the patch over the last-applied doc, re-validate, re-import.
+        // Merge the patch over the last-applied doc and re-import through the Score runtime.
         const base = (lastNewscast ?? {}) as Record<string, unknown>;
         const patch = (params.patch ?? {}) as Record<string, unknown>;
         const merged = { ...base, ...patch };
-        validateNewsReportDoc(merged); // throw early on an invalid merge
-        const title = await c.projects.importNewsReport(merged);
+        const out = await applyScoreDoc(c, merged);
         lastNewscast = merged;
-        return { applied: true, title };
+        return { applied: true, ...out };
       }
 
       // ── Scalar setters (mirror the UI's own change side effects) ───────────
@@ -347,4 +399,29 @@ function currentReqId(): string {
 function seekTimeline(c: BridgeControllers, seconds: number): void {
   // Drive a single output frame at `seconds` via the timeline player.
   c.timeline.playerUpdate(Math.max(0, seconds));
+}
+
+/**
+ * Land a newscast `doc` on the Score runtime: try {@link validateScore} → importScore;
+ * on failure auto-lower a legacy NewsReportDoc through {@link compileNewsReportToScore} →
+ * importScore. Both paths compile against a {@link defaultStage} + {@link timingsFromScore}
+ * and hand the resulting Performance to the Performer's ScoreDrive.
+ */
+async function applyScoreDoc(c: BridgeControllers, doc: unknown): Promise<{ beats: number; lowered: boolean }> {
+  let score: Score;
+  let lowered = false;
+  try {
+    score = validateScore(doc);
+  } catch (scoreErr) {
+    try {
+      score = compileNewsReportToScore(validateNewsReportDoc(doc));
+      lowered = true;
+    } catch {
+      // Surface the Score error (the preferred shape) when neither parses.
+      throw scoreErr instanceof Error ? scoreErr : new Error(String(scoreErr));
+    }
+  }
+  const stage = defaultStage(score.stage);
+  const perf = await c.projects.importScore(score, stage, timingsFromScore(score));
+  return { beats: perf.beats.length, lowered };
 }
