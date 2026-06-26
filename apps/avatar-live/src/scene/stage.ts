@@ -1,9 +1,15 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import type { Pose } from '@las/performer-core';
 import { buildLookChain, applyLookParams, DEFAULT_LOOK, type LookParams, type LookChain } from '../look/lookChain.js';
+import { frameTwoShot, moveFromThree, makePose } from './coreAdapter.js';
 
 const _afCam = new THREE.Vector3();
 const _afTgt = new THREE.Vector3();
+// Reusable performer-core Pose scratch for the per-frame two-shot follow + the
+// arrow-key relative-move path — no allocation in the per-frame camera path (rule C).
+const _twoShotPose: Pose = makePose();
+const _nudgePose: Pose = makePose();
 
 export type Shot = 'close' | 'medium' | 'wide';
 
@@ -138,7 +144,14 @@ export class Stage {
   }
 
   /** Aim the camera at the face (head center) at eye level; distance from the
-   *  head height + shot. Camera height is aligned to the face for every shot. */
+   *  head height + shot. Camera height is aligned to the face for every shot.
+   *
+   *  NOTE: the manual shot-selector framing is a DISTINCT system from the timeline-cue
+   *  presets (`catalog.poseFor` → composeShot): its medium (5.5 heads / 0.6 drop) and wide
+   *  (8.0 heads / 1.1 drop) differ from the cue presets (anchor is absolute; cue-wide is 9.0
+   *  heads), and it deliberately never changes the camera fov. composeShot has no size that
+   *  reproduces those exact numbers, so routing this through it would change the DEFAULT
+   *  (medium) shot — unifying it into the spatial Score model is deferred (Score/Stage). */
   frame(headCenter: THREE.Vector3, headHeight: number, shot: Shot = 'medium', snap = true): void {
     // News framing: eye-level camera; the look-at drops slightly toward the chest (more
     // on wider shots) so the frame reveals neck + torso while keeping the FACE comfortably
@@ -154,7 +167,11 @@ export class Stage {
   }
 
   /** Snap the current free camera to look at the face at eye level, preserving
-   *  the horizontal direction + distance (the one-shot "align to face"). */
+   *  the horizontal direction + distance (the one-shot "align to face").
+   *  This is a relative re-aim of the EXISTING camera (it keeps the current orbit
+   *  distance/azimuth), which composeShot's absolute framing does not express, so it
+   *  stays an apply-layer op — it becomes an authored eyeline `follow` constraint in the
+   *  Score model. `k` is the apply-layer damping (snap = 1 here; soft < 1 below). */
   alignToFace(face: THREE.Vector3): void {
     this.controls.target.copy(face);
     this.camera.position.y = face.y;
@@ -174,25 +191,22 @@ export class Stage {
    * it replaces the face close-up so the screen is always in shot alongside the anchor.
    */
   frameAnchorScreen(anchor: THREE.Vector3, screen: THREE.Vector3, dt: number, snap = false): void {
-    const mx = (anchor.x + screen.x) / 2;
-    const mz = (anchor.z + screen.z) / 2;
-    const spread = Math.hypot(anchor.x - screen.x, anchor.z - screen.z);
-    const fov = 40;
-    // Distance to fit both, sitting a little further back (matches the captured framing).
-    const dist = (spread + 2.75) / (2 * Math.tan((fov * Math.PI) / 360));
-    const camZ = Math.max(anchor.z, screen.z) + dist;
-    if (Math.abs(this.camera.fov - fov) > 0.01) {
-      this.camera.fov = fov;
+    // The framing math is now performer-core's two-shot `composeShot` (anchor + screen
+    // subjects, `follow:true`). With no `balance` it reproduces the former baked offsets
+    // EXACTLY — camera 1.1 LEFT of the midpoint raised to 1.75, look-at +0.1x / 1.25y /
+    // +0.9z, fov 40, dist = (spread + 2.75)/(2·tan(fov/2)) — so the captured news two-shot
+    // is pixel-identical (parity-pinned by CAMERA_TWO_SHOT). The snap-vs-smoothed apply
+    // stays here as the apply-layer follow damping (it becomes authored `follow` in 4c).
+    const pose = frameTwoShot(anchor, screen, { follow: true }, _twoShotPose);
+    if (Math.abs(this.camera.fov - pose.fov) > 0.01) {
+      this.camera.fov = pose.fov;
       this.camera.updateProjectionMatrix();
     }
     // snap = set exactly (offline export, where the cue camera is reset each frame); else a
     // smoothed live follow.
     const k = snap ? 1 : 1 - Math.exp(-dt / 0.45);
-    // Captured composition: camera offset ~1.1 LEFT of the midpoint and raised to 1.75,
-    // looking slightly right/up and a touch forward — so the anchor reads on the left and
-    // the screen on the right (a news two-shot), following the anchor as it moves.
-    this.controls.target.lerp(_afTgt.set(mx + 0.1, 1.25, mz + 0.9), k);
-    this.camera.position.lerp(_afCam.set(mx - 1.1, 1.75, camZ), k);
+    this.controls.target.lerp(_afTgt.set(pose.target[0], pose.target[1], pose.target[2]), k);
+    this.camera.position.lerp(_afCam.set(pose.pos[0], pose.pos[1], pose.pos[2]), k);
     this.camera.lookAt(this.controls.target);
   }
 
@@ -219,20 +233,28 @@ export class Stage {
   }
 
   /** Nudge the camera (arrow-key navigation). truck = strafe, pedestal = up/down,
-   *  dolly>0 = move closer. Keeps the OrbitControls offset consistent. */
+   *  dolly>0 = move closer. Keeps the OrbitControls offset consistent.
+   *
+   *  Relative-move math now lives in performer-core `moveCamera` (truck/pedestal/dolly),
+   *  applied through the core adapter — the SINGLE home shared with the Score
+   *  `camera:{move}` path. truck uses right = normalize(cross(target−pos, up)); pedestal
+   *  adds world-up; dolly shortens (pos−target), floored at 0.2 m — identical deltas to
+   *  the former inline math. Each component applies in sequence (they compose as the prior
+   *  combined pan-then-dolly: a pan translates pos+target equally so the dolly axis is
+   *  unchanged), then OrbitControls is updated. */
   nudgeCamera(truck: number, pedestal: number, dolly: number): void {
-    const fwd = new THREE.Vector3();
-    this.camera.getWorldDirection(fwd);
-    const right = new THREE.Vector3().crossVectors(fwd, this.camera.up).normalize();
-    const pan = right.multiplyScalar(truck).add(new THREE.Vector3(0, pedestal, 0));
-    this.camera.position.add(pan);
-    this.controls.target.add(pan);
-    if (dolly !== 0) {
-      const off = this.camera.position.clone().sub(this.controls.target);
-      off.setLength(Math.max(0.2, off.length() - dolly));
-      this.camera.position.copy(this.controls.target).add(off);
-    }
+    if (truck !== 0) this.applyMove('truck', truck);
+    if (pedestal !== 0) this.applyMove('pedestal', pedestal);
+    if (dolly !== 0) this.applyMove('dolly', dolly);
     this.controls.update();
+  }
+
+  /** Apply one performer-core relative camera move to the live camera (no lookAt —
+   *  nudge preserves the OrbitControls offset; the caller updates controls). */
+  private applyMove(move: 'truck' | 'pedestal' | 'dolly', amount: number): void {
+    const pose = moveFromThree(this.camera.position, this.controls.target, this.camera.fov, move, amount, _nudgePose);
+    this.camera.position.set(pose.pos[0], pose.pos[1], pose.pos[2]);
+    this.controls.target.set(pose.target[0], pose.target[1], pose.target[2]);
   }
 
   /** Timeline director takes/releases the camera (OrbitControls paused while on). */
@@ -241,11 +263,13 @@ export class Stage {
     if (!on) this.controls.update();
   }
 
-  /** Directly place the camera (used by the timeline director each frame). */
-  setCameraPose(pos: THREE.Vector3, target: THREE.Vector3, fov?: number): void {
-    this.camera.position.copy(pos);
-    this.controls.target.copy(target);
-    this.camera.lookAt(target);
+  /** Directly place the camera (used by the timeline director each frame, and by the unified
+   *  score.drive for authored follow:false framing cues). `pos`/`target` are read structurally
+   *  (x/y/z), so a plain {x,y,z} from ScoreDrive works as well as a THREE.Vector3. */
+  setCameraPose(pos: { x: number; y: number; z: number }, target: { x: number; y: number; z: number }, fov?: number): void {
+    this.camera.position.set(pos.x, pos.y, pos.z);
+    this.controls.target.set(target.x, target.y, target.z);
+    this.camera.lookAt(this.controls.target); // lookAt a real Vector3 (the just-set target)
     if (fov && Math.abs(fov - this.camera.fov) > 0.01) {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();

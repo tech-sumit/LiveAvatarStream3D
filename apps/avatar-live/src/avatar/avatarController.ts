@@ -8,6 +8,9 @@ import { MorphFaceRig } from './morphRig.js';
 import { JawBoneRig } from './jawBoneRig.js';
 import { createProceduralHead } from './proceduralHead.js';
 import { emotionBias, type EmotionName } from './emotion.js';
+import { planPath } from '@las/performer-core';
+import type { Vec3 } from '@las/performer-core';
+import { aimArm, gazeMorph, countFingers, makeFingerCurls, yawTowardVec } from '../scene/coreAdapter.js';
 
 // Outcome of loading an external model, so the UI can explain what happened.
 export interface LoadResult {
@@ -36,17 +39,19 @@ const _fwd = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _q = new THREE.Quaternion();
+// reused gaze-morph result (performer-core aimEye → normalized morph weights + signs)
+const _gaze = { hw: 0, vw: 0, hPos: false, vPos: false };
 
-// scratch objects for point-aiming math (avoid per-frame allocation)
+// scratch objects for point-aiming (avoid per-frame allocation). The orthonormal-basis
+// math that built the desired local quaternion now lives in performer-core's aimLimb
+// (reproduced to the bit, pinned by its Phase-2 regression fixture); the controller keeps
+// only the shoulder lookup, the world aim direction, and the parent world quaternion it
+// feeds in, plus the two output quats aimLimb writes (upper arm + forearm).
 const _aimTarget = new THREE.Vector3();
 const _aimDir = new THREE.Vector3();
-const _aimParentInv = new THREE.Quaternion();
 const _aimParentWorld = new THREE.Quaternion();
-const _aimDesired = new THREE.Quaternion();
-const _aimMat = new THREE.Matrix4();
-const _aimX = new THREE.Vector3();
-const _aimY = new THREE.Vector3();
-const _aimZ = new THREE.Vector3();
+const _aimUpper = new THREE.Quaternion();
+const _aimFore = new THREE.Quaternion();
 const _aimShoulder = new THREE.Vector3();
 
 // One-shot gestures blend in at a REDUCED weight so they read as understated and
@@ -54,27 +59,34 @@ const _aimShoulder = new THREE.Vector3();
 // over-animated. Tune here.
 const GESTURE_WEIGHT = 0.65;
 
-// How strongly the right arm aims at a point target while a point gesture plays.
-// Kept subtle and smoothed so the arm never snaps and never overrides the clip.
-// The point-aim is now the PRIMARY mover (it raises the left arm from rest to the screen,
-// no clip), so the weights are strong; pointAimAmount ramps it in/out smoothly.
-const POINT_AIM_WEIGHT = 0.85;
+// Point-aim apply-layer config (the basis math itself lives in performer-core aimLimb).
+// The slerp weights are carried into aimLimb's opts (and used by the controller's apply);
+// the ramp/hold are gesture-lifecycle timing, not solver math, so they stay here.
+const POINT_AIM_WEIGHT = 0.85; // slerp weight toward the aimed upper-arm quat
 const POINT_FOREARM_WEIGHT = 0.8; // straighten the forearm for a clean extended point
 const POINT_AIM_TAU = 0.2; // seconds; smoothing time constant toward the aim
 const POINT_HOLD = 2.2; // seconds the point is held before it releases back to talking
+const POINT_AIM_OPTS = { weight: POINT_AIM_WEIGHT, foreArmWeight: POINT_FOREARM_WEIGHT };
 
 // "Stand by the screen" walk: the anchor walks from centre stage to a mark beside the
-// screen to present, then walks back. Speed + arrival tolerance for that move.
-const STATION_SPEED = 1.2; // m/s
-const STATION_ARRIVE = 0.08; // metres — close enough; stop + face front
-const _toStation = new THREE.Vector3();
+// screen to present, then walks back. The per-frame travel facing comes from
+// performer-core turnToward (yawTowardVec); planPath supplies the walk speed default
+// (1.2 m/s) and the arrival facing. MOVE_ARRIVE is the controller's stop tolerance.
+const MOVE_ARRIVE = 0.08; // metres — close enough; stop + face the arrival facing
+const _moveStep = new THREE.Vector3();
+const _movePos: Vec3 = [0, 0, 0]; // reused current-position tuple (no per-frame alloc)
 
-// Finger-counting: per-joint curl (proximal, middle, distal) folding a finger into
-// the palm about its local X axis (negative = fold, verified on the rig). Each number
-// is held for COUNT_PHASE seconds; the whole count releases after COUNT_TOTAL.
-const FINGER_CURL = [-1.0, -1.45, -1.2];
-const COUNT_PHASE = 0.75; // seconds each of 1, 2, 3 is shown (the 3 is then held)
+// Floor mark beside the stand-mounted screen the anchor walks to when presenting a point
+// gesture (was pushed in per-avatar via setScreenStation; it equalled this default, so it
+// is now Stage-style data here). In a later phase this comes from the Score's Stage marks.
+const SCREEN_MARK: Vec3 = [0.75, 0, 0.25];
+
+// Finger-counting: the per-joint curl constants + 1→2→3 timing now live in performer-core
+// fingerCount (FINGER_CURL = [-1.0,-1.45,-1.2], COUNT_PHASE = 0.75, pinned by its Phase-2
+// fixture). The controller keeps the release time (apply-layer lifecycle) + the per-frame
+// smoothing time constant toward the count pose.
 const COUNT_TOTAL = 3.4; // seconds before releasing the fingers back to the clip
+const COUNT_SMOOTH_TAU = 0.12; // seconds; smoothing toward the counted finger pose
 
 const EYE_LOOK = [
   'eyeLookInLeft',
@@ -139,13 +151,16 @@ export class AvatarController {
   private pointAimAmount = 0;
   private pointT = 0;
 
-  // Stage stations: the anchor walks between centre stage (home) and a mark beside the
-  // screen. `stationTarget` is where it's currently headed; `walkingToStation` is true
-  // while in motion (so we know to stop + face front on arrival).
-  private homePos = new THREE.Vector3(0, 0, 0);
-  private screenStation = new THREE.Vector3(0.75, 0, 0.25);
-  private stationTarget = new THREE.Vector3(0, 0, 0);
-  private walkingToStation = false;
+  // Locomotion `move`: the anchor walks to a floor mark (centre stage "home" ↔ a mark
+  // beside the screen). `moveTarget` is where it's currently headed (a plain Vec3 floor
+  // mark); `moveHome` is the centre it returns to; `moving` is true while in motion (so we
+  // stop + face the arrival facing on arrival); `moveArriveFacing` is the yaw to settle to
+  // on arrival (planPath.arriveFacing; default 0 = face the camera).
+  private moveHome: Vec3 = [0, 0, 0];
+  private moveTarget: Vec3 = [0, 0, 0];
+  private moving = false;
+  private moveArriveFacing = 0;
+  private moveSpeed = 1.2; // m/s walk speed (planPath default; STATION_SPEED was 1.2)
 
   // Procedural finger-counting: the 'count' gesture poses the right hand 1 → 2 → 3
   // fingers (index, then +middle, then +ring) while the clip raises the arm. We curl
@@ -154,8 +169,9 @@ export class AvatarController {
   // so the count reads as a stable, deliberate 1-2-3 instead of a snap.
   private counting = false;
   private countT = 0;
-  private fingerExt = [0, 0, 0, 0]; // index, middle, ring, pinky
+  private fingerExt = [0, 0, 0, 0]; // index, middle, ring, pinky (0 curled .. 1 extended)
   private fingerBones: THREE.Object3D[][] | null = null; // [finger][joint]
+  private fingerTarget = makeFingerCurls(); // reused fingerCount out-param (no per-frame alloc)
 
   constructor() {
     const head = createProceduralHead();
@@ -375,16 +391,17 @@ export class AvatarController {
    */
   playGesture(gestureName: string, baseClip: string, fade = 0.25): void {
     // Screen reference: instead of pointing, the anchor WALKS over to present from beside
-    // the screen. Keep the talking base — the walk + facing are driven by updateStation.
+    // the screen. Keep the talking base — the walk + facing are driven by `move` (planPath
+    // + turnToward), settling to face the camera (arriveFacing 0) on arrival.
     if (/(^|_)point|screen/i.test(gestureName)) {
       this.playClip(baseClip, fade);
       this.pointing = false;
       this.counting = false;
-      this.goToScreen();
+      this.move(SCREEN_MARK);
       return;
     }
     // Any other gesture: if the anchor is parked by the screen, walk it back to centre.
-    this.returnToCenter();
+    this.move(this.moveHome);
     const g = this.actions[gestureName];
     if (!g || !this.mixer) {
       this.playClip(baseClip, fade);
@@ -436,54 +453,59 @@ export class AvatarController {
     this.pointTarget = target ? target.clone() : null;
   }
 
-  /** Set the floor mark beside the screen the anchor walks to when presenting it. */
-  setScreenStation(pos: THREE.Vector3): void {
-    this.screenStation.copy(pos);
-  }
-
-  /** Walk over to present from beside the screen. */
-  goToScreen(): void {
-    this.stationTarget.copy(this.screenStation);
-  }
-
-  /** Walk back to centre stage. */
-  returnToCenter(): void {
-    this.stationTarget.copy(this.homePos);
+  /**
+   * Walk the anchor to a floor mark (the `move` verb). `planPath` resolves the walk speed
+   * (default 1.2 m/s) and the arrival facing (yaw to settle to on arrival — `Mark.facing`;
+   * default 0 = face the camera); the per-frame travel + facing run in `updateMove`. The
+   * Y of `target` is ignored (floor move on XZ). Replaces goToScreen/returnToCenter and the
+   * former station machine — one entry point for all walk-to-mark locomotion.
+   */
+  move(target: Vec3, opts?: { gait?: 'walk' | 'stride'; speed?: number; arriveFacing?: number }): void {
+    const from: Vec3 = [this.group.position.x, this.group.position.y, this.group.position.z];
+    const plan = planPath(from, [target[0], 0, target[2]], opts);
+    this.moveTarget = [plan.samples[plan.samples.length - 1]?.pos[0] ?? target[0], 0, plan.samples[plan.samples.length - 1]?.pos[2] ?? target[2]];
+    this.moveSpeed = plan.speed;
+    this.moveArriveFacing = plan.arriveFacing ?? 0;
   }
 
   /** The user hand-placed the anchor (3D move gizmo): adopt that spot as the new home
    *  (centre) so it returns there — not to the original spawn — and isn't auto-walked off
    *  it. Parks it there immediately (no walk). */
   setStageHome(pos: THREE.Vector3): void {
-    this.homePos.copy(pos);
-    this.stationTarget.copy(pos);
-    this.walkingToStation = false;
+    this.moveHome = [pos.x, pos.y, pos.z];
+    this.moveTarget = [pos.x, 0, pos.z];
+    this.moving = false;
   }
 
   /**
-   * Drive the anchor between stage stations (centre ↔ beside the screen). While more than
-   * STATION_ARRIVE from the target it walks toward it (faces the travel direction, plays the
-   * walk clip, advances the group position); on arrival it stops, faces the camera, and idles.
-   * Runs every frame; a no-op once parked at the current target.
+   * Drive the anchor toward its `move` target each frame. While more than MOVE_ARRIVE from
+   * the target it walks toward it (faces the travel direction via performer-core turnToward,
+   * plays the walk clip, advances the group position at moveSpeed); on arrival it snaps to
+   * the mark, settles to the arrival facing, and idles. Runs every frame; a no-op once
+   * parked at the current target. (Reproduces the former updateStation exactly: turnToward
+   * is the same atan2 travel facing; arriveFacing 0 is the former "face the camera" datum.)
    */
-  private updateStation(dt: number): void {
+  private updateMove(dt: number): void {
     const pos = this.group.position;
-    _toStation.set(this.stationTarget.x - pos.x, 0, this.stationTarget.z - pos.z);
-    const dist = _toStation.length();
-    if (dist > STATION_ARRIVE) {
-      _toStation.divideScalar(dist); // normalise
-      this.turnTarget = Math.atan2(_toStation.x, _toStation.z); // face the way we're walking
-      const step = Math.min(STATION_SPEED * dt, dist);
-      pos.x += _toStation.x * step;
-      pos.z += _toStation.z * step;
+    _moveStep.set(this.moveTarget[0] - pos.x, 0, this.moveTarget[2] - pos.z);
+    const dist = _moveStep.length();
+    if (dist > MOVE_ARRIVE) {
+      _moveStep.divideScalar(dist); // normalise
+      _movePos[0] = pos.x;
+      _movePos[1] = pos.y;
+      _movePos[2] = pos.z;
+      this.turnTarget = yawTowardVec(_movePos, this.moveTarget); // face the way we're walking
+      const step = Math.min(this.moveSpeed * dt, dist);
+      pos.x += _moveStep.x * step;
+      pos.z += _moveStep.z * step;
       this.playLocomotion('walk');
-      this.walkingToStation = true;
-    } else if (this.walkingToStation) {
-      pos.x = this.stationTarget.x;
-      pos.z = this.stationTarget.z;
-      this.turnTarget = 0; // arrived → face the camera to deliver
+      this.moving = true;
+    } else if (this.moving) {
+      pos.x = this.moveTarget[0];
+      pos.z = this.moveTarget[2];
+      this.turnTarget = this.moveArriveFacing; // arrived → settle to the arrival facing
       this.stopLocomotion();
-      this.walkingToStation = false;
+      this.moving = false;
     }
   }
 
@@ -511,12 +533,14 @@ export class AvatarController {
   }
 
   /**
-   * Aim the LEFT arm at the stored world-space point target (the screen sits on the
-   * anchor's left, so the left arm reaches it without crossing the chest). Only engages
-   * while a point gesture is active (`this.pointing`) AND a target is set; otherwise it
-   * ramps out so the talking base resumes. The arm bone is rotated toward "shoulder →
-   * target" expressed in the bone's PARENT space, then slerped from the current local
-   * rotation by a smoothed, ramped weight — smooth in/out, never a snap.
+   * Aim the arm at the stored world-space point target. The arm on the target's side is
+   * auto-selected by performer-core `aimLimb` (the screen sits camera-right, so a screen
+   * point picks the LEFT arm — nothing crosses the chest), which also builds the desired
+   * parent-space local quaternion (the +Y-down-the-bone basis math, reproduced to the bit
+   * from this code and pinned by its Phase-2 fixture). The controller does only the bone
+   * lookup + the smoothed, ramped slerp. Only engages while a point gesture is active
+   * (`this.pointing`) AND a target is set; otherwise it ramps out so the talking base
+   * resumes. Allocation-free (reused scratch + aimLimb's plain tuples).
    */
   private applyPointing(dt: number): void {
     // Hold the point for a beat, then release it (face front, drop the arm).
@@ -533,47 +557,35 @@ export class AvatarController {
     this.pointAimAmount += (want - this.pointAimAmount) * rate;
     if (this.pointAimAmount < 0.001 || !this.animRoot || !this.pointTarget) return;
 
-    // The LEFT arm (on the screen's side) does the pointing so nothing crosses the chest.
-    const arm = this.animRoot.getObjectByName('LeftArm');
-    if (!arm || !arm.parent) return;
-    const parent = arm.parent;
-
-    // World-space shoulder position and aim direction (shoulder → target).
-    arm.getWorldPosition(_aimShoulder);
+    // World-space aim direction (shoulder → target). Use the left shoulder as the origin
+    // (as the prior hardcoded-LeftArm path did); the side is the arm that aims from this
+    // direction's azimuth — for a camera-right (+X) screen target that is the LEFT arm,
+    // identical to before. (Matches aimLimb's `auto`: targetDir.x >= 0 → left.)
+    const ref = this.animRoot.getObjectByName('LeftArm');
+    if (!ref) return;
+    ref.getWorldPosition(_aimShoulder);
     _aimTarget.copy(this.pointTarget);
     _aimDir.subVectors(_aimTarget, _aimShoulder);
     if (_aimDir.lengthSq() < 1e-8) return;
     _aimDir.normalize();
 
-    // Express the aim direction in the arm's PARENT space (the space the bone's
-    // local quaternion lives in), so the result composes cleanly with the rig.
-    parent.getWorldQuaternion(_aimParentWorld);
-    _aimParentInv.copy(_aimParentWorld).invert();
-    _aimDir.applyQuaternion(_aimParentInv).normalize();
+    const side: 'left' | 'right' = _aimDir.x >= 0 ? 'left' : 'right';
+    const arm = this.animRoot.getObjectByName(side === 'left' ? 'LeftArm' : 'RightArm');
+    if (!arm || !arm.parent) return;
+    // Build the parent-space upper-arm + forearm targets via aimLimb, reading the selected
+    // arm's parent world quaternion (its parent space). Side passed explicitly so the bone
+    // lookup and solver agree exactly.
+    arm.parent.getWorldQuaternion(_aimParentWorld);
+    aimArm(_aimDir, _aimParentWorld, side, _aimUpper, _aimFore, POINT_AIM_OPTS);
 
-    // Build a desired local rotation whose +Y axis (the down-the-bone axis for RPM
-    // arm bones) points along the aim direction. We pick a stable up reference and
-    // orthonormalize to avoid gimbal flips, then read the rotation off the basis.
-    _aimY.copy(_aimDir);
-    _aimZ.set(0, 0, 1);
-    if (Math.abs(_aimY.dot(_aimZ)) > 0.99) _aimZ.set(1, 0, 0); // avoid degeneracy
-    _aimX.crossVectors(_aimY, _aimZ).normalize();
-    _aimZ.crossVectors(_aimX, _aimY).normalize();
-    _aimMat.makeBasis(_aimX, _aimY, _aimZ);
-    _aimDesired.setFromRotationMatrix(_aimMat);
+    // Slerp from the clip's current local rotation toward the aim by a capped, ramped
+    // weight — understated and stable, never overriding the clip entirely.
+    arm.quaternion.slerp(_aimUpper, POINT_AIM_WEIGHT * this.pointAimAmount);
 
-    // Slerp from the clip's current local rotation toward the aim by a capped,
-    // ramped weight — understated and stable, never overriding the clip entirely.
-    const w = POINT_AIM_WEIGHT * this.pointAimAmount;
-    arm.quaternion.slerp(_aimDesired, w);
-
-    // Straighten the forearm so the whole arm extends as a clean point. (No wrist/forearm
-    // roll — a plain point at the screen, no palm-up supination, so nothing twists.)
-    const fore = this.animRoot.getObjectByName('LeftForeArm');
-    if (fore) {
-      _q.identity();
-      fore.quaternion.slerp(_q, POINT_FOREARM_WEIGHT * this.pointAimAmount);
-    }
+    // Straighten the forearm (aimLimb returns an identity forearm target — a plain point,
+    // no wrist/forearm roll, so nothing twists).
+    const fore = this.animRoot.getObjectByName(side === 'left' ? 'LeftForeArm' : 'RightForeArm');
+    if (fore) fore.quaternion.slerp(_aimFore, POINT_FOREARM_WEIGHT * this.pointAimAmount);
   }
 
   /**
@@ -592,16 +604,26 @@ export class AvatarController {
     if (!this.fingerBones) this.cacheFingerBones();
     if (!this.fingerBones) return;
 
-    // How many fingers are up right now (1, then 2, then 3), held on the last.
-    const n = this.countT < COUNT_PHASE ? 1 : this.countT < 2 * COUNT_PHASE ? 2 : 3;
-    // Targets per finger: index, middle, ring (counted) + pinky (always curled).
-    const target = [n >= 1 ? 1 : 0, n >= 2 ? 1 : 0, n >= 3 ? 1 : 0, 0];
-    const k = 1 - Math.exp(-dt / 0.12); // smoothing toward the target
+    // performer-core computes the 1→2→3 ramp + the per-joint target curl (curl[j]·(1-ext),
+    // ext∈{0,1}) — the same FINGER_CURL/COUNT_PHASE numbers, now in fingerCount. We recover
+    // the per-finger up/down binary + the curl constants from its output, then keep the
+    // controller's per-finger smoothing (fingerExt) + apply, exactly as before.
+    const curls = countFingers(3, this.countT, this.fingerTarget).curls;
+    // Pinky (finger 3) is always down → its row is the curl constants curl[j].
+    const curlConst = curls[3] ?? [];
+    const k = 1 - Math.exp(-dt / COUNT_SMOOTH_TAU); // smoothing toward the target
     for (let f = 0; f < 4; f++) {
-      this.fingerExt[f] += (target[f] - this.fingerExt[f]) * k;
+      const row = curls[f] ?? [];
+      // A finger is "up" iff its target curls are ~0 (extended); else it folds.
+      const up = (row[0] ?? 0) === 0 ? 1 : 0;
+      this.fingerExt[f] += (up - this.fingerExt[f]) * k;
       const ext = this.fingerExt[f];
       const joints = this.fingerBones[f];
-      for (let j = 0; j < joints.length; j++) joints[j].rotation.x = FINGER_CURL[j] * (1 - ext);
+      if (!joints) continue;
+      for (let j = 0; j < joints.length; j++) {
+        const bone = joints[j];
+        if (bone) bone.rotation.x = (curlConst[j] ?? 0) * (1 - ext);
+      }
     }
   }
 
@@ -681,27 +703,25 @@ export class AvatarController {
       const fwd = _fwd.set(0, 0, 1).applyQuaternion(_q);
       const up = _up.set(0, 1, 0).applyQuaternion(_q);
       const right = _right.set(1, 0, 0).applyQuaternion(_q);
-      const f = dir.dot(fwd);
-      if (f > 0.05) {
-        const hA = Math.atan2(dir.dot(right), f);
-        const vA = Math.atan2(dir.dot(up), f);
-        const maxA = 0.5; // ~28° max eye travel
-        const hw = Math.min(1, Math.abs(hA) / maxA) * 0.85;
-        const vw = Math.min(1, Math.abs(vA) / maxA) * 0.85;
-        if (hA > 0) {
-          target.eyeLookInLeft = hw;
-          target.eyeLookOutRight = hw;
-        } else {
-          target.eyeLookOutLeft = hw;
-          target.eyeLookInRight = hw;
-        }
-        if (vA > 0) {
-          target.eyeLookUpLeft = vw;
-          target.eyeLookUpRight = vw;
-        } else {
-          target.eyeLookDownLeft = vw;
-          target.eyeLookDownRight = vw;
-        }
+      // performer-core aimEye applies the same front-gate (z>0.05), ±maxAngle clamp and
+      // weight (the former maxA 0.5 / 0.85 literals); gazeMorph hands back the normalized
+      // horizontal/vertical morph weights + their signs. The InLeft/OutRight cross-wiring
+      // below is the avatar's rig binding and stays here.
+      gazeMorph(dir.dot(right), dir.dot(up), dir.dot(fwd), _gaze);
+      const { hw, vw } = _gaze;
+      if (_gaze.hPos) {
+        target.eyeLookInLeft = hw;
+        target.eyeLookOutRight = hw;
+      } else {
+        target.eyeLookOutLeft = hw;
+        target.eyeLookInRight = hw;
+      }
+      if (_gaze.vPos) {
+        target.eyeLookUpLeft = vw;
+        target.eyeLookUpRight = vw;
+      } else {
+        target.eyeLookDownLeft = vw;
+        target.eyeLookDownRight = vw;
       }
     }
 
@@ -714,13 +734,13 @@ export class AvatarController {
   }
 
   update(dt: number): void {
-    // Walk between stage stations (centre ↔ beside the screen) before posing this frame.
-    this.updateStation(dt);
+    // Walk toward the current move target (centre ↔ beside the screen) before posing.
+    this.updateMove(dt);
     // Advance skeletal body animation. With idle motion OFF, let the current clip
     // settle into a still pose then freeze it (no breathing/weight-shift) — but
-    // always animate while speaking, or while walking to a station, so the legs move.
+    // always animate while speaking, or while walking to a mark, so the legs move.
     let adv = dt;
-    if (!this.idleMotion && !this.speaking && !this.walkingToStation) {
+    if (!this.idleMotion && !this.speaking && !this.moving) {
       if (this.idleHoldT < 1.6) this.idleHoldT += dt;
       else adv = 0; // hold the settled pose
     }

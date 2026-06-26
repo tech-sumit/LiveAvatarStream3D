@@ -8,3 +8,8 @@ export * from './director.js';
 export * from './newsreport.js';
 export * from './newsreportCompile.js';
 export * from './bridge.js';
+export * from './stage.js';
+export * from './score.js';
+export * from './performance.js';
+export * from './presets.js';
+export * from './scoreCompile.js';

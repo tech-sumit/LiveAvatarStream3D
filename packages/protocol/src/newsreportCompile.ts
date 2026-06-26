@@ -75,10 +75,12 @@ function ensureTerminal(s: string): string {
   const t = s.trim();
   return /[.!?]$/.test(t) ? t : t + '.';
 }
-function round1(n: number): number {
+// round1/estDuration are exported so the Score path (scoreCompile.newsReportAudio) reuses the
+// EXACT same timeline math — the two audio paths must stay byte-identical.
+export function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
-function estDuration(text: string): number {
+export function estDuration(text: string): number {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
   return Math.max(1, (words * 60) / WPM);
 }
