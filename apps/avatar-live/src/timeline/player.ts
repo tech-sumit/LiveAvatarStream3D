@@ -97,6 +97,9 @@ export class TimelinePlayer {
   }
 
   // A cue's end framing: recorded path's last key, a captured pose, or a preset.
+  // Preset framings come from `poseFor`, which now resolves size presets through
+  // performer-core `composeShot` (subjectsForCue + compositionFor) via the core
+  // adapter — the captured-pose / recorded-path branches stay as solver overrides.
   private resolvePose(cue: Cue, hc: THREE.Vector3, hh: number): CameraPose {
     if (cue.path && cue.path.length) return tupleToPose(cue.path[cue.path.length - 1].p);
     if (cue.pose) return tupleToPose(cue.pose);
