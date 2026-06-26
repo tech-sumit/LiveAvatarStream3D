@@ -263,11 +263,13 @@ export class Stage {
     if (!on) this.controls.update();
   }
 
-  /** Directly place the camera (used by the timeline director each frame). */
-  setCameraPose(pos: THREE.Vector3, target: THREE.Vector3, fov?: number): void {
-    this.camera.position.copy(pos);
-    this.controls.target.copy(target);
-    this.camera.lookAt(target);
+  /** Directly place the camera (used by the timeline director each frame, and by the unified
+   *  score.drive for authored follow:false framing cues). `pos`/`target` are read structurally
+   *  (x/y/z), so a plain {x,y,z} from ScoreDrive works as well as a THREE.Vector3. */
+  setCameraPose(pos: { x: number; y: number; z: number }, target: { x: number; y: number; z: number }, fov?: number): void {
+    this.camera.position.set(pos.x, pos.y, pos.z);
+    this.controls.target.set(target.x, target.y, target.z);
+    this.camera.lookAt(this.controls.target); // lookAt a real Vector3 (the just-set target)
     if (fov && Math.abs(fov - this.camera.fov) > 0.01) {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();

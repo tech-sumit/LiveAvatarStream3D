@@ -5,6 +5,7 @@ import { resolveGesture } from '@las/performer-core';
 import type { MouthCue } from '../avatar/avatarController.js';
 import type { EmotionName } from '../avatar/emotion.js';
 import { selectTalkClip } from '../avatar/gestures.js';
+import { motionCueTurn } from '../timeline/motionCues.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ScoreDrive — the SINGLE per-frame drive path shared by the live narration tick
@@ -66,6 +67,8 @@ export interface StageLike {
    * passes snap=true (that was the export-only override that diverged from live).
    */
   frameAnchorScreen(anchor: Vec3Like, screen: Vec3Like, dt: number, snap?: boolean): void;
+  /** Directly place the camera (authored static / move framing cues — follow:false keyframes). */
+  setCameraPose(pos: Vec3Like, target: Vec3Like, fov?: number): void;
   /** Scrub the back-wall montage video to time t (seekable for the frame-stepped export). */
   seekScreen(t: number): void;
   /** Vision-mixer cut: while active, the recorded output is the wall/cast video. */
@@ -103,6 +106,15 @@ export class ScoreDrive {
   private lastScreenActive: boolean | null = null;
   private warnedNodeTarget = false;
   private lastT = -Infinity;
+  // Camera follow seeding: false → the next follow frame snaps EXACTLY to the two-shot
+  // (the frame-0 of a take/export, restoring the deleted export snap-override), then every
+  // subsequent frame uses the shared 1-exp(-dt/0.45) ease. Re-armed on load / clock rewind.
+  private cameraArmed = false;
+  // Reused gaze/camera scratch so the per-frame look + authored-camera apply allocate nothing
+  // (rule C): resolveTarget / advanceCamera mutate and hand these out instead of new literals.
+  private readonly _gazeScratch = { x: 0, y: 0, z: 0 };
+  private readonly _camPos = { x: 0, y: 0, z: 0 };
+  private readonly _camTgt = { x: 0, y: 0, z: 0 };
 
   constructor(
     private stage: StageLike,
@@ -143,6 +155,7 @@ export class ScoreDrive {
     this.lastBeatIdx = -1;
     this.lastScreenActive = null;
     this.lastT = -Infinity;
+    this.cameraArmed = false;
   }
 
   /**
@@ -290,16 +303,31 @@ export class ScoreDrive {
     const kf = perf.camera[idx];
     if (!kf) return;
 
-    // follow keyframe: re-frame the two-shot every frame against the live (walked)
-    // avatar + the back-wall screen. The SAME smoothed follow runs on both clocks
-    // (snap=false → k = 1 - exp(-dt/0.45)); the deleted snap-override is gone.
     if (kf.follow) {
-      this.stage.frameAnchorScreen(this.avatar.group.position, this.screenAnchor.screen, dt, false);
+      // follow keyframe: re-frame the two-shot every frame against the live (walked) avatar
+      // + the back-wall screen. The FIRST frame of a take/export snaps EXACTLY (restoring the
+      // deleted export snap-override so frame 0 isn't an ease-in from the stale orbit pose);
+      // every subsequent frame uses the SAME smoothed follow on both clocks (snap=false →
+      // k = 1 - exp(-dt/0.45)), so live==export for frames ≥1 while frame 0 is the exact pose.
+      const snap = !this.cameraArmed;
+      this.cameraArmed = true;
+      this.stage.frameAnchorScreen(this.avatar.group.position, this.screenAnchor.screen, dt, snap);
+      return;
     }
-    // Static / relative-move keyframes carry their absolute pose in the Performance;
-    // the existing TimelinePlayer applies those for authored framing cues (preview),
-    // and the studio's narration Performance uses the follow keyframe above. No hard
-    // setCameraPose here keeps the two paths on the single follow term they share.
+
+    // Static / authored absolute framing keyframe (a follow:false cue, e.g. an authored
+    // close-up): land the pose. The former TimelinePlayer.updateCamera applied these for
+    // authored cues; on the unified drive path they were silently dropped. We re-apply them
+    // here through StageLike.setCameraPose, held every frame while the keyframe is active.
+    // Reused scratch keeps the per-frame path allocation-free (rule C).
+    this._camPos.x = kf.pos[0];
+    this._camPos.y = kf.pos[1];
+    this._camPos.z = kf.pos[2];
+    this._camTgt.x = kf.target[0];
+    this._camTgt.y = kf.target[1];
+    this._camTgt.z = kf.target[2];
+    this.cameraArmed = true; // a later follow eases from this authored pose, not a hard snap
+    this.stage.setCameraPose(this._camPos, this._camTgt, kf.fov);
   }
 
   // ── screen channel (back-wall montage cut, frame-seekable for export) ───────
@@ -334,8 +362,15 @@ export class ScoreDrive {
   private resolveTarget(
     ref: { pos: [number, number, number] } | { bind: 'face' | 'chest' | 'root' } | { node: string },
   ): Vec3Like {
+    // Mutate + return a reused scratch (rule C): advanceLook hands the result straight to
+    // setGazeTarget, which is read out by avatar.update(dt) within THIS same frame, so a single
+    // shared buffer never aliases across frames.
+    const out = this._gazeScratch;
     if ('pos' in ref) {
-      return { x: ref.pos[0], y: ref.pos[1], z: ref.pos[2] };
+      out.x = ref.pos[0];
+      out.y = ref.pos[1];
+      out.z = ref.pos[2];
+      return out;
     }
     const gp = this.avatar.group.position;
     const hc = this.avatar.headCenter;
@@ -347,17 +382,29 @@ export class ScoreDrive {
         console.warn(`scoreDrive: node-bound target '${ref.node}' not yet resolvable at runtime; using avatar root`);
         this.warnedNodeTarget = true;
       }
-      return { x: gp.x, y: gp.y, z: gp.z };
+      out.x = gp.x;
+      out.y = gp.y;
+      out.z = gp.z;
+      return out;
     }
     switch (ref.bind) {
       case 'face':
-        return { x: hc.x + gp.x, y: hc.y + gp.y, z: hc.z + gp.z };
+        out.x = hc.x + gp.x;
+        out.y = hc.y + gp.y;
+        out.z = hc.z + gp.z;
+        return out;
       case 'chest':
         // chest ≈ headCenter dropped ~0.4 m (the compiler's DEFAULT_BODY chest offset).
-        return { x: hc.x + gp.x, y: hc.y + gp.y - 0.4, z: hc.z + gp.z };
+        out.x = hc.x + gp.x;
+        out.y = hc.y + gp.y - 0.4;
+        out.z = hc.z + gp.z;
+        return out;
       case 'root':
       default:
-        return { x: gp.x, y: gp.y, z: gp.z };
+        out.x = gp.x;
+        out.y = gp.y;
+        out.z = gp.z;
+        return out;
     }
   }
 
@@ -370,6 +417,7 @@ export class ScoreDrive {
     this.lastScreenActive = null;
     this.lastTalkClip = 'idle';
     this.talkSeq = 0;
+    this.cameraArmed = false;
   }
 }
 
@@ -410,9 +458,13 @@ function overlayClipFor(g: Performance['gestures'][number]): string | null {
 // replacement for performer.ts's `narrationSegs` flat array + `{idx}` cursor (Task 4):
 //   - each segment → one timed gesture (kind from parseScriptLine; drive + baseEnergy
 //     resolved deterministically) + one beat projection (emotion/gesture/posture);
-//   - a single follow:true camera keyframe → the two-shot the export used to apply via
-//     the (now deleted) snap-override, NOW applied to live AND export off one term;
-//   - the timeline's `cam.screenSource` windows → the `screen` channel (montage sync).
+//   - a follow:true two-shot camera keyframe (frame-0 snapped by ScoreDrive, then eased),
+//     PLUS any authored timeline camera-track cues as follow:false absolute keyframes;
+//   - the timeline's motion-track cues → the `turns`/`gestures` channels (same semantics as
+//     catalog.applyMotion via the shared `motionCueTurn`), so the presenter turns/points/waves
+//     on BOTH the live and export clocks (the Phase-4c cutover had dropped this);
+//   - the timeline's `cam.screenSource` windows → the `screen` channel (montage sync), with
+//     overlapping/nested windows merged to preserve the old updateScreenSource union.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** A parsed narration segment (parseScriptLine output + its absolute start time). */
@@ -428,10 +480,44 @@ export interface ScreenWindow {
   duration: number;
 }
 
+/** A timeline motion-track cue: its start time + its catalog type (e.g. 'motion.turnScreen'). */
+export interface MotionCue {
+  t: number;
+  type: string;
+}
+
+/** An authored timeline camera-track cue, already resolved to an absolute pose (follow:false). */
+export interface CameraCue {
+  tSec: number;
+  pos: [number, number, number];
+  target: [number, number, number];
+  fov: number;
+}
+
+/** Optional timeline channels folded into the narration Performance (mirrors `screens`). */
+export interface NarrationExtras {
+  motionCues?: MotionCue[];
+  cameraCues?: CameraCue[];
+  /** Emit the two-shot follow keyframe (default true); live free-text Speak passes the
+   *  Auto-align toggle so a user who disabled it keeps their manually-framed camera. */
+  followCamera?: boolean;
+}
+
 const POSTURE_OF: Record<'low' | 'med' | 'high', 'relaxed' | 'neutral' | 'leaning_in'> = {
   low: 'relaxed',
   med: 'neutral',
   high: 'leaning_in',
+};
+
+// Motion cue → the GestureKind that plays it on the unified score.drive `gestures` channel
+// (the turn part is sourced separately from the shared `motionCueTurn`). turnScreen/faceFront
+// only turn — no gesture clip. This keeps the take/export on the SAME gesture machinery the
+// narration segments use, instead of the preview-only raw playClip in catalog.applyMotion.
+const MOTION_GESTURE: Record<string, GestureKind | undefined> = {
+  'motion.point': 'point',
+  'motion.wave': 'wave',
+  'motion.nod': 'nod',
+  'motion.explain': 'explain',
 };
 
 export function buildNarrationPerformance(
@@ -439,9 +525,11 @@ export function buildNarrationPerformance(
   durationSec: number,
   screens: ScreenWindow[] = [],
   fallbackEmotion: EmotionName = 'neutral',
+  extra: NarrationExtras = {},
 ): Performance {
   const beats: Performance['beats'] = [];
   const gestures: Performance['gestures'] = [];
+  const turns: Performance['turns'] = [];
   for (let i = 0; i < segs.length; i++) {
     const seg = segs[i];
     if (!seg) continue;
@@ -466,20 +554,64 @@ export function buildNarrationPerformance(
     });
   }
 
-  // The two-shot follow keyframe (presenter beside the screen): re-framed every frame
-  // against self.root (the walked avatar) + the back-wall screen. This is the unified
-  // camera both clocks now share.
-  const camera: Performance['camera'] = [
-    { tSec: 0, pos: [0, 0, 0], target: [0, 0, 0], fov: 0, follow: true, followSubjects: [{ bind: 'root' }] },
-  ];
-
-  // Screen-cut windows → start/end marks (source 'screen' on, 'scene' off), sorted by tSec.
-  const screen: Performance['screen'] = [];
-  for (const w of screens) {
-    screen.push({ tSec: w.start, source: 'screen' });
-    screen.push({ tSec: w.start + w.duration, source: 'scene' });
+  // Timeline motion-track cues → the SAME turns[]/gestures[] channels the score already
+  // consumes, with the SAME semantics as catalog.applyMotion (shared `motionCueTurn`): a
+  // 'motion.turnScreen' cue at t becomes setTurn(0.6) at t on both the live and export clocks.
+  for (const m of extra.motionCues ?? []) {
+    const yaw = motionCueTurn(m.type);
+    if (yaw !== undefined) turns.push({ tSec: m.t, yaw });
+    const gk = MOTION_GESTURE[m.type];
+    if (gk) {
+      const gd = resolveGesture(gk);
+      const gDrive: Performance['gestures'][number]['drive'] = { kind: gd.kind, baseEnergy: 'med' };
+      if (gd.clip !== undefined) gDrive.clip = gd.clip;
+      if (gd.ik !== undefined) gDrive.ik = gd.ik;
+      gestures.push({ tSec: m.t, kind: gk, drive: gDrive });
+    }
   }
-  screen.sort((a, b) => a.tSec - b.tSec);
+  // The one-shot turn/gesture cursors latch forward, so both channels MUST be ascending.
+  turns.sort((a, b) => a.tSec - b.tSec);
+  gestures.sort((a, b) => a.tSec - b.tSec);
+
+  // Camera channel. The two-shot follow keyframe (presenter beside the screen) is re-framed
+  // every frame against self.root + the back-wall screen — the unified camera both clocks
+  // share; emitted unless followCamera is disabled (live free-text Speak with Auto-align off).
+  // Authored timeline framing cues (follow:false) are layered on top so the unified path
+  // honors them (they were silently dropped after the Phase-4c cutover); advanceCamera picks
+  // the latest keyframe at-or-before t, so the follow covers the gaps before/between cues.
+  const camera: Performance['camera'] = [];
+  if (extra.followCamera ?? true) {
+    camera.push({ tSec: 0, pos: [0, 0, 0], target: [0, 0, 0], fov: 0, follow: true, followSubjects: [{ bind: 'root' }] });
+  }
+  for (const c of extra.cameraCues ?? []) {
+    camera.push({ tSec: c.tSec, pos: c.pos, target: c.target, fov: c.fov, follow: false });
+  }
+  // Stable sort keeps the follow keyframe BEFORE an authored cue at the same tSec, so an
+  // authored framing at t=0 wins over the follow there (advanceCamera takes the later index).
+  camera.sort((a, b) => a.tSec - b.tSec);
+
+  // Screen-cut windows → start/end marks (source 'screen' on, 'scene' off). Overlapping /
+  // nested windows are MERGED so the latest-mark-wins reducer in advanceScreen reproduces the
+  // old updateScreenSource `.some()` union (a still-open outer window isn't ended when a nested
+  // inner window closes).
+  const screen: Performance['screen'] = [];
+  const ivals = screens
+    .map((w) => ({ s: w.start, e: w.start + w.duration }))
+    .filter((iv) => iv.e > iv.s)
+    .sort((a, b) => a.s - b.s);
+  let cur: { s: number; e: number } | null = null;
+  const flush = (iv: { s: number; e: number }): void => {
+    screen.push({ tSec: iv.s, source: 'screen' });
+    screen.push({ tSec: iv.e, source: 'scene' });
+  };
+  for (const iv of ivals) {
+    if (cur && iv.s <= cur.e) cur.e = Math.max(cur.e, iv.e); // overlap / adjacent → extend
+    else {
+      if (cur) flush(cur);
+      cur = { s: iv.s, e: iv.e };
+    }
+  }
+  if (cur) flush(cur);
 
   return {
     stageId: 'studio',
@@ -487,7 +619,7 @@ export function buildNarrationPerformance(
     beats,
     camera,
     motion: [],
-    turns: [],
+    turns,
     gestures,
     looks: [],
     emotes: [],
