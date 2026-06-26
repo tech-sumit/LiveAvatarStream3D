@@ -1,4 +1,5 @@
-import { validateNewsReportDoc, compileNewsReport } from '@las/protocol';
+import { validateNewsReportDoc, compileNewsReport, validateScore, compileScore } from '@las/protocol';
+import type { Stage, AudioTimings, Performance } from '@las/protocol';
 import { r2Available, r2GetJson, r2List, r2PutBlob, r2PutJson, r2Url } from '../storage/r2.js';
 import type { Cue } from '../timeline/types.js';
 import type { StudioContext } from './context.js';
@@ -218,6 +219,32 @@ export class ProjectStore {
     this.app.dom.projectNameEl.value = sanitize(title);
     this.app.log(`imported newscast: ${title}`);
     return title;
+  }
+
+  /**
+   * Land an authored {@link Score} on the studio's Score runtime (Phase 5). The Score
+   * validates via `@las/protocol`'s `validateScore`, compiles via `compileScore` against
+   * the supplied `stage` + per-word `timings`, and the resulting `Performance` is handed
+   * to the `Performer`'s `ScoreDrive` — the SAME single drive path the live narration tick
+   * and the offline export consume. This is the *defined consumer* of a compiled Performance
+   * (the path the original plan left unwired). Returns the compiled `Performance`.
+   */
+  async importScore(doc: unknown, stage: Stage, timings: AudioTimings): Promise<Performance> {
+    const score = validateScore(doc);
+    const perf = compileScore(stage, score, timings);
+    this.c.performer.loadPerformance(perf);
+    this.app.log(`imported Score → ${perf.beats.length} beat(s) on stage "${stage.id}".`);
+    return perf;
+  }
+
+  /**
+   * Land a pre-compiled {@link Performance} directly on the studio's `ScoreDrive` (skips the
+   * `compileScore` step for callers that already hold a Performance). Same landing path as
+   * {@link importScore}.
+   */
+  applyPerformance(perf: Performance): void {
+    this.c.performer.loadPerformance(perf);
+    this.app.log(`applied Performance → ${perf.beats.length} beat(s).`);
   }
 
   private async applyProject(doc: ProjectDoc): Promise<void> {

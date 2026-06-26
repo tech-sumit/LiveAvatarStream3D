@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { EMOTIONS, GESTURES, POSTURES, StreamedSegment } from './dsl.js';
+import { StreamedSegment } from './dsl.js';
+import { GestureKind, EmotionPreset, ShotSize } from './score.js';
 
 /**
  * The director-LLM contract. The director turns a user turn (realtime) or a
@@ -35,30 +36,53 @@ export const DirectorStreamChunk = z.discriminatedUnion('type', [
 export type DirectorStreamChunk = z.infer<typeof DirectorStreamChunk>;
 
 /**
- * The system prompt that constrains the LLM to emit valid DSL. Kept here so the
- * control plane and any offline tooling share one source of truth.
+ * The system prompt that constrains the LLM to emit a valid {@link Score} (the
+ * Phase 5 Score runtime). The director now emits ONE Score object — a script plus
+ * per-beat cues that reference NAMED Stage refs and use NAMED presets (emotion /
+ * shot size / gesture kind) rather than raw numbers — so direction is data the
+ * compiler turns into a Performance. Kept here so the control plane and any offline
+ * tooling share one source of truth.
  */
-export function buildDirectorSystemPrompt(persona: string): string {
+export function buildDirectorSystemPrompt(persona: string, stageId = 'studio'): string {
   return [
-    'You are the director of a realtime digital avatar. You decide what the',
-    'avatar says and how it performs each beat. Respond ONLY as a stream of',
-    'JSON objects, one per line (JSONL), each matching this shape:',
-    '{ "seq": <int>, "turnId": "<id>", "text": "<words>",',
-    `  "emotion": one of [${EMOTIONS.join(', ')}],`,
-    `  "gesture": one of [${GESTURES.join(', ')}],`,
-    `  "posture": one of [${POSTURES.join(', ')}],`,
-    '  "emphasis": [<words from text>], "pause_ms_after": <int ms>,',
-    '  "final": <true on the last segment> }',
-    'Keep each segment to one short spoken sentence so it can be streamed and',
-    'performed immediately. Do not output markdown, prose, or any text outside',
-    'the JSONL objects.',
+    'You are the director of a realtime digital avatar. You decide what the avatar',
+    'says AND how it performs, and you emit a single JSON "Score" object (no prose,',
+    'no markdown, no text outside the JSON). The Score is compiled into a rendered',
+    'performance, so it MUST validate against this shape:',
+    '',
+    `{ "stage": "${stageId}",`,
+    '  "defaults": { "emotion": <emotion preset>, "gait": "walk"|"stride" },   // optional',
+    '  "beats": [ {',
+    '    "text": "<one short spoken sentence>",',
+    '    "emotion": <emotion preset>,            // optional; preset NAME, never numbers',
+    '    "emphasis": ["<words from text>"],       // optional',
+    '    "pauseMsAfter": <int ms>,                // optional',
+    '    "cues": [ /* zero or more, see below */ ]',
+    '  } ] }',
+    '',
+    'Each cue is ONE of these objects (optionally prefixed with "at": { "word": <int index into the beat text> }):',
+    '  { "gesture": { "kind": <gesture kind>, "target": "<ref>"?, "hand": "auto"|"left"|"right"?, "count": <int>?, "hold": <sec>?, "amount": <0..1>? } }',
+    '  { "emote": { "emotion": <emotion preset>, "intensity": <0..1>? } }',
+    '  { "look": { "at": "<ref>" } }',
+    '  { "turn": { "to": "<ref>" | <yaw radians> } }',
+    '  { "move": { "to": "<ref>", "gait": "walk"|"stride"?, "speed": <number>? } }',
+    '  { "camera": { "frame": { "subjects": ["<ref>", ...], "size": <shot size>? }, "follow": <bool>? } }',
+    '  { "camera": { "shot": "<savedShot id>" } }',
+    '  { "camera": { "move": "dolly"|"orbit"|"pan"|"truck"|"pedestal", "amount": <number>, "ease": "linear"|"ease_in"|"ease_out"|"ease_in_out"? } }',
+    '',
+    `Allowed emotion presets: [${EmotionPreset.options.join(', ')}].`,
+    `Allowed gesture kinds: [${GestureKind.options.join(', ')}].`,
+    `Allowed camera shot sizes: [${ShotSize.options.join(', ')}].`,
+    'A "ref" is a NAMED Stage mark/target (e.g. "center", "screen") or one of',
+    '"self.face" / "self.chest" / "self.root". Prefer named refs and presets;',
+    'NEVER invent raw camera coordinates — frame by subjects + a size preset.',
+    '',
     'Perform expressively: do not leave the avatar static. Let "emotion" track the',
-    'meaning of each beat and shift it across a turn rather than repeating one value,',
-    'and add a fitting "gesture" (and occasional "posture" change) on beats that',
-    'warrant emphasis instead of defaulting everything to "none"/"neutral". Match',
-    'these to the content and persona; do not perform at random.',
-    'On the avatar\'s very first beat of a conversation (no prior avatar turns),',
-    'open with a brief greeting using "gesture": "wave" and a warm "emotion".',
+    'meaning of each beat and shift it across the turn rather than repeating one value;',
+    'add a fitting "gesture" cue on beats that warrant emphasis instead of leaving every',
+    'beat bare. Match the direction to the content and persona; do not perform at random.',
+    'On the avatar\'s very first beat (no prior avatar turns), open with a brief greeting',
+    'whose first cue is { "gesture": { "kind": "wave" } } and a warm "emotion".',
     persona ? `\nAvatar persona / behavior:\n${persona}` : '',
   ].join('\n');
 }

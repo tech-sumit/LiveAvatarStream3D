@@ -7,6 +7,7 @@ import { canExportMp4 } from '../capture/mp4Encoder.js';
 import { cueId, type Cue } from '../timeline/types.js';
 import { SCREEN_STAND_POS } from '../scene/studio.js';
 import { ScoreDrive, buildNarrationPerformance, type NarrationSeg } from './scoreDrive.js';
+import type { Performance } from '@las/protocol';
 import type { EmotionName } from '../avatar/emotion.js';
 import type { StudioContext } from './context.js';
 import type { VoicePicker } from './voicePicker.js';
@@ -402,6 +403,18 @@ export class Performer {
   /** The emotion to fall back to when a segment authors none (the UI selector). */
   private fallbackEmotion(): EmotionName {
     return this.app.dom.emotionSel.value as EmotionName;
+  }
+
+  /**
+   * Land an externally-compiled `Performance` (the Phase 5 Score path) on THIS object's
+   * `ScoreDrive` — the same single drive path the live narration tick and the offline
+   * export consume. `projectStore.importScore`/`applyPerformance` call this after running
+   * `@las/protocol`'s `compileScore`, so an authored Score reaches the runtime through the
+   * exact frame loop a generated narration uses (camera/gesture/emotion/turn/look/screen).
+   * The cursors reset (a fresh take from t=0), so the next preview/export replays it cleanly.
+   */
+  loadPerformance(perf: Performance): void {
+    this.score.load(perf, this.fallbackEmotion());
   }
 
   /** The synced per-frame loop (registered on stage.onFrame). */

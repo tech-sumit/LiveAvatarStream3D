@@ -15,8 +15,9 @@ import { Emotion, CameraShot, CameraMove } from './dsl.js';
  * - Commands are a discriminated union on the `cmd` literal. Each command
  *   carries its own `params` object.
  * - Params stay permissive where the studio itself does the heavy validation
- *   (e.g. a whole NewsReportDoc is `z.unknown()` — it is re-validated by the
- *   protocol's `validateNewsReportDoc`). Simple scalars are strict.
+ *   (e.g. a whole newscast `doc` is `z.unknown()` — the studio re-validates it as a
+ *   `Score` via `validateScore`, or auto-lowers a legacy `NewsReportDoc` through
+ *   `compileNewsReportToScore`). Simple scalars are strict.
  * - Existing protocol enums are reused so the vocabulary cannot drift:
  *   {@link Emotion}, {@link CameraShot}, {@link CameraMove}.
  */
@@ -58,7 +59,15 @@ export type BridgeScreenshotTarget = z.infer<typeof BridgeScreenshotTarget>;
 // Per-command params.
 // ---------------------------------------------------------------------------
 
-/** A studio validates the doc itself, so the bridge keeps it opaque. */
+/**
+ * A studio validates the doc itself, so the bridge keeps it opaque.
+ *
+ * Since Phase 5 the studio validates `doc` as a {@link Score} (via `validateScore`)
+ * and lands the compiled `Performance` in its `ScoreDrive`. A legacy `NewsReportDoc`
+ * is still accepted: the dispatcher auto-lowers it through `compileNewsReportToScore`
+ * onto the SAME Score runtime. The envelope is unchanged — `doc` stays `z.unknown()`
+ * so either shape is accepted on the wire and validated by the studio.
+ */
 const NewscastDocParams = z.object({ doc: z.unknown() });
 const NewscastPatchParams = z.object({ patch: z.unknown() });
 

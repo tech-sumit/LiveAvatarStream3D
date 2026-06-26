@@ -27,7 +27,11 @@ export const Job = z.object({
   userId: z.string(),
   kind: JobKind,
   status: JobStatus,
-  /** Kind-specific payload (validated by the relevant schema downstream). */
+  /**
+   * Kind-specific payload (validated by the relevant schema downstream). For the 3D-engine
+   * path it may carry `{ score, stage }` (a Score + its Stage) — no envelope change: the
+   * field stays `z.unknown()` and the consumer validates via `validateScore` / `Stage.parse`.
+   */
   spec: z.unknown(),
   /** R2 key of the result, when succeeded. */
   outputKey: z.string().optional(),
@@ -42,6 +46,7 @@ export const QueueMessage = z.object({
   jobId: z.string(),
   kind: JobKind,
   userId: z.string(),
+  /** Kind-specific payload; may carry `{ score, stage }` for the 3D-engine path (see {@link Job}). */
   spec: z.unknown(),
 });
 export type QueueMessage = z.infer<typeof QueueMessage>;
