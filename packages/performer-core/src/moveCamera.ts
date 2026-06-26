@@ -4,18 +4,29 @@ import type { CameraMove, Pose, Vec3 } from './types.js';
 const UP: Vec3 = [0, 1, 0];
 const MIN_DOLLY_DIST = 0.2; // stage.nudgeCamera floors the dolly distance at 0.2 m
 
-function writePose(out: Pose | undefined, pos: Vec3, target: Vec3, fov: number): Pose {
+// Write scalar components into `out` in place when supplied (no allocation, cross-cutting
+// rule C); only build fresh Vec3 tuples on the allocating (no-`out`) path.
+function writePose(
+  out: Pose | undefined,
+  px: number,
+  py: number,
+  pz: number,
+  tx: number,
+  ty: number,
+  tz: number,
+  fov: number,
+): Pose {
   if (out) {
-    out.pos[0] = pos[0];
-    out.pos[1] = pos[1];
-    out.pos[2] = pos[2];
-    out.target[0] = target[0];
-    out.target[1] = target[1];
-    out.target[2] = target[2];
+    out.pos[0] = px;
+    out.pos[1] = py;
+    out.pos[2] = pz;
+    out.target[0] = tx;
+    out.target[1] = ty;
+    out.target[2] = tz;
     out.fov = fov;
     return out;
   }
-  return { pos, target, fov };
+  return { pos: [px, py, pz], target: [tx, ty, tz], fov };
 }
 
 /**
@@ -49,11 +60,11 @@ export function moveCamera(base: Pose, move: CameraMove, amount: number, out?: P
       const ux = (rx / rl) * amount;
       const uy = (ry / rl) * amount;
       const uz = (rz / rl) * amount;
-      return writePose(out, [px + ux, py + uy, pz + uz], [tx + ux, ty + uy, tz + uz], base.fov);
+      return writePose(out, px + ux, py + uy, pz + uz, tx + ux, ty + uy, tz + uz, base.fov);
     }
     case 'pedestal': {
       // pan = (0, amount, 0); applied to both camera and target.
-      return writePose(out, [px, py + amount, pz], [tx, ty + amount, tz], base.fov);
+      return writePose(out, px, py + amount, pz, tx, ty + amount, tz, base.fov);
     }
     case 'dolly': {
       // off = pos - target; shorten by `amount` (floored at 0.2 m); pos = target + off.
@@ -66,7 +77,7 @@ export function moveCamera(base: Pose, move: CameraMove, amount: number, out?: P
       ox *= k;
       oy *= k;
       oz *= k;
-      return writePose(out, [tx + ox, ty + oy, tz + oz], [tx, ty, tz], base.fov);
+      return writePose(out, tx + ox, ty + oy, tz + oz, tx, ty, tz, base.fov);
     }
     case 'pan': {
       // Target-only yaw about the camera's vertical axis: rotate (target - pos) about Y.
@@ -76,7 +87,7 @@ export function moveCamera(base: Pose, move: CameraMove, amount: number, out?: P
       const s = Math.sin(amount);
       const rdx = dx * c + dz * s;
       const rdz = -dx * s + dz * c;
-      return writePose(out, [px, py, pz], [px + rdx, ty, pz + rdz], base.fov);
+      return writePose(out, px, py, pz, px + rdx, ty, pz + rdz, base.fov);
     }
     case 'orbit': {
       // Net-new arc: rotate the camera about the target's vertical axis, keeping the target.
@@ -86,7 +97,7 @@ export function moveCamera(base: Pose, move: CameraMove, amount: number, out?: P
       const s = Math.sin(amount);
       const rdx = dx * c + dz * s;
       const rdz = -dx * s + dz * c;
-      return writePose(out, [tx + rdx, py, tz + rdz], [tx, ty, tz], base.fov);
+      return writePose(out, tx + rdx, py, tz + rdz, tx, ty, tz, base.fov);
     }
   }
 }

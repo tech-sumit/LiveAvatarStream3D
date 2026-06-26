@@ -41,18 +41,29 @@ const TWO_SHOT_TGT_OFF_X = 0.1;
 const TWO_SHOT_TGT_Y = 1.25;
 const TWO_SHOT_TGT_OFF_Z = 0.9;
 
-function writePose(out: Pose | undefined, pos: Vec3, target: Vec3, fov: number): Pose {
+// Write scalar components into `out` in place when supplied (no allocation, cross-cutting
+// rule C); only build fresh Vec3 tuples on the allocating (no-`out`) path.
+function writePose(
+  out: Pose | undefined,
+  px: number,
+  py: number,
+  pz: number,
+  tx: number,
+  ty: number,
+  tz: number,
+  fov: number,
+): Pose {
   if (out) {
-    out.pos[0] = pos[0];
-    out.pos[1] = pos[1];
-    out.pos[2] = pos[2];
-    out.target[0] = target[0];
-    out.target[1] = target[1];
-    out.target[2] = target[2];
+    out.pos[0] = px;
+    out.pos[1] = py;
+    out.pos[2] = pz;
+    out.target[0] = tx;
+    out.target[1] = ty;
+    out.target[2] = tz;
     out.fov = fov;
     return out;
   }
-  return { pos, target, fov };
+  return { pos: [px, py, pz], target: [tx, ty, tz], fov };
 }
 
 /**
@@ -82,9 +93,16 @@ export function composeShot(subjects: Subject[], composition: Composition, out?:
     const camZ = Math.max(s0.pos[2], s1.pos[2]) + dist;
     const balance = composition.balance ?? 0;
     const heightBias = composition.height ?? 0;
-    const pos: Vec3 = [mx + TWO_SHOT_CAM_OFF_X + balance, TWO_SHOT_CAM_Y, camZ];
-    const target: Vec3 = [mx + TWO_SHOT_TGT_OFF_X, TWO_SHOT_TGT_Y + heightBias, mz + TWO_SHOT_TGT_OFF_Z];
-    return writePose(out, pos, target, fov);
+    return writePose(
+      out,
+      mx + TWO_SHOT_CAM_OFF_X + balance,
+      TWO_SHOT_CAM_Y,
+      camZ,
+      mx + TWO_SHOT_TGT_OFF_X,
+      TWO_SHOT_TGT_Y + heightBias,
+      mz + TWO_SHOT_TGT_OFF_Z,
+      fov,
+    );
   }
 
   // Single subject.
@@ -98,7 +116,14 @@ export function composeShot(subjects: Subject[], composition: Composition, out?:
   const eyeX = s0.pos[0];
   const eyeY = s0.pos[1];
   const eyeZ = s0.pos[2];
-  const pos: Vec3 = [eyeX + spec.camOff[0] + balance, eyeY + spec.camOff[1], eyeZ + dist + spec.camOff[2]];
-  const target: Vec3 = [eyeX + spec.tgtOff[0], eyeY - drop + heightBias + spec.tgtOff[1], eyeZ + spec.tgtOff[2]];
-  return writePose(out, pos, target, fov);
+  return writePose(
+    out,
+    eyeX + spec.camOff[0] + balance,
+    eyeY + spec.camOff[1],
+    eyeZ + dist + spec.camOff[2],
+    eyeX + spec.tgtOff[0],
+    eyeY - drop + heightBias + spec.tgtOff[1],
+    eyeZ + spec.tgtOff[2],
+    fov,
+  );
 }
