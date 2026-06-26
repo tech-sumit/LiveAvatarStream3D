@@ -12,12 +12,13 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run build --workspace @las/performer-core && tsc -p tsconfig.json",
+    "typecheck": "npm run build --workspace @las/performer-core && tsc -p tsconfig.json --noEmit",
     "schema": "tsx scripts/gen-schema.ts",
     "test": "vitest run"
   },
   "dependencies": {
+    "@las/performer-core": "*",
     "zod": "^3.23.8"
   },
   "devDependencies": {
