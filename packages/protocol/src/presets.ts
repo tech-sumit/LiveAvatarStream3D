@@ -1,16 +1,10 @@
-import type { ShotSize } from './score.js'; // 'cu'|'mcu'|'medium'|'wide'  (named export now exists)
 import type { GestureKind } from './score.js';
 import type { EmotionPreset } from './score.js';
 
-export const CAMERA_SIZE_PRESET: Record<
-  ShotSize,
-  { distHeads: number; targetDropHeads: number; fov: number }
-> = {
-  cu: { distHeads: 4.0, targetDropHeads: 0.25, fov: 30 }, // pins catalog.poseFor('cam.close')
-  mcu: { distHeads: 5.2, targetDropHeads: 0.3, fov: 32 },
-  medium: { distHeads: 5.5, targetDropHeads: 0.6, fov: 35 },
-  wide: { distHeads: 9.0, targetDropHeads: 1.1, fov: 40 }, // pins catalog.poseFor('cam.wide')
-};
+// NOTE: size→framing presets live in performer-core's composeShot.SIZE_TABLE (the table that
+// actually frames the shot, including the bespoke `medium`/cam.anchor offsets). A protocol-side
+// CAMERA_SIZE_PRESET previously duplicated this and had DRIFTED for `medium`, so it was removed —
+// composeShot is the single source of truth.
 
 export const EMOTION_ENERGY: Record<EmotionPreset, 'low' | 'med' | 'high'> = {
   neutral: 'med',

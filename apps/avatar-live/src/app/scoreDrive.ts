@@ -101,6 +101,7 @@ export class ScoreDrive {
   private lastEmoteIdx = -1;
   private lastBeatIdx = -1;
   private lastScreenActive: boolean | null = null;
+  private warnedNodeTarget = false;
   private lastT = -Infinity;
 
   constructor(
@@ -330,12 +331,24 @@ export class ScoreDrive {
   // self.face → headCenter + group.position; self.chest → a chest offset below it;
   // self.root → group.position. A static {pos} is the compiled world point. This is
   // the un-rooted-ref fix: the compiler NEVER bakes self.*; the runtime owns them.
-  private resolveTarget(ref: { pos: [number, number, number] } | { bind: 'face' | 'chest' | 'root' }): Vec3Like {
+  private resolveTarget(
+    ref: { pos: [number, number, number] } | { bind: 'face' | 'chest' | 'root' } | { node: string },
+  ): Vec3Like {
     if ('pos' in ref) {
       return { x: ref.pos[0], y: ref.pos[1], z: ref.pos[2] };
     }
     const gp = this.avatar.group.position;
     const hc = this.avatar.headCenter;
+    if ('node' in ref) {
+      // Node-bound target: AvatarLike exposes no arbitrary scene-graph lookup, so we can't yet
+      // resolve a named node's world position here. Warn once and hold at the avatar root rather
+      // than the silent compile-time [0,0,0]. (Full live-node resolution is a follow-up.)
+      if (!this.warnedNodeTarget) {
+        console.warn(`scoreDrive: node-bound target '${ref.node}' not yet resolvable at runtime; using avatar root`);
+        this.warnedNodeTarget = true;
+      }
+      return { x: gp.x, y: gp.y, z: gp.z };
+    }
     switch (ref.bind) {
       case 'face':
         return { x: hc.x + gp.x, y: hc.y + gp.y, z: hc.z + gp.z };
