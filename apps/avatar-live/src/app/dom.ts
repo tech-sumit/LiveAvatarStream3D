@@ -14,6 +14,8 @@ export function bindDom() {
     rateEl: $<HTMLInputElement>('rate'),
     pitchEl: $<HTMLInputElement>('pitch'),
     emotionSel: $<HTMLSelectElement>('emotion'),
+    voiceMgrListEl: $<HTMLDivElement>('voiceMgrList'),
+    voiceMgrRefreshBtn: $<HTMLButtonElement>('voiceMgrRefresh'),
     shotSel: $<HTMLSelectElement>('shot'),
     glbInput: $<HTMLInputElement>('glb'),
     avatarSel: $<HTMLSelectElement>('avatarSel'),
