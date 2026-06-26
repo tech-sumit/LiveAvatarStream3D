@@ -6,9 +6,9 @@
   "description": "Realtime 3D talking avatar — stream a script, browser-rendered Three.js metahuman speaks it lip-synced in realtime.",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build --workspace @las/performer-core && vite build",
+    "build": "npm run build --workspace @las/protocol && vite build",
     "preview": "vite preview",
-    "typecheck": "npm run build --workspace @las/performer-core && tsc --noEmit",
+    "typecheck": "npm run build --workspace @las/protocol && tsc --noEmit",
     "test": "vitest run",
     "import-avatar": "node scripts/import-avatar.mjs"
   },
