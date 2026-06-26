@@ -11,6 +11,11 @@ export class TimelinePlayer {
   private timeline: Timeline = { duration: 0, cues: [] };
   private firedMotion = new Set<string>();
   private playClip: (name: string) => void = () => {};
+  // Reusable CameraPose buffers for the per-frame from→to ease (rule C). They must be
+  // DISTINCT (updateCamera holds both at once and lerpPose reads both), so poseFor writes
+  // each preset into its own buffer instead of allocating a fresh pose every frame.
+  private _poseTo: CameraPose = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 0 };
+  private _poseFrom: CameraPose = { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 0 };
 
   constructor(
     private stage: Stage,
@@ -32,6 +37,18 @@ export class TimelinePlayer {
     this.update(0);
   }
 
+  /**
+   * Begin a unified live-narration / export TAKE. Unlike begin() (the silent rehearsal),
+   * this does NOT call update(0) — camera, motion cues, and the screen cut all flow from the
+   * compiled Performance via app/scoreDrive.ts during the take, so firing them here too would
+   * double-drive (e.g. a t=0 motion cue would setTurn twice). It only takes the camera
+   * (director on) so the score's per-frame framing isn't fought by OrbitControls.update().
+   */
+  beginNarration(): void {
+    this.firedMotion.clear();
+    this.stage.setDirector(true); // the score owns the camera for the whole take
+  }
+
   /** Release the camera back to OrbitControls and end any screen cut. */
   end(): void {
     this.stage.setDirector(false);
@@ -51,13 +68,21 @@ export class TimelinePlayer {
     return this.timeline.cues.some((c) => c.track === 'camera' && c.type !== 'cam.screenSource');
   }
 
+  // PREVIEW-ONLY since Phase 4c: the unified live-narration + offline-export path no
+  // longer calls update() — it drives camera + gesture + the screen cut from the compiled
+  // `Performance` via app/scoreDrive.ts (the screen cut lives in `Performance.screen`, the
+  // gesture one-shots in `Performance.gestures`, sourced through TimelineEditor.screenWindows
+  // → buildNarrationPerformance). update() now runs ONLY for the silent timeline rehearsal
+  // (tickPreview), so fireMotion's once-latch + updateScreenSource's window stay here to
+  // serve that preview without touching the unified score.drive path.
   update(t: number): void {
     this.updateCamera(t);
     this.fireMotion(t);
     this.updateScreenSource(t);
   }
 
-  // "Cut to screen" cues toggle the recorded output to the wall/cast video.
+  // "Cut to screen" cues toggle the recorded output to the wall/cast video. (Preview-only;
+  // the live/export screen cut is driven from Performance.screen by ScoreDrive — see above.)
   // When no such cue is authored we don't touch the output (manual toggle wins).
   private updateScreenSource(t: number): void {
     const cues = this.timeline.cues.filter((c) => c.type === 'cam.screenSource');
@@ -89,18 +114,21 @@ export class TimelinePlayer {
       return;
     }
 
-    const to = this.resolvePose(active, hc, hh);
-    const from = idx > 0 ? this.resolvePose(cam[idx - 1], hc, hh) : to;
+    const to = this.resolvePose(active, hc, hh, this._poseTo);
+    const from = idx > 0 ? this.resolvePose(cam[idx - 1], hc, hh, this._poseFrom) : to;
     const e = easeInOut(active.duration > 0 ? clamp01((t - active.start) / active.duration) : 1);
     const pose = lerpPose(from, to, e);
     this.stage.setCameraPose(pose.pos, pose.target, pose.fov);
   }
 
   // A cue's end framing: recorded path's last key, a captured pose, or a preset.
-  private resolvePose(cue: Cue, hc: THREE.Vector3, hh: number): CameraPose {
+  // Preset framings come from `poseFor`, which now resolves size presets through
+  // performer-core `composeShot` (subjectsForCue + compositionFor) via the core
+  // adapter — the captured-pose / recorded-path branches stay as solver overrides.
+  private resolvePose(cue: Cue, hc: THREE.Vector3, hh: number, out?: CameraPose): CameraPose {
     if (cue.path && cue.path.length) return tupleToPose(cue.path[cue.path.length - 1].p);
     if (cue.pose) return tupleToPose(cue.pose);
-    return poseFor(cue.type, hc, hh);
+    return poseFor(cue.type, hc, hh, out);
   }
 
   private fireMotion(t: number): void {

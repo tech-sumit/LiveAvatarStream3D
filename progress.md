@@ -286,3 +286,15 @@ The implementation intentionally diverged from the original plan; trust this fil
   deferred to V2 per §9.5. Validated end-to-end: imported showcase.newscast.json → editor
   configured (script with [emotion][gesture] tags, headline, look, 12 cues) → exported an
   11.7s 720p MP4 with synced narration. Built via BatonDeck-orchestrated subagents.
+- 2026-06-26 — Score DSL Phase 5 (authoring/emission cut-over): authored data now enters as
+  Scores. `bridge.applyNewscast`/`patchNewscast` accept a `Score` (preferred) or a legacy
+  `NewsReportDoc` (auto-lowered via `compileNewsReportToScore`); BOTH flow through the SAME
+  Score runtime — `projectStore.importScore(doc, stage, timings)` → `@las/protocol`
+  `compileScore` → the Performer's `ScoreDrive` (the Phase-4c single drive path). That landing
+  path (`importScore`/`applyPerformance` + `Performer.loadPerformance`) is the *defined consumer*
+  of a compiled `Performance` the original plan left unwired. `buildDirectorSystemPrompt` now
+  emits a single Score (named Stage refs + presets over raw numbers); `director.test.ts` proves a
+  sampled director output `validateScore`s + `compileScore`s clean. `Job.spec`/`QueueMessage.spec`
+  stay `z.unknown()` (documented to carry `{ score, stage }`) — no envelope change. Back-compat is
+  proven, not assumed, by Phase 3's NewsReport↔Score equivalence test. **engine-three re-adoption
+  (spec §12.4) is N-A / deferred — engine-three is no longer in the workspace.**

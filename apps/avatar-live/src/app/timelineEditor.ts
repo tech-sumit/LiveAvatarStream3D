@@ -1,6 +1,6 @@
 import { TimelinePlayer } from '../timeline/player.js';
 import { TimelineUI } from '../timeline/ui.js';
-import { CATALOG, poseToTuple } from '../timeline/catalog.js';
+import { CATALOG, poseToTuple, poseFor, tupleToPose } from '../timeline/catalog.js';
 import { cueId, type Cue, type PoseTuple, type Timeline } from '../timeline/types.js';
 import type { StudioContext } from './context.js';
 import type { Performer } from './performer.js';
@@ -90,6 +90,57 @@ export class TimelineEditor {
   playerUpdate(t: number): void {
     this.player.update(t);
   }
+  /**
+   * The authored "cut to screen" windows (the `cam.screenSource` cues) as plain
+   * {start,duration} — fed into the Performance `screen` channel (Phase 4c) so the
+   * back-wall montage cut fires from the unified score.drive path on both the live and
+   * export clocks (was player.updateScreenSource interpreting the cue inline).
+   */
+  screenWindows(): { start: number; duration: number }[] {
+    return this.timeline.cues
+      .filter((c) => c.type === 'cam.screenSource')
+      .map((c) => ({ start: c.start, duration: c.duration }));
+  }
+  /**
+   * The timeline's motion-track cues as {t,type} (mirrors screenWindows()) — folded into the
+   * Performance `turns`/`gestures` channels by buildNarrationPerformance so a 'Turn to screen'
+   * etc. fires from the unified score.drive path on BOTH the live and export clocks (Phase 4c
+   * had dropped these — the avatar never turned to the wall in preview or the MP4).
+   */
+  motionCues(): { t: number; type: string }[] {
+    return this.timeline.cues
+      .filter((c) => c.track === 'motion')
+      .map((c) => ({ t: c.start, type: c.type }))
+      .sort((a, b) => a.t - b.t);
+  }
+  /**
+   * The authored camera-track framing cues (everything except the cam.screenSource cut),
+   * resolved to absolute poses against the live avatar head — the SAME resolution
+   * TimelinePlayer.resolvePose used (captured pose / recorded-path last key / preset). Folded
+   * into the Performance camera channel as follow:false keyframes so the unified drive path
+   * honors them (they were silently dropped on live narration after the cutover).
+   */
+  cameraCues(): { tSec: number; pos: [number, number, number]; target: [number, number, number]; fov: number }[] {
+    const hc = this.app.avatar.headCenter.clone().add(this.app.avatar.group.position);
+    const hh = this.app.avatar.headHeight;
+    return this.timeline.cues
+      .filter((c) => c.track === 'camera' && c.type !== 'cam.screenSource')
+      .sort((a, b) => a.start - b.start)
+      .map((c) => {
+        const p =
+          c.path && c.path.length
+            ? tupleToPose(c.path[c.path.length - 1].p)
+            : c.pose
+              ? tupleToPose(c.pose)
+              : poseFor(c.type, hc, hh);
+        return {
+          tSec: c.start,
+          pos: [p.pos.x, p.pos.y, p.pos.z] as [number, number, number],
+          target: [p.target.x, p.target.y, p.target.z] as [number, number, number],
+          fov: p.fov,
+        };
+      });
+  }
   setUiPlayhead(t: number): void {
     this.ui?.setPlayhead(t);
   }
@@ -98,6 +149,15 @@ export class TimelineEditor {
   }
   beginPlayback(): void {
     this.player.begin();
+  }
+  /**
+   * Begin a unified narration TAKE (live render / export): take the camera so the score's
+   * per-frame framing isn't fought by OrbitControls, WITHOUT firing the timeline's motion /
+   * camera / screen cues (those now flow from the compiled Performance via score.drive — firing
+   * them here too would double-drive). See TimelinePlayer.beginNarration.
+   */
+  beginNarration(): void {
+    this.player.beginNarration();
   }
   endPlayback(): void {
     this.player.end();

@@ -88,7 +88,7 @@ function tidy(value: string): string {
     .map((line) => {
       let l = line.replace(/[ \t]+/g, ' '); // collapse horizontal whitespace
       // a tag immediately followed by a non-tag, non-space char → insert one space.
-      l = l.replace(/(\])(?=[^\s\[])/g, '$1 ');
+      l = l.replace(/(\])(?=[^\s[])/g, '$1 ');
       return l.replace(/[ \t]+$/g, ''); // trim trailing spaces
     })
     .join('\n');

@@ -1,5 +1,4 @@
 import { type Shot } from '../scene/stage.js';
-import { SCREEN_STAND_POS } from '../scene/studio.js';
 import type { StudioContext } from './context.js';
 
 // Folders are auto-indexed by the Vite avatar plugin (→ /avatars.json). Each avatar
@@ -105,9 +104,10 @@ export class AvatarLibrary {
     );
     if (loco.length) log(`locomotion: ${loco.length} clips (${loco.join(', ')}) — press M to walk`);
 
-    // Screen reference walks the anchor to a mark just left-front of the stand-mounted
-    // screen (so it presents beside it, both in frame), then back to centre afterwards.
-    avatar.setScreenStation(SCREEN_STAND_POS.clone().set(SCREEN_STAND_POS.x - 1.2, 0, 0.25));
+    // The screen-reference floor mark (just left-front of the stand-mounted screen) now
+    // lives as Stage-style data inside the avatar controller (SCREEN_MARK) — the former
+    // per-avatar setScreenStation push equalled that default, so nothing is wired here.
+    // (In a later phase the marks come from the Score's Stage.)
   };
 
   private discoverAvatars = async (): Promise<void> => {

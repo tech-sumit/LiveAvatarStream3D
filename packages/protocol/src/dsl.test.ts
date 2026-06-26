@@ -39,11 +39,14 @@ describe('script DSL', () => {
 });
 
 describe('director system prompt', () => {
-  it('embeds the enumerated vocabularies', () => {
+  // The director now emits a Score (Phase 5), so the prompt embeds the Score preset
+  // vocabularies (camelCase GestureKind / EmotionPreset) rather than the legacy dsl
+  // JSONL enums. The exhaustive coverage lives in director.test.ts.
+  it('embeds the Score preset vocabularies and the persona', () => {
     const p = buildDirectorSystemPrompt('Be friendly.');
-    expect(p).toContain('warm');
-    expect(p).toContain('open_palms');
-    expect(p).toContain('leaning_in');
+    expect(p).toContain('warm'); // an EmotionPreset
+    expect(p).toContain('openPalms'); // a GestureKind (camelCase Score vocab)
+    expect(p).toContain('"beats"');
     expect(p).toContain('Be friendly.');
   });
 });

@@ -7,7 +7,10 @@
 //
 // This module is self-contained and only imported when the bridge is enabled, so
 // it never runs in the default (bridge-off) studio.
-import { validateNewsReportDoc } from '@las/protocol';
+import { validateNewsReportDoc, validateScore, compileNewsReportToScore, newsReportAudio } from '@las/protocol';
+import type { Stage, AudioTimings, Score, NewsReportDoc, AudioCue } from '@las/protocol';
+import { SCREEN_STAND_POS } from '../scene/studio.js';
+import { cueId } from '../timeline/types.js';
 import type { StudioContext } from '../app/context.js';
 import type { Lighting } from '../app/lighting.js';
 import type { Look } from '../app/look.js';
@@ -64,6 +67,46 @@ function mapTrack(track: string): Cue['track'] | null {
   }
 }
 
+// The studio has no Stage-authoring surface yet (Phase 5), so a newscast Score lands on a
+// default Stage matching the live set: the presenter at the origin + a `screen` target at
+// the back-wall stand. Scores reference these ids; any unknown ref falls back to the body
+// root in compileScore (deterministic, never throws), so this default is always sufficient.
+function defaultStage(stageId: string): Stage {
+  return {
+    id: stageId,
+    marks: [{ id: 'center', pos: [0, 0, 0] }],
+    targets: [{ id: 'screen', kind: 'point', pos: [SCREEN_STAND_POS.x, SCREEN_STAND_POS.y, SCREEN_STAND_POS.z] }],
+    cameras: [],
+    lights: [],
+    props: [],
+    savedShots: [],
+  };
+}
+
+// Derive per-word AudioTimings from a Score before real TTS timing exists: lay each beat's
+// text out evenly across a fixed per-beat window so WordAnchor cues (`at: { word }`) resolve
+// to a deterministic time. compileScore clamps an out-of-range anchor, so a coarse layout is
+// safe — it only sets WHEN a mid-beat cue fires, not the rendered audio.
+function timingsFromScore(score: Score): AudioTimings {
+  const BEAT_SEC = 3;
+  const beats: AudioTimings['beats'] = [];
+  for (let i = 0; i < score.beats.length; i++) {
+    const beat = score.beats[i];
+    if (!beat) continue;
+    const startSec = i * BEAT_SEC;
+    const endSec = startSec + BEAT_SEC;
+    const words = beat.text.split(/\s+/).filter(Boolean);
+    const n = Math.max(words.length, 1);
+    const wordTimings = words.map((word, w) => ({
+      word,
+      startSec: startSec + (w / n) * BEAT_SEC,
+      endSec: startSec + ((w + 1) / n) * BEAT_SEC,
+    }));
+    beats.push({ startSec, endSec, words: wordTimings });
+  }
+  return { beats };
+}
+
 async function blobFromCanvas(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('canvas.toBlob returned null'))), 'image/png');
@@ -95,28 +138,42 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
   return async function dispatch(cmd: string, params: Record<string, unknown>): Promise<unknown> {
     switch (cmd) {
       // ── Newscast import / validate / patch ─────────────────────────────────
+      // A newscast `doc` is a Score (preferred) OR a legacy NewsReportDoc, which is
+      // auto-lowered through compileNewsReportToScore. BOTH flow through the SAME Score
+      // runtime (projectStore.importScore → compileScore → the Performer's ScoreDrive),
+      // so the proven old path is no longer a parallel compileNewsReport/applyProject.
       case 'applyNewscast': {
-        const title = await c.projects.importNewsReport(params.doc);
+        const out = await applyScoreDoc(app, c, params.doc);
         lastNewscast = params.doc;
-        return { applied: true, title };
+        return { applied: true, ...out };
       }
       case 'validateNewscast': {
+        // Validate-only: try Score, then auto-lower NewsReportDoc. Never lands a Performance.
         try {
-          const doc = validateNewsReportDoc(params.doc);
-          return { valid: true, title: doc.meta.title };
-        } catch (err) {
-          return { valid: false, error: String(err instanceof Error ? err.message : err) };
+          validateScore(params.doc);
+          return { valid: true, kind: 'score' };
+        } catch (scoreErr) {
+          try {
+            const doc = validateNewsReportDoc(params.doc);
+            compileNewsReportToScore(doc); // prove it lowers to a Score
+            return { valid: true, kind: 'newsreport', title: doc.meta.title };
+          } catch (newsErr) {
+            // Report the error from the branch that matched the input shape: a near-valid
+            // NewsReportDoc fails NewsReportDoc validation with a useful field-level message —
+            // surface THAT, not the generic "not a Score" error. Fall back to the Score error.
+            const err = newsErr ?? scoreErr;
+            return { valid: false, error: String(err instanceof Error ? err.message : err) };
+          }
         }
       }
       case 'patchNewscast': {
-        // Merge the patch over the last-applied doc, re-validate, re-import.
+        // Merge the patch over the last-applied doc and re-import through the Score runtime.
         const base = (lastNewscast ?? {}) as Record<string, unknown>;
         const patch = (params.patch ?? {}) as Record<string, unknown>;
         const merged = { ...base, ...patch };
-        validateNewsReportDoc(merged); // throw early on an invalid merge
-        const title = await c.projects.importNewsReport(merged);
+        const out = await applyScoreDoc(app, c, merged);
         lastNewscast = merged;
-        return { applied: true, title };
+        return { applied: true, ...out };
       }
 
       // ── Scalar setters (mirror the UI's own change side effects) ───────────
@@ -347,4 +404,120 @@ function currentReqId(): string {
 function seekTimeline(c: BridgeControllers, seconds: number): void {
   // Drive a single output frame at `seconds` via the timeline player.
   c.timeline.playerUpdate(Math.max(0, seconds));
+}
+
+/**
+ * Land a newscast `doc` on the Score runtime: try {@link validateScore} → importScore;
+ * on failure auto-lower a legacy NewsReportDoc through {@link compileNewsReportToScore} →
+ * importScore. Both paths compile against a {@link defaultStage} + {@link timingsFromScore}
+ * and hand the resulting Performance to the Performer's ScoreDrive.
+ *
+ * When the doc is a legacy NewsReportDoc, its music beds + SFX are recovered with
+ * {@link newsReportAudio} and threaded into `compileScore`'s `{ audio }` channel so they
+ * survive onto `Performance.audio` (and onto the studio timeline) instead of being stripped.
+ * The studio surface (script editor, timeline narration/audio cues, voice, project name) is
+ * also repopulated so an MCP client can preview/export the imported newscast — the same state
+ * the legacy NewsReport import (applyProject) used to leave behind.
+ */
+async function applyScoreDoc(app: StudioContext, c: BridgeControllers, doc: unknown): Promise<{ beats: number; lowered: boolean }> {
+  let score: Score;
+  let lowered = false;
+  let nr: NewsReportDoc | undefined;
+  try {
+    score = validateScore(doc);
+  } catch (scoreErr) {
+    try {
+      nr = validateNewsReportDoc(doc);
+      score = compileNewsReportToScore(nr);
+      lowered = true;
+    } catch {
+      // Surface the Score error (the preferred shape) when neither parses.
+      throw scoreErr instanceof Error ? scoreErr : new Error(String(scoreErr));
+    }
+  }
+  const stage = defaultStage(score.stage);
+  // Compute timings once: the per-beat clock drives both the music-bed total length and the
+  // word-anchor resolution, so the bed length matches the rendered take.
+  const timings = timingsFromScore(score);
+  const total = timings.beats.at(-1)?.endSec ?? 0;
+  // Recover a lowered NewsReportDoc's beds/SFX (Score itself carries no audio). A pure Score
+  // has no audio channel to recover, so audio stays undefined.
+  const audio = nr ? newsReportAudio(nr, total) : undefined;
+  const perf = await c.projects.importScore(score, stage, timings, audio);
+  populateStudioFromScore(app, c, score, timings, audio, {
+    name: nr?.meta.title,
+    voiceId: nr?.meta.anchors[0]?.voiceId,
+  });
+  return { beats: perf.beats.length, lowered };
+}
+
+/** Sanitize a title into a project-name token (mirrors projectStore's sanitize). */
+function sanitizeName(n: string): string {
+  return (n.trim() || 'untitled').replace(/[^\w.-]+/g, '_');
+}
+
+/**
+ * Repopulate the studio authoring surface from an imported Score so the newscast is
+ * previewable/exportable: the script editor (joined beat text), the timeline narration cues
+ * (laid out on the same per-beat clock) plus any recovered audio cues, the voice selector, and
+ * the project name. Mirrors the state the legacy NewsReport import left via applyProject.
+ */
+function populateStudioFromScore(
+  app: StudioContext,
+  c: BridgeControllers,
+  score: Score,
+  timings: AudioTimings,
+  audio: AudioCue[] | undefined,
+  opts: { name?: string; voiceId?: string },
+): void {
+  const d = app.dom;
+  // Script editor: the spoken text, one beat per sentence. Fire 'input' so the overlay
+  // highlighter / validity badge refresh, and invalidate any stale narration buffer.
+  d.scriptEl.value = score.beats.map((b) => b.text).filter(Boolean).join(' ');
+  d.scriptEl.dispatchEvent(new Event('input', { bubbles: true }));
+  c.performer.invalidateNarration();
+
+  // Voice: only adopt a voice that actually exists in the selector (else leave the current).
+  if (opts.voiceId && [...d.voiceSel.options].some((o) => o.value === opts.voiceId)) {
+    d.voiceSel.value = opts.voiceId;
+    d.voiceSel.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // Project name.
+  if (opts.name) d.projectNameEl.value = sanitizeName(opts.name);
+
+  // Timeline: narration cues (one per beat, on the coarse pre-TTS clock) + recovered audio.
+  const cues: Cue[] = [];
+  for (let i = 0; i < score.beats.length; i++) {
+    const beat = score.beats[i];
+    const bt = timings.beats[i];
+    if (!beat || !bt) continue;
+    cues.push({
+      id: cueId(),
+      track: 'narration',
+      type: 'narration',
+      start: Math.round(bt.startSec * 10) / 10,
+      duration: Math.round((bt.endSec - bt.startSec) * 10) / 10,
+      text: beat.text,
+      emotion: beat.emotion,
+    });
+  }
+  if (audio) {
+    for (const a of audio) {
+      cues.push({
+        id: a.id || cueId(),
+        track: 'audio',
+        type: 'audio.clip',
+        start: a.start,
+        duration: a.duration,
+        src: a.src,
+        volume: a.volume,
+        fadeIn: a.fadeIn,
+        fadeOut: a.fadeOut,
+        label: a.label ?? a.kind,
+      });
+    }
+  }
+  const total = timings.beats.at(-1)?.endSec ?? 0;
+  c.timeline.setNarrationCues(cues, total);
 }
