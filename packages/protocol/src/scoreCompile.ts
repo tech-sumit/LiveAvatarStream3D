@@ -395,6 +395,7 @@ export function compileScore(
     looks,
     emotes,
     screen,
+    slides: [], // the Score path authors no wall slides yet (newscasts emit them via compileNewsReport)
     audio,
   };
 }

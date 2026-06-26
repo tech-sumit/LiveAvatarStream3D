@@ -82,6 +82,9 @@ export const Section = z.object({
   set: SectionSet.optional(),
   cameraDefault: CameraCue.optional(),
   headline: z.string().optional(),
+  bullets: z.array(z.string()).default([]), // wall-slide bullet points for this section
+  graphic: z.object({ kind: z.enum(['url', 'r2']), src: z.string().min(1) }).optional(), // section backdrop image
+  ticker: z.string().optional(), // section-specific lower-third ticker text
   beats: z.array(Beat).min(1),
   audio: z.array(AudioCue).default([]),
 });
@@ -95,6 +98,7 @@ export const DocDefaults = z.object({
   set: SectionSet.optional(),
   idleMotion: z.boolean().default(false),
   headline: z.string().optional(),
+  ticker: z.string().optional(), // fallback lower-third ticker when a section authors none
   music: z
     .object({
       src: z.string().min(1),
