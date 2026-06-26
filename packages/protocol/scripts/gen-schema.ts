@@ -23,6 +23,15 @@ import {
   DirectorRequest,
   DirectorStreamChunk,
   NewsReportDoc,
+  Stage,
+  Mark,
+  Target,
+  SavedShot,
+  Score,
+  ScoreBeat,
+  Cue,
+  CameraDirective,
+  Performance,
 } from '../src/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +55,15 @@ const schemas = {
   DirectorRequest,
   DirectorStreamChunk,
   NewsReportDoc,
+  Stage,
+  Mark,
+  Target,
+  SavedShot,
+  Score,
+  ScoreBeat,
+  Cue,
+  CameraDirective,
+  Performance,
 } as const;
 
 for (const [name, schema] of Object.entries(schemas)) {
