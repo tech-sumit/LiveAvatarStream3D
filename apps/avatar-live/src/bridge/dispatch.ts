@@ -443,11 +443,15 @@ async function applyScoreDoc(app: StudioContext, c: BridgeControllers, doc: unkn
   // Recover a lowered NewsReportDoc's beds/SFX (Score itself carries no audio). A pure Score
   // has no audio channel to recover, so audio stays undefined.
   const audio = nr ? newsReportAudio(nr, total) : undefined;
-  const perf = await c.projects.importScore(score, stage, timings, audio);
+  // Repopulate the studio surface FIRST: it fires performer.invalidateNarration (which clears any
+  // prior authored Performance) BEFORE importScore lands the new one via performer.loadPerformance.
+  // The order matters — otherwise the just-landed authored take would be immediately invalidated,
+  // and preview/export would fall back to the script-derived rebuild.
   populateStudioFromScore(app, c, score, timings, audio, {
     name: nr?.meta.title,
     voiceId: nr?.meta.anchors[0]?.voiceId,
   });
+  const perf = await c.projects.importScore(score, stage, timings, audio);
   return { beats: perf.beats.length, lowered };
 }
 

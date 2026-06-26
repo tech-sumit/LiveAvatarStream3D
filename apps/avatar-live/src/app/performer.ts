@@ -3,6 +3,7 @@ import { AudioAnalyserLipsync } from '../lipsync/audioLipsync.js';
 import { RealtimeSession } from '../session/realtimeSession.js';
 import { parseScriptLine, type Gesture } from '../avatar/gestures.js';
 import { exportMp4Offline } from '../capture/offlineExporter.js';
+import { audioCuesToClips } from '../capture/offlineAudio.js';
 import { canExportMp4 } from '../capture/mp4Encoder.js';
 import { cueId, type Cue } from '../timeline/types.js';
 import { SCREEN_STAND_POS } from '../scene/studio.js';
@@ -50,6 +51,12 @@ export class Performer {
   private renderSrc: AudioBufferSourceNode | null = null;
   private narrationAudio: AudioBuffer | null = null;
   private narrationSegs: NarrationSeg[] = [];
+  // An externally-authored Performance landed via loadPerformance (the Score/bridge path). When
+  // present it OWNS the next live take and export — the script-derived buildNarrationPerformance
+  // rebuild is bypassed so authored camera/motion/audio survive identically on both clocks
+  // (live == export). Cleared by invalidateNarration: any script edit drops back to the
+  // script-derived take.
+  private authoredPerf: Performance | null = null;
   private exporting = false;
   private performing = false; // guards re-entry while synthesizing / playing
   private session: RealtimeSession;
@@ -125,6 +132,7 @@ export class Performer {
   }
   invalidateNarration(): void {
     this.narrationAudio = null;
+    this.authoredPerf = null; // a script change supersedes any landed authored Performance
   }
 
   private setSpeakingUi(on: boolean): void {
@@ -256,23 +264,29 @@ export class Performer {
     app.log(`export: rendering ${prep.durationSec.toFixed(1)}s @ ${fmt.w}×${fmt.h} ${codec.toUpperCase()} …`);
     try {
       // ONE Performance feeds the export — the SAME builder/shape the live narration tick
-      // drives. The timeline's motion-track cues (turn/point/wave/…) + authored camera framing
-      // cues are folded into the Performance (motionCues/cameraCues, mirroring screenWindows),
-      // so they render on the unified path on both clocks; the screen channel carries the
-      // montage cut. The two-shot follow snaps EXACTLY on frame 0 (restored) then uses the SAME
-      // 1-exp(-dt/0.45) damping as live. The whole drive is one `score.drive(t, dt, mouth)` call.
-      this.score.load(
+      // drives. An authored Score Performance (landed via loadPerformance) OWNS the export when
+      // present; only a plain generated narration rebuilds from the script segments. Either way
+      // the timeline's motion-track cues (turn/point/wave/…) + authored camera framing cues are
+      // folded into the (script-derived) Performance (motionCues/cameraCues, mirroring
+      // screenWindows); the screen channel carries the montage cut. The two-shot follow snaps
+      // EXACTLY on frame 0 (restored) then uses the SAME 1-exp(-dt/0.45) damping as live. The
+      // whole drive is one `score.drive(t, dt, mouth)` call.
+      const perf =
+        this.authoredPerf ??
         buildNarrationPerformance(prep.segs, prep.durationSec, deps.timeline.screenWindows(), undefined, {
           motionCues: deps.timeline.motionCues(),
           cameraCues: deps.timeline.cameraCues(),
-        }),
-        this.fallbackEmotion(),
-      );
+        });
+      this.score.load(perf, this.fallbackEmotion());
       deps.timeline.beginNarration(); // take the camera (authored framing cues) for the export loop
+      // Mux the Performance's audio beds/SFX into the MP4 alongside the narration. Authored
+      // newscasts carry them on perf.audio (threaded through importScore's { audio } channel);
+      // script-derived takes have none. Decoded here; any failure surfaces loudly (no retries).
+      const audioCues = perf.audio.length ? await audioCuesToClips(perf.audio, app.audio()) : [];
       const blob = await exportMp4Offline({
         stage: app.stage,
         narration: prep.buffer,
-        audioCues: [],
+        audioCues,
         durationSec: prep.durationSec,
         fps: 30,
         width: fmt.w,
@@ -346,17 +360,17 @@ export class Performer {
     const startAt = ctx.currentTime + 0.12;
     this.renderSrc = srcNode;
     this.render = { ctx, start: startAt, analyser: ana };
-    // ONE Performance feeds the live narration tick — the SAME builder/shape the export
-    // loads, so the two clocks drive identical camera/gesture/emotion/screen commands
-    // (the live/export divergence is closed here). Loaded fresh so its one-shot cursors
-    // re-arm for this take.
-    this.score.load(
+    // ONE Performance feeds the live narration tick — the SAME shape the export loads, so the
+    // two clocks drive identical camera/gesture/emotion/screen commands (the live/export
+    // divergence is closed here). An authored Score Performance owns the take when present;
+    // otherwise rebuild from the script segments. Loaded fresh so its one-shot cursors re-arm.
+    const perf =
+      this.authoredPerf ??
       buildNarrationPerformance(this.narrationSegs, out.length / out.sampleRate, deps.timeline.screenWindows(), undefined, {
         motionCues: deps.timeline.motionCues(),
         cameraCues: deps.timeline.cameraCues(),
-      }),
-      this.fallbackEmotion(),
-    );
+      });
+    this.score.load(perf, this.fallbackEmotion());
 
     srcNode.onended = async () => {
       this.render = null;
@@ -431,6 +445,7 @@ export class Performer {
    * The cursors reset (a fresh take from t=0), so the next preview/export replays it cleanly.
    */
   loadPerformance(perf: Performance): void {
+    this.authoredPerf = perf; // owns the next take/export until a script edit invalidates it
     this.score.load(perf, this.fallbackEmotion());
   }
 

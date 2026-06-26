@@ -74,12 +74,29 @@ function makeControllers() {
   const importCalls: ImportCall[] = [];
   const narrationCalls: NarrationCall[] = [];
   let invalidated = 0;
+  // Records the relative order of performer.invalidateNarration vs performer.loadPerformance so a
+  // test can prove the bridge populates (→ invalidate) BEFORE it lands the authored Performance
+  // (→ load). If that order flips, loadPerformance's authoredPerf is immediately cleared and the
+  // export falls back to the script-derived rebuild.
+  const order: string[] = [];
+  const performer = {
+    invalidateNarration() {
+      invalidated++;
+      order.push('invalidate');
+    },
+    loadPerformance() {
+      order.push('load');
+    },
+  };
   const projects = {
     // Mirror the REAL importScore: thread `audio` into compileScore's { audio } extra so the
-    // assertion proves the bed/SFX actually survive onto the compiled Performance.
+    // assertion proves the bed/SFX actually survive onto the compiled Performance, and call
+    // performer.loadPerformance (as projectStore.importScore does) so the order is observable.
     async importScore(score: unknown, stage: Stage, timings: AudioTimings, audio?: AudioCue[]): Promise<Performance> {
       importCalls.push({ score, stage, timings, audio });
-      return compileScore(stage, validateScore(score), timings, undefined, audio && audio.length ? { audio } : undefined);
+      const perf = compileScore(stage, validateScore(score), timings, undefined, audio && audio.length ? { audio } : undefined);
+      performer.loadPerformance();
+      return perf;
     },
   };
   const timeline = {
@@ -87,13 +104,8 @@ function makeControllers() {
       narrationCalls.push({ cues, totalSec });
     },
   };
-  const performer = {
-    invalidateNarration() {
-      invalidated++;
-    },
-  };
   const c = { projects, timeline, performer } as unknown as BridgeControllers;
-  return { c, importCalls, narrationCalls, getInvalidated: () => invalidated };
+  return { c, importCalls, narrationCalls, getInvalidated: () => invalidated, getOrder: () => order };
 }
 
 // ── [0] music bed + SFX survive onto Performance.audio ──────────────────────────
@@ -222,5 +234,24 @@ describe('g4[2]: validateNewscast reports the NewsReportDoc error, not the Score
     const res = (await dispatch('validateNewscast', { doc: SCORE })) as { valid: boolean; kind: string };
     expect(res.valid).toBe(true);
     expect(res.kind).toBe('score');
+  });
+});
+
+// ── authored-Performance survival: populate (invalidate) BEFORE import (load) ────
+describe('applyNewscast lands the authored Performance after invalidating the prior one', () => {
+  it('invalidateNarration runs before loadPerformance, so the authored take survives', async () => {
+    const { app } = makeApp();
+    const { c, getOrder } = makeControllers();
+    const dispatch = createDispatcher(app, c);
+
+    await dispatch('applyNewscast', { doc: NEWSCAST });
+
+    const order = getOrder();
+    expect(order).toContain('invalidate');
+    expect(order).toContain('load');
+    // The regression guard: if import (load) preceded populate (invalidate), the just-landed
+    // authoredPerf would be cleared and export would rebuild from the script.
+    expect(order.indexOf('invalidate')).toBeLessThan(order.indexOf('load'));
+    expect(order.lastIndexOf('invalidate')).toBeLessThan(order.indexOf('load'));
   });
 });
