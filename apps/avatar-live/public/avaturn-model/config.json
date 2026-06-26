@@ -3,12 +3,11 @@
   "description": "Photoreal avatar with ARKit visemes — ideal head-and-shoulders anchor",
   "model": "model.glb",
   "shot": "medium",
-  "bodyAnim": true,
   "lipsync": {
-    "gain": 1,
+    "gain": 0.45,
     "jaw": 1,
     "wide": 1,
     "round": 1,
-    "smoothing": 0.2
+    "smoothing": 0.34
   }
 }
