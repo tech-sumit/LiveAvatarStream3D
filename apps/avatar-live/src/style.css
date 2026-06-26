@@ -1151,6 +1151,59 @@ input[type='range'] {
   border-radius: var(--radius-md);
 }
 
+/* ── Cloned-voice manager (left panel) ────────────────────────────────────── */
+.voice-mgr-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+.voice-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+  padding: var(--sp-sm) var(--sp-md);
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.voice-row-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+}
+.voice-row-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-row-meta {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.voice-row-actions {
+  display: flex;
+  gap: var(--sp-sm);
+}
+.voice-btn {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+}
+.voice-btn.danger {
+  color: var(--rec);
+  border-color: rgba(255, 77, 94, 0.35);
+}
+.voice-btn.danger:hover:not(:disabled) {
+  border-color: var(--rec);
+  background: rgba(255, 77, 94, 0.12);
+}
+
 /* Collapsible sidebar sections — click the header to expand/collapse. */
 .panel .grp > h2 {
   cursor: pointer;
