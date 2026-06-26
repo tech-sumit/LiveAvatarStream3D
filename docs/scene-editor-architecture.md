@@ -1,5 +1,9 @@
 # Scene Editor — Architecture
 
+> **Superseded (Jun 20, 2026)** by [`specs/2026-06-20-scene-editor-threejs.md`](specs/2026-06-20-scene-editor-threejs.md).
+> This file describes the original React editor design. Current work uses the
+> official three.js editor; React code lives on `backup/custom-scene-editor`.
+
 Web-based 3D scene editor (Unity / Blender / Unreal-like) for LiveAvatarStream3D.
 **Authoring runs in the browser; final pixels come from the H100 render node.**
 
@@ -182,6 +186,6 @@ Preview/stream routes proxied by control-api to avoid exposing pod token to brow
 
 ## Related docs
 
-- `docs/specs/2026-06-19-threejs-engine-poc.md` — engine-three POC
+- `docs/specs/2026-06-20-project-context.md` — project context & current 3D-browser architecture
 - `packages/protocol/src/manifest.ts` — PerformanceManifest contract
 - `progress.md` — live validation status
