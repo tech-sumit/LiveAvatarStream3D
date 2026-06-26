@@ -1,12 +1,7 @@
 import type { Env } from '../env.js';
 import { fetchWithRetry, type RetryOpts } from '../lib/retry.js';
 
-export type GpuService =
-  | 'avatar-build'
-  | 'image-gen'
-  | 'voice'
-  | 'finishing'
-  | 'engine-three';
+export type GpuService = 'avatar-build' | 'image-gen' | 'voice';
 
 /**
  * Abstraction over where GPU inference runs. Modal (serverless, autoscale-to-
