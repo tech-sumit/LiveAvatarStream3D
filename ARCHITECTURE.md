@@ -1,5 +1,12 @@
 # LiveAvatarStream — Architecture
 
+> **⚠️ Scope note (2026-06-26):** this document predates the consolidation. This repo
+> (`LiveAvatarStream3D`) is now a **browser-only 3D talking-avatar studio** — the headless
+> `engine-three` renderer was removed and the 2D (EchoMimicV3) + MuseTalk realtime paths were
+> relocated to `../LiveAvatarStream`. Sections below about engine-three, the 2D pipeline,
+> realtime/SFU, `scene-editor`, and `apps/web` are historical. For the current system see
+> `CLAUDE.md` and `docs/specs/2026-06-25-performance-score-dsl-design.md`.
+
 ## Workspace layout
 
 ```text
