@@ -3,6 +3,7 @@ import { CloneVoiceRequest, type QueueMessage } from '@las/protocol';
 import type { Env } from '../env.js';
 import { ensureUser, rowToVoice } from '../lib/db.js';
 import { newId, now } from '../lib/ids.js';
+import { bucket } from '../lib/r2.js';
 
 export const voices = new Hono<{ Bindings: Env }>();
 
@@ -93,4 +94,35 @@ voices.post('/api/voices/:id/retry', async (c) => {
   const updated = await c.env.DB.prepare('SELECT * FROM voices WHERE id = ?').bind(id).first();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return c.json(rowToVoice(updated as any));
+});
+
+/** Remove a voice profile and its cloned R2 assets (everything under the row's r2_prefix). */
+voices.delete('/api/voices/:id', async (c) => {
+  const id = c.req.param('id');
+  const userId = c.req.query('userId') ?? 'demo-user';
+  const row = await c.env.DB.prepare('SELECT id, r2_prefix FROM voices WHERE id = ? AND user_id = ?')
+    .bind(id, userId)
+    .first();
+  if (!row) return c.json({ error: 'voice not found' }, 404);
+
+  // Purge the cloned voice's R2 objects BEFORE dropping the row, so a delete never orphans
+  // storage. Paginate list→delete (R2 lists in pages; delete takes up to 1000 keys per call).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const prefix = (row as any).r2_prefix as string | null;
+  let deletedObjects = 0;
+  if (prefix) {
+    const voicesBucket = bucket(c.env, 'voices');
+    let cursor: string | undefined;
+    do {
+      const listed = await voicesBucket.list({ prefix, cursor });
+      if (listed.objects.length > 0) {
+        await voicesBucket.delete(listed.objects.map((o) => o.key));
+        deletedObjects += listed.objects.length;
+      }
+      cursor = listed.truncated ? listed.cursor : undefined;
+    } while (cursor);
+  }
+
+  await c.env.DB.prepare('DELETE FROM voices WHERE id = ? AND user_id = ?').bind(id, userId).run();
+  return c.json({ ok: true, id, deletedObjects });
 });
