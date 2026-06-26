@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { composeShot, moveCamera } from '@las/performer-core';
-import type { CameraMove, Composition, Pose, Subject, Vec3, Quat } from '@las/performer-core';
+import { composeShot, moveCamera, aimLimb, aimEye, fingerCount, turnToward } from '@las/performer-core';
+import type { CameraMove, Composition, Pose, Subject, Vec3, Quat, Side, EyeAim, FingerCurls } from '@las/performer-core';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // coreAdapter — the ONLY place THREE ↔ @las/performer-core conversion happens.
@@ -123,4 +123,94 @@ export function moveFromThree(
   _basePose.target[2] = target.z;
   _basePose.fov = fov;
   return moveCamera(_basePose, move, amount, out);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Motion / IK adapter glue (Phase 4b) — the THREE ↔ performer-core marshalling for
+// the body solvers (aimLimb / aimEye / fingerCount / turnToward). The bone lookup +
+// apply + smoothing stay in avatarController (avatar-specific rig binding); here we
+// only convert THREE ↔ plain tuples and call the pure solvers, reusing module-scope
+// scratch so nothing allocates per frame (cross-cutting rule C).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// performer-core-side scratch (plain tuples / structs) reused every frame.
+const _dirA: Vec3 = [0, 0, 0];
+const _parentQ: Quat = [0, 0, 0, 1];
+const _eyeDir: Vec3 = [0, 0, 0];
+const _eyeAim: EyeAim = { quat: [0, 0, 0, 1] };
+
+const GAZE_MAX_ANGLE = 0.5; // ~28° max eye travel (former applyGaze maxA)
+const GAZE_OPTS: { maxAngle: number; weight: number } = { maxAngle: GAZE_MAX_ANGLE, weight: 0.85 };
+
+/** Reusable FingerCurls buffer for fingerCount's out-param (per-frame, no alloc). */
+export function makeFingerCurls(): FingerCurls {
+  return { curls: [] };
+}
+
+/**
+ * Two-bone arm aim through performer-core (replaces applyPointing's basis math).
+ *
+ * `shoulderToTarget` is the WORLD-space shoulder→target direction; `parentWorld` is the
+ * arm bone's parent world quaternion (so the pure fn reproduces today's parent-space aim
+ * exactly). Returns the auto-selected `side` and writes the desired PARENT-SPACE local
+ * quats into the supplied THREE.Quaternions. Allocation-free.
+ */
+export function aimArm(
+  shoulderToTarget: THREE.Vector3,
+  parentWorld: THREE.Quaternion,
+  side: Side | 'auto',
+  outUpper: THREE.Quaternion,
+  outFore: THREE.Quaternion,
+  opts?: { weight?: number; foreArmWeight?: number },
+): Side {
+  toVec3(shoulderToTarget, _dirA);
+  toQuat(parentWorld, _parentQ);
+  const r = aimLimb(_dirA, _parentQ, side, opts);
+  fromQuat(r.aim.upperArm, outUpper);
+  fromQuat(r.aim.foreArm, outFore);
+  return r.side;
+}
+
+/**
+ * Eye-aim morph drive through performer-core (replaces applyGaze's atan2/clamp math).
+ *
+ * `dirLocal*` is the gaze direction already expressed in the avatar's local frame
+ * (right=x, up=y, fwd=z) — matching applyGaze's `dir.dot(right/up/fwd)`. aimEye applies
+ * the exact same front-gate (z>0.05), ±maxAngle clamp and weight; we decompose its
+ * head-local yaw/pitch quaternion back into the normalized horizontal/vertical morph
+ * weights applyGaze drives (`hw = |hAim|/maxAngle`, with the 0.85 weight already baked
+ * into hAim). `hPos`/`vPos` carry the sign so the rig's InLeft/OutRight cross-wiring
+ * (avatar-specific) stays in the controller. Allocation-free.
+ */
+export function gazeMorph(
+  dirLocalX: number,
+  dirLocalY: number,
+  dirLocalZ: number,
+  out: { hw: number; vw: number; hPos: boolean; vPos: boolean },
+): { hw: number; vw: number; hPos: boolean; vPos: boolean } {
+  _eyeDir[0] = dirLocalX;
+  _eyeDir[1] = dirLocalY;
+  _eyeDir[2] = dirLocalZ;
+  // aimEye defaults: maxAngle 0.5 (~28°), weight 0.85 — the former applyGaze literals.
+  const maxAngle = GAZE_MAX_ANGLE;
+  aimEye(_eyeDir, GAZE_OPTS, _eyeAim);
+  const q = _eyeAim.quat;
+  // q = yaw(hAim) ∘ pitch(vAim): hAim = 2·atan2(q.y,q.w), vAim = 2·atan2(q.x,q.w).
+  const hAim = 2 * Math.atan2(q[1], q[3]);
+  const vAim = 2 * Math.atan2(q[0], q[3]);
+  out.hw = Math.abs(hAim) / maxAngle; // 0.85 weight already folded into hAim
+  out.vw = Math.abs(vAim) / maxAngle;
+  out.hPos = hAim > 0;
+  out.vPos = vAim > 0;
+  return out;
+}
+
+/** Finger-count curls through performer-core, written into a reused FingerCurls. */
+export function countFingers(n: number, t: number, out: FingerCurls, opts?: { phase?: number; curl?: number[] }): FingerCurls {
+  return fingerCount(n, t, opts, out);
+}
+
+/** Yaw to face a plain-tuple target from a plain-tuple origin (move-path travel facing). */
+export function yawTowardVec(from: Vec3, to: Vec3): number {
+  return turnToward(from, to);
 }

@@ -1,7 +1,7 @@
 import { BoundaryLipsync } from '../lipsync/boundaryLipsync.js';
 import { AudioAnalyserLipsync } from '../lipsync/audioLipsync.js';
 import { RealtimeSession } from '../session/realtimeSession.js';
-import { resolveGesture, selectTalkClip, gestureClipFor, type Gesture } from '../avatar/gestures.js';
+import { parseScriptLine, selectTalkClip, gestureClipFor, type Gesture } from '../avatar/gestures.js';
 import { exportMp4Offline } from '../capture/offlineExporter.js';
 import { canExportMp4 } from '../capture/mp4Encoder.js';
 import { cueId, type Cue } from '../timeline/types.js';
@@ -38,6 +38,10 @@ export class Performer {
   private analyser: AudioAnalyserLipsync | null = null;
   private _speaking = false;
   private lastTalkClip = 'idle';
+  // Caller-owned talk-clip rotation index (replaces the former module-global `rotation`
+  // in gestures.ts). selectTalkClip is now pure; both the live tick and the offline
+  // export advance THIS counter, so the chosen clip sequence is identical on both paths.
+  private talkSeq = 0;
   private render: RenderState | null = null;
   private renderSrc: AudioBufferSourceNode | null = null;
   private narrationAudio: AudioBuffer | null = null;
@@ -68,7 +72,7 @@ export class Performer {
           const emo = (emotion as EmotionName) ?? (app.dom.emotionSel.value as EmotionName);
           if (emotion) app.avatar.setEmotion(emo);
           if (app.avatar.animationClips.length) {
-            this.lastTalkClip = selectTalkClip((gesture as Gesture) ?? 'explain', emo, this.lastTalkClip);
+            this.lastTalkClip = selectTalkClip(emo, this.lastTalkClip, this.talkSeq++);
             const g = gestureClipFor((gesture as Gesture) ?? 'none');
             if (g) app.avatar.playGesture(g, this.lastTalkClip);
             else app.avatar.playClip(this.lastTalkClip);
@@ -83,7 +87,7 @@ export class Performer {
         },
         onStatus: (m) => app.log(m),
       },
-      resolveGesture,
+      parseScriptLine,
     );
   }
 
@@ -137,7 +141,7 @@ export class Performer {
       app.log('nothing to generate — script is empty.');
       return false;
     }
-    const segs = lines.map(resolveGesture);
+    const segs = lines.map(parseScriptLine);
     const ctx = app.audio();
     await ctx.resume();
     app.log(`narration: synthesizing ${segs.length} sentence(s)…`);
@@ -399,7 +403,7 @@ export class Performer {
       const emo = (seg.emotion as EmotionName) ?? (app.dom.emotionSel.value as EmotionName);
       avatar.setEmotion(emo);
       if (avatar.animationClips.length) {
-        this.lastTalkClip = selectTalkClip(seg.gesture as Gesture, emo, this.lastTalkClip);
+        this.lastTalkClip = selectTalkClip(emo, this.lastTalkClip, this.talkSeq++);
         const g = gestureClipFor((seg.gesture as Gesture) ?? 'none');
         if (g) avatar.playGesture(g, this.lastTalkClip);
         else avatar.playClip(this.lastTalkClip);
