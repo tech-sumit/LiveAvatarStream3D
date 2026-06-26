@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { composeShot } from '@las/performer-core';
 import type { Vec3 } from '@las/performer-core';
-import type { Performance } from '@las/protocol';
+import type { Performance, SlideContent } from '@las/protocol';
 import { ScoreDrive, buildNarrationPerformance, type Vec3Like, type StageLike, type AvatarLike, type ScreenAnchor } from './scoreDrive.js';
 import type { MouthCue } from '../avatar/avatarController.js';
 import type { EmotionName } from '../avatar/emotion.js';
@@ -510,6 +510,60 @@ describe('scoreDrive g3: alloc-free per-frame even with an authored look (rule C
     }
     const after = heapUsed();
     expect((after - before) / 300).toBeLessThan(4096);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wall-slide deck — the 'graphics' channel, driven identically on both clocks.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('scoreDrive: wall-slide deck parity (live clock == export clock)', () => {
+  const fps = 30;
+  const duration = 4;
+  const SLIDE_A: SlideContent = { kicker: 'LIVE', headline: 'Top story', bullets: ['One', 'Two'], ticker: 'TOP STORY  ·  LIVE' };
+  const SLIDE_B: SlideContent = { kicker: 'LIVE', headline: 'Markets', bullets: [], ticker: 'MARKETS  ·  LIVE' };
+
+  // Drive a Performance recording every setSlide call through the injected slide sink (the 4th
+  // ScoreDrive dep — the studio's setSlide in production, a spy here; no DOM / canvas needed).
+  function driveSlides(useLiveClock: boolean, perf: Performance): SlideContent[] {
+    const stage = new FakeStage();
+    const avatar = new FakeAvatar();
+    const got: SlideContent[] = [];
+    const sd = new ScoreDrive(stage, avatar, SCREEN_ANCHOR, (s) => got.push(s));
+    sd.load(perf);
+    const total = Math.max(1, Math.ceil(duration * fps));
+    const dt = 1 / fps;
+    let t = 0;
+    for (let i = 0; i < total; i++) {
+      sd.drive(useLiveClock ? t : i / fps, dt, SILENT);
+      t += dt;
+    }
+    return got;
+  }
+
+  it('a graphics cue at tSec → the SAME setSlide call sequence on both clocks (live == export)', () => {
+    const perf = buildNarrationPerformance([{ t: 0, gesture: 'explain', emotion: 'neutral' }], duration, [], 'neutral', {
+      slideCues: [{ tSec: 0, slide: SLIDE_A }, { tSec: 2, slide: SLIDE_B }],
+    });
+    const exp = driveSlides(false, perf);
+    const live = driveSlides(true, perf);
+    expect(exp).toEqual(live); // identical slide sequence on the export + live clocks
+    expect(exp.map((s) => s.headline)).toEqual(['Top story', 'Markets']); // swap at the section boundary
+    expect(exp[0]!.image).toBeUndefined(); // NO image → the studio renders the gradient fallback
+  });
+
+  it('seeds t=0 so the first slide shows from frame 0 even when the earliest cue is later', () => {
+    const perf = buildNarrationPerformance([{ t: 0, gesture: 'explain', emotion: 'neutral' }], duration, [], 'neutral', {
+      slideCues: [{ tSec: 1.5, slide: SLIDE_B }],
+    });
+    expect(perf.slides[0]!.tSec).toBe(0); // buildNarrationPerformance pulled a copy back to 0
+    expect(driveSlides(false, perf)[0]!.headline).toBe('Markets'); // shown at frame 0
+  });
+
+  it('fires each slide exactly once over the take (forward cursor latch, no per-frame churn)', () => {
+    const perf = buildNarrationPerformance([{ t: 0, gesture: 'explain', emotion: 'neutral' }], duration, [], 'neutral', {
+      slideCues: [{ tSec: 0, slide: SLIDE_A }, { tSec: 2, slide: SLIDE_B }],
+    });
+    expect(driveSlides(false, perf).length).toBe(2); // two slide changes total, not once-per-frame
   });
 });
 

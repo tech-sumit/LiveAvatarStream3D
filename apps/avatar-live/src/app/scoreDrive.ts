@@ -1,4 +1,4 @@
-import type { Performance } from '@las/protocol';
+import type { Performance, SlideContent } from '@las/protocol';
 import { GESTURE_KIND_TO_CLIP, EMOTION_ENERGY } from '@las/protocol';
 import type { GestureKind } from '@las/protocol';
 import { resolveGesture } from '@las/performer-core';
@@ -81,6 +81,13 @@ export interface ScreenAnchor {
 }
 
 /**
+ * Sink for wall-slide changes — the studio's `setSlide`. Injected like the stage/avatar deps
+ * so ScoreDrive stays THREE-free + headless-testable (the parity test injects a spy). The
+ * studio's `Slide` is structurally identical to the protocol `SlideContent` carried here.
+ */
+export type SlideSink = (slide: SlideContent) => void;
+
+/**
  * Consumes a compiled `Performance` and drives the injected stage + avatar each
  * frame. ONE instance feeds both the live narration tick and the offline export
  * (the same object, the same `Performance`), so the two paths cannot diverge.
@@ -104,6 +111,9 @@ export class ScoreDrive {
   private lastEmoteIdx = -1;
   private lastBeatIdx = -1;
   private lastScreenActive: boolean | null = null;
+  // Wall-slide one-shot cursor: the latest slide at-or-before t latches on its crossing (like
+  // advanceScreen), so the wall graphics swap per section on both clocks without per-frame churn.
+  private slideCursor = -1;
   private warnedNodeTarget = false;
   private lastT = -Infinity;
   // Camera follow seeding: false → the next follow frame snaps EXACTLY to the two-shot
@@ -120,6 +130,7 @@ export class ScoreDrive {
     private stage: StageLike,
     private avatar: AvatarLike,
     private screenAnchor: ScreenAnchor,
+    private slideSink?: SlideSink,
   ) {}
 
   /** Load the Performance the drive consumes, resetting all one-shot cursors. */
@@ -154,6 +165,7 @@ export class ScoreDrive {
     this.lastEmoteIdx = -1;
     this.lastBeatIdx = -1;
     this.lastScreenActive = null;
+    this.slideCursor = -1;
     this.lastT = -Infinity;
     this.cameraArmed = false;
   }
@@ -188,6 +200,7 @@ export class ScoreDrive {
     this.advanceLook(perf, t);
     this.advanceCamera(perf, t, dt);
     this.advanceScreen(perf, t);
+    this.advanceSlide(perf, t);
 
     avatar.update(dt);
   }
@@ -355,6 +368,21 @@ export class ScoreDrive {
     this.stage.seekScreen(t);
   }
 
+  // ── wall-slide channel (the video-wall slide deck, swapping per newscast section) ──
+  // The LATEST slide at-or-before t wins; it fires once on its crossing via the injected
+  // setSlide sink (the studio repaints the wall canvas). A forward cursor latch keeps this
+  // allocation-free per frame (rule C): only an advance touches the sink, never a steady frame.
+  private advanceSlide(perf: Performance, t: number): void {
+    let idx = this.slideCursor;
+    while (idx + 1 < perf.slides.length) {
+      const next = perf.slides[idx + 1];
+      if (!next || next.tSec > t) break;
+      idx++;
+      this.slideSink?.(next.slide);
+    }
+    this.slideCursor = idx;
+  }
+
   // ── self.* / static target resolution (per-frame, against the live avatar) ──
   // self.face → headCenter + group.position; self.chest → a chest offset below it;
   // self.root → group.position. A static {pos} is the compiled world point. This is
@@ -415,6 +443,7 @@ export class ScoreDrive {
     this.lastEmoteIdx = -1;
     this.lastBeatIdx = -1;
     this.lastScreenActive = null;
+    this.slideCursor = -1;
     this.lastTalkClip = 'idle';
     this.talkSeq = 0;
     this.cameraArmed = false;
@@ -494,10 +523,18 @@ export interface CameraCue {
   fov: number;
 }
 
+/** A timeline graphics-track cue: the wall slide to show from `tSec` (mirrors a ScreenWindow). */
+export interface SlideCue {
+  tSec: number;
+  slide: SlideContent;
+}
+
 /** Optional timeline channels folded into the narration Performance (mirrors `screens`). */
 export interface NarrationExtras {
   motionCues?: MotionCue[];
   cameraCues?: CameraCue[];
+  /** Wall-slide deck cues (the 'graphics' timeline track) → the Performance `slides` channel. */
+  slideCues?: SlideCue[];
   /** Emit the two-shot follow keyframe (default true); live free-text Speak passes the
    *  Auto-align toggle so a user who disabled it keeps their manually-framed camera. */
   followCamera?: boolean;
@@ -613,6 +650,15 @@ export function buildNarrationPerformance(
   }
   if (cur) flush(cur);
 
+  // Wall-slide deck → the `slides` channel (the 'graphics' timeline track). Each slide latches
+  // until the next (advanceSlide's forward cursor). Seed t=0 so the FIRST slide shows from frame
+  // 0 even if the earliest authored cue starts later — pull a copy back to 0 (live == export).
+  const slides: Performance['slides'] = [];
+  for (const s of extra.slideCues ?? []) slides.push({ tSec: s.tSec, slide: s.slide });
+  slides.sort((a, b) => a.tSec - b.tSec);
+  const first = slides[0];
+  if (first && first.tSec > 0) slides.unshift({ tSec: 0, slide: first.slide });
+
   return {
     stageId: 'studio',
     durationSec,
@@ -624,6 +670,7 @@ export function buildNarrationPerformance(
     looks: [],
     emotes: [],
     screen,
+    slides,
     audio: [],
   };
 }

@@ -66,7 +66,9 @@ export class Performer {
     private deps: PerformerDeps,
   ) {
     this.boundary = new BoundaryLipsync(Number(app.dom.rateEl.value));
-    this.score = new ScoreDrive(app.stage, app.avatar, { screen: SCREEN_STAND_POS });
+    // Inject the wall-slide sink (the studio repaints its canvas) alongside the stage/avatar deps,
+    // so the unified score.drive swaps the video-wall slide deck per section on both clocks.
+    this.score = new ScoreDrive(app.stage, app.avatar, { screen: SCREEN_STAND_POS }, (slide) => app.studio.setSlide(slide));
     this.session = new RealtimeSession(
       () => deps.voices.activeTts,
       deps.voices.ttsOpts,
@@ -276,8 +278,13 @@ export class Performer {
         buildNarrationPerformance(prep.segs, prep.durationSec, deps.timeline.screenWindows(), undefined, {
           motionCues: deps.timeline.motionCues(),
           cameraCues: deps.timeline.cameraCues(),
+          slideCues: deps.timeline.slideCues(),
         });
       this.score.load(perf, this.fallbackEmotion());
+      // Preload the wall-slide backdrop images BEFORE the frame loop so each slide renders with
+      // its imagery (the frame-stepped export can't wait on an async load mid-loop); a missing
+      // image just falls back to the gradient. live == export: the slides drive identically.
+      await app.studio.preloadSlideImages(deps.timeline.slideImageUrls());
       deps.timeline.beginNarration(); // take the camera (authored framing cues) for the export loop
       // Mux the Performance's audio beds/SFX into the MP4 alongside the narration. Authored
       // newscasts carry them on perf.audio (threaded through importScore's { audio } channel);
@@ -369,8 +376,12 @@ export class Performer {
       buildNarrationPerformance(this.narrationSegs, out.length / out.sampleRate, deps.timeline.screenWindows(), undefined, {
         motionCues: deps.timeline.motionCues(),
         cameraCues: deps.timeline.cameraCues(),
+        slideCues: deps.timeline.slideCues(),
       });
     this.score.load(perf, this.fallbackEmotion());
+    // Preload the wall-slide images so the live take shows imagery identically to the export
+    // (live == export). Falls back to the gradient for any not-yet-loaded / failed image.
+    await this.app.studio.preloadSlideImages(deps.timeline.slideImageUrls());
 
     srcNode.onended = async () => {
       this.render = null;
