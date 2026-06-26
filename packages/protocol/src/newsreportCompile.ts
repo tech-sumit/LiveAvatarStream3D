@@ -4,9 +4,19 @@ import type { CameraCue } from './dsl.js';
 // ── Structural mirrors of avatar-live's private types (compiler stays three.js-free) ──
 export type PoseTuple = [number, number, number, number, number, number, number];
 
+/** A PowerPoint-style wall slide (mirrors @las/protocol's SlideContent; the compiler stays
+ *  three.js-free, so this is a structural copy rather than the zod type). */
+export interface CompiledSlide {
+  kicker: string;
+  headline: string;
+  bullets: string[];
+  ticker: string;
+  image?: string; // backdrop image src (URL or R2 key); resolved + preloaded by the studio
+}
+
 export interface CompiledCue {
   id: string;
-  track: 'narration' | 'camera' | 'motion' | 'audio';
+  track: 'narration' | 'camera' | 'motion' | 'audio' | 'graphics';
   type: string;
   start: number;
   duration: number;
@@ -19,6 +29,7 @@ export interface CompiledCue {
   volume?: number;
   fadeIn?: number;
   fadeOut?: number;
+  slide?: CompiledSlide; // graphics cues carry the slide painted on the wall at `start`
 }
 
 export interface LookParams {
@@ -74,6 +85,12 @@ const DEFAULT_LOOK_PARAMS: LookParams = {
 function ensureTerminal(s: string): string {
   const t = s.trim();
   return /[.!?]$/.test(t) ? t : t + '.';
+}
+// A story-derived lower-third ticker, used when neither the section nor defaults author one.
+// Replaces the studio's old HARDCODED "BREAKING · REALTIME 3D ANCHOR · …" string so the wall
+// ticker always reflects the current story (the ticker bug fix).
+export function defaultTicker(headline: string): string {
+  return `${headline.toUpperCase()}  ·  LIVE`;
 }
 // round1/estDuration are exported so the Score path (scoreCompile.newsReportAudio) reuses the
 // EXACT same timeline math — the two audio paths must stay byte-identical.
@@ -149,6 +166,21 @@ export function compileNewsReport(doc: NewsReportDoc): { project: CompiledProjec
     if (section.cameraDefault) curCamera = section.cameraDefault;
     let curEmotion = defEmotion; // re-seed each section
     const sectionStart = t;
+
+    // Wall slide for this section: emitted ONCE at the section's start so the on-screen
+    // graphics swap (PowerPoint-style) in lockstep with the narration. The lower ticker is
+    // story-derived (section → defaults → headline-derived default), never the old hardcoded
+    // studio string. The optional backdrop image src is resolved + preloaded by the studio.
+    const slideHeadline = section.headline ?? doc.meta.title;
+    const slideTicker = section.ticker ?? d.ticker ?? defaultTicker(slideHeadline);
+    const slide: CompiledSlide = {
+      kicker: 'LIVE',
+      headline: slideHeadline,
+      bullets: section.bullets ?? [],
+      ticker: slideTicker,
+    };
+    if (section.graphic) slide.image = section.graphic.src;
+    cues.push({ id: id('gfx'), track: 'graphics', type: 'graphic.slide', start: round1(sectionStart), duration: 0, slide });
 
     for (const beat of section.beats) {
       if (beat.emotion) curEmotion = beat.emotion;

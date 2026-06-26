@@ -67,6 +67,20 @@ export const ResolvedEmote = z.object({
 
 export const ScreenCut = z.object({ tSec: z.number(), source: z.string() }); // back-wall vision-mixer cut (today's cam.screenSource)
 
+// A PowerPoint-style slide painted on the video wall: a kicker chip, a headline, a few
+// bullets, the lower ticker bar, and an optional backdrop image (a URL or R2 key resolved by
+// the studio). Drives the wall graphics PER newscast section, in lockstep with the narration.
+export const SlideContent = z.object({
+  kicker: z.string(),
+  headline: z.string(),
+  bullets: z.array(z.string()).default([]),
+  ticker: z.string(),
+  image: z.string().optional(), // backdrop image src; absent → the studio's gradient fallback
+});
+export type SlideContent = z.infer<typeof SlideContent>;
+
+export const ResolvedSlide = z.object({ tSec: z.number(), slide: SlideContent }); // timed wall slide
+
 // The 2D-safe per-beat projection (what EchoMimic / MuseTalk read), now carrying emote intensity:
 export const BeatProjection = z.object({
   startSec: z.number(),
@@ -89,6 +103,7 @@ export const Performance = z.object({
   looks: z.array(ResolvedLook),
   emotes: z.array(ResolvedEmote), // mid-beat emote anchors
   screen: z.array(ScreenCut), // back-wall montage channel (montage sync preserved)
+  slides: z.array(ResolvedSlide), // per-section wall slides (PowerPoint-style graphics)
   audio: z.array(AudioCue), // music beds / SFX (mixdown preserved)
 });
 
