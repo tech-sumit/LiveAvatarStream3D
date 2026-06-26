@@ -12,3 +12,4 @@ export * from './stage.js';
 export * from './score.js';
 export * from './performance.js';
 export * from './presets.js';
+export * from './scoreCompile.js';
