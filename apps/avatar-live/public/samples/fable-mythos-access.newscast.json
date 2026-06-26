@@ -3,14 +3,28 @@
   "meta": {
     "title": "Anthropic Suspends Fable 5 and Mythos 5",
     "anchors": [
-      { "id": "ava", "name": "Ava Lin", "avatarUrl": "avaturn-model", "voiceId": "EXAVITQu4vr4xnSDxMaL" }
+      {
+        "id": "ava",
+        "name": "Ava Lin",
+        "avatarUrl": "avaturn-model",
+        "voiceId": "EXAVITQu4vr4xnSDxMaL"
+      }
     ],
     "language": "en",
     "fps": 30,
     "aspect": "16:9"
   },
-  "look": { "preset": "broadcast" },
-  "defaults": { "emotion": "neutral", "idleMotion": true },
+  "look": {
+    "preset": "broadcast"
+  },
+  "defaults": {
+    "emotion": "neutral",
+    "idleMotion": true,
+    "camera": {
+      "shot": "medium",
+      "move": "static"
+    }
+  },
   "rundown": [
     {
       "id": "open",
@@ -18,8 +32,27 @@
       "storyForm": "READER",
       "headline": "Breaking: Anthropic Suspends Two Models",
       "beats": [
-        { "id": "o1", "text": "Good evening. We begin tonight with a major development from Anthropic.", "emotion": "serious", "gesture": "open_palms", "camera": { "shot": "medium" } },
-        { "id": "o2", "text": "The company has suspended all access to its Fable 5 and Mythos 5 models.", "emotion": "serious", "camera": { "shot": "close_up" }, "pause_ms_after": 350 }
+        {
+          "id": "o1",
+          "text": "Good evening. We begin tonight with a major development from Anthropic.",
+          "emotion": "serious",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          }
+        },
+        {
+          "id": "o2",
+          "text": "The company has suspended all access to its Fable 5 and Mythos 5 models.",
+          "emotion": "serious",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          },
+          "pause_ms_after": 350
+        }
       ]
     },
     {
@@ -28,8 +61,27 @@
       "storyForm": "VO",
       "headline": "A Government Export-Control Order",
       "beats": [
-        { "id": "d1", "text": "Anthropic says it received a directive from the United States government at five twenty-one P.M. Eastern.", "emotion": "serious", "gesture": "explain", "camera": { "shot": "medium" } },
-        { "id": "d2", "text": "The order cites national security authorities and federal export controls.", "emotion": "concerned", "camera": { "shot": "medium_close" }, "pause_ms_after": 300 }
+        {
+          "id": "d1",
+          "text": "Anthropic says it received a directive from the United States government at five twenty-one P.M. Eastern.",
+          "emotion": "serious",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          }
+        },
+        {
+          "id": "d2",
+          "text": "The order cites national security authorities and federal export controls.",
+          "emotion": "concerned",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          },
+          "pause_ms_after": 300
+        }
       ]
     },
     {
@@ -38,8 +90,27 @@
       "storyForm": "VO",
       "headline": "Who Is Affected",
       "beats": [
-        { "id": "s1", "text": "The suspension applies to all users worldwide, including foreign nationals and Anthropic's own employees.", "emotion": "concerned", "gesture": "open_palms", "camera": { "shot": "wide" } },
-        { "id": "s2", "text": "All of Anthropic's other models remain unaffected.", "emotion": "neutral", "camera": { "shot": "medium" }, "pause_ms_after": 300 }
+        {
+          "id": "s1",
+          "text": "The suspension applies to all users worldwide, including foreign nationals and Anthropic's own employees.",
+          "emotion": "concerned",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          }
+        },
+        {
+          "id": "s2",
+          "text": "All of Anthropic's other models remain unaffected.",
+          "emotion": "neutral",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          },
+          "pause_ms_after": 300
+        }
       ]
     },
     {
@@ -48,8 +119,27 @@
       "storyForm": "PKG",
       "headline": "The Safeguard Concern",
       "beats": [
-        { "id": "c1", "text": "Officials identified a potential method to bypass Fable 5's safeguards.", "emotion": "serious", "gesture": "point", "camera": { "shot": "medium_close" } },
-        { "id": "c2", "text": "Anthropic says it reviewed a demonstration showing only minor, previously known vulnerabilities, the kind discoverable in other publicly available models.", "emotion": "thoughtful", "gesture": "explain", "camera": { "shot": "medium" }, "pause_ms_after": 350 }
+        {
+          "id": "c1",
+          "text": "Officials identified a potential method to bypass Fable 5's safeguards.",
+          "emotion": "serious",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          }
+        },
+        {
+          "id": "c2",
+          "text": "Anthropic says it reviewed a demonstration showing only minor, previously known vulnerabilities, the kind discoverable in other publicly available models.",
+          "emotion": "thoughtful",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          },
+          "pause_ms_after": 350
+        }
       ]
     },
     {
@@ -58,8 +148,27 @@
       "storyForm": "READER",
       "headline": "Anthropic Responds",
       "beats": [
-        { "id": "r1", "text": "In its statement, the company defended its approach.", "emotion": "confident", "gesture": "hand_to_chest", "camera": { "shot": "medium" } },
-        { "id": "r2", "text": "Quote: We stand by this defense-in-depth strategy. It reduces the risks posed by Fable, making them comparable to the risks of existing models already deployed across the industry.", "emotion": "confident", "camera": { "shot": "close_up" }, "pause_ms_after": 400 }
+        {
+          "id": "r1",
+          "text": "In its statement, the company defended its approach.",
+          "emotion": "confident",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          }
+        },
+        {
+          "id": "r2",
+          "text": "Quote: We stand by this defense-in-depth strategy. It reduces the risks posed by Fable, making them comparable to the risks of existing models already deployed across the industry.",
+          "emotion": "confident",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          },
+          "pause_ms_after": 400
+        }
       ]
     },
     {
@@ -68,8 +177,26 @@
       "storyForm": "KICKER",
       "headline": "What's Next",
       "beats": [
-        { "id": "k1", "text": "Anthropic says it is working to restore access to both models.", "emotion": "serious", "camera": { "shot": "medium" } },
-        { "id": "k2", "text": "We'll keep following this story as it develops. Thanks for watching.", "emotion": "warm", "gesture": "wave", "camera": { "shot": "close_up" } }
+        {
+          "id": "k1",
+          "text": "Anthropic says it is working to restore access to both models.",
+          "emotion": "serious",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          }
+        },
+        {
+          "id": "k2",
+          "text": "We'll keep following this story as it develops. Thanks for watching.",
+          "emotion": "warm",
+          "gesture": "none",
+          "camera": {
+            "shot": "medium",
+            "move": "static"
+          }
+        }
       ]
     }
   ]
