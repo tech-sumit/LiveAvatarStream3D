@@ -41,6 +41,8 @@ npm run build --workspace @las/avatar-live   # studio bundle → apps/avatar-liv
 ```
 Deploy control-api: `cd services/control-api && wrangler deploy`.
 
+> **`@las/performer-core`** (the framework-agnostic pure-math performance runtime — the Score/Stage redesign foundation) emits a **gitignored `dist/`**. `npm install` rebuilds it via the package's `prepare` script; its consumers (`@las/protocol`, `@las/avatar-live`) won't typecheck/build until that dist exists, so **after pulling, run `npm install`**.
+
 ## The studio (`apps/avatar-live`) — how a performance runs
 - **Script → segments:** `src/avatar/gestures.ts` parses `[emotion][gesture]` tags (plus keyword inference) into per-sentence drives.
 - **Drive loop:** `src/app/performer.ts` runs both the live preview (rAF) and the frame-exact offline export (`src/capture/offlineExporter.ts`, WebCodecs) off one path. `src/scene/stage.ts` owns the camera; `src/avatar/avatarController.ts` owns body/face/gesture/locomotion.
