@@ -4,4 +4,8 @@
 *.webm
 *.mov
 *.gif
+# the newscast/score script saved next to each render (the exact input used to generate it) —
+# a local convenience artifact paired with the (also-ignored) video, not source of truth.
+*.newscast.json
+*.score.json
 !README.md

@@ -303,6 +303,50 @@ describe('compileNewsReportToScore (bridge + equivalence)', () => {
   });
 });
 
+// ── Authored camera pose (framing as DATA, not preset constants) ───────────────
+describe('camera:{pose} — explicit authored framing carried verbatim', () => {
+  const POSE = { pos: [0.97, 1.5, 3.81] as [number, number, number], target: [1.66, 1.5, -0.3] as [number, number, number], fov: 32 };
+
+  it('a Score camera:{pose} lowers to a static keyframe with the exact numbers (no preset math)', () => {
+    const score = Score.parse({
+      stage: 'newsroom',
+      beats: [{ text: 'Good evening', emotion: 'neutral', cues: [{ camera: { pose: POSE } }] }],
+    });
+    const stage = Stage.parse({ id: 'newsroom', marks: [{ id: 'center', pos: [0, 0, 0] }] });
+    const perf = compileScore(stage, score, timingsFor(score));
+    expect(perf.camera).toHaveLength(1);
+    const kf = perf.camera[0]!;
+    expect(kf.pos).toEqual(POSE.pos);
+    expect(kf.target).toEqual(POSE.target);
+    expect(kf.fov).toBe(32);
+    expect(kf.follow).toBe(false); // held every frame → live == export
+  });
+
+  it('NewsReportDoc defaults.cameraPose overrides the shot-bucket preset for the whole newscast', () => {
+    const doc = NewsReportDoc.parse({
+      version: 2,
+      meta: { title: 'X', anchors: [{ id: 'a1', name: 'Ava', avatarUrl: 'm', voiceId: 'v' }] },
+      defaults: { cameraPose: POSE },
+      rundown: [
+        { id: 's1', slug: 'one', beats: [{ id: 'b1', text: 'Good evening', camera: { shot: 'close_up' } }] },
+        { id: 's2', slug: 'two', beats: [{ id: 'b2', text: 'Markets rose', camera: { shot: 'wide' } }] },
+      ],
+    });
+    const score = compileNewsReportToScore(doc);
+    const camCues = score.beats.flatMap((b) => b.cues.filter((c) => 'camera' in c));
+    // exactly ONE camera cue (the pose), emitted once — NO frame/size cues despite close_up + wide.
+    expect(camCues).toHaveLength(1);
+    const c = camCues[0]! as { camera: { pose?: typeof POSE } };
+    expect(c.camera.pose).toEqual(POSE);
+    // and it compiles through to a single verbatim keyframe.
+    const stage = Stage.parse({ id: 'newsroom', marks: [{ id: 'center', pos: [0, 0, 0] }] });
+    const perf = compileScore(stage, score, timingsFor(score));
+    expect(perf.camera).toHaveLength(1);
+    expect(perf.camera[0]!.pos).toEqual(POSE.pos);
+    expect(perf.camera[0]!.fov).toBe(32);
+  });
+});
+
 // ── g1 regression tests ───────────────────────────────────────────────────────
 
 // g1[0]: section-relative section.audio start must be re-based to ABSOLUTE (sectionStart + a.start)

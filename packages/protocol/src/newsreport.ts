@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { Emotion, Gesture, CameraCue } from './dsl.js';
 
+const Vec3 = z.tuple([z.number(), z.number(), z.number()]);
+
 /** Cinematic post-processing "look" applied to the captured output. */
 export const PostProcessingSpec = z.object({
   enabled: z.boolean().default(true),
@@ -95,6 +97,11 @@ export const DocDefaults = z.object({
   gesture: Gesture.optional(),
   pause_ms_after: z.number().int().min(0).default(0),
   camera: CameraCue.optional(),
+  // The locked studio camera, authored as DATA: an explicit pose for the presenter-beside-the-
+  // video-wall framing. When present it overrides the shot-bucket preset for the whole newscast,
+  // so the composition (anchor at frame-left, the wall dominant + fully captured) is tuned in
+  // this script, not in engine constants. Lowers to a Score `camera:{pose}` cue.
+  cameraPose: z.object({ pos: Vec3, target: Vec3, fov: z.number().positive() }).optional(),
   set: SectionSet.optional(),
   idleMotion: z.boolean().default(false),
   headline: z.string().optional(),

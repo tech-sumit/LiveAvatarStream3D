@@ -157,6 +157,12 @@ export function compileNewsReport(doc: NewsReportDoc): { project: CompiledProjec
   const id = (p: string) => `${p}-${cueN++}`;
   let curCamera: Partial<CameraCue> | undefined = d.camera;
   let prevCamType: string | null = null;
+  // An authored studio camera pose (DATA) → a single carried-forward cam.custom cue (explicit
+  // pos/target/fov), suppressing the shot-bucket preset cam cues. PoseTuple = [px,py,pz, tx,ty,tz, fov].
+  const cameraPoseTuple: PoseTuple | null = d.cameraPose
+    ? [d.cameraPose.pos[0], d.cameraPose.pos[1], d.cameraPose.pos[2], d.cameraPose.target[0], d.cameraPose.target[1], d.cameraPose.target[2], d.cameraPose.fov]
+    : null;
+  let camPoseEmitted = false;
   let prevGesture: string | null = null;
   let firstEmotion = defEmotion;
   let firstCamera: Partial<CameraCue> | undefined = curCamera;
@@ -193,10 +199,17 @@ export function compileNewsReport(doc: NewsReportDoc): { project: CompiledProjec
       const dur = estDuration(beat.text);
       cues.push({ id: id('nar'), track: 'narration', type: 'narration', start: round1(t), duration: round1(dur), text: ensureTerminal(beat.text), gesture, emotion: curEmotion });
 
-      const camType = cameraTypeFor(curCamera);
-      if (camType !== prevCamType) {
-        cues.push({ id: id('cam'), track: 'camera', type: camType, start: round1(t), duration: 1.2 });
-        prevCamType = camType;
+      if (cameraPoseTuple) {
+        if (!camPoseEmitted) {
+          cues.push({ id: id('cam'), track: 'camera', type: 'cam.custom', start: round1(t), duration: 1.2, pose: cameraPoseTuple });
+          camPoseEmitted = true;
+        }
+      } else {
+        const camType = cameraTypeFor(curCamera);
+        if (camType !== prevCamType) {
+          cues.push({ id: id('cam'), track: 'camera', type: camType, start: round1(t), duration: 1.2 });
+          prevCamType = camType;
+        }
       }
       if (gesture !== 'none' && gesture !== prevGesture) {
         cues.push({ id: id('mot'), track: 'motion', type: motionTypeFor(gesture), start: round1(t), duration: 1.0 });
