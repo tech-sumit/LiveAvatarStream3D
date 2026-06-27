@@ -14,7 +14,7 @@
         "-y",
         "chrome-devtools-mcp@latest",
         "--category-experimental-webmcp",
-        "--chrome-arg=--enable-features=WebMCP,DevToolsWebMCPSupport"
+        "--browser-url=http://127.0.0.1:9222"
       ]
     }
   }

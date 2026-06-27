@@ -53,34 +53,43 @@ and the extra tooling they bring.
 
 ## Option A (recommended): official `chrome-devtools-mcp`
 
-`.mcp.json` entry (shipped in this repo):
+**Connect mode (required).** `chrome-devtools-mcp` connects to a Chrome **you** launch with the
+WebMCP feature flags. Its *launch* mode does **not** work for WebMCP — passing the features via
+`--chrome-arg=--enable-features=WebMCP,DevToolsWebMCPSupport` is silently dropped (Puppeteer
+passes its own `--enable-features`, and Chrome's last-one-wins rule clobbers yours), so
+`navigator.modelContext` never appears and `list_webmcp_tools` returns `[]`. **Verified the hard
+way (2026-06-27, v1.4.0).** Use connect mode instead:
 
-```jsonc
-{
-  "mcpServers": {
-    "chrome-devtools": {
-      "command": "npx",
-      "args": [
-        "-y", "chrome-devtools-mcp@latest",
-        "--category-experimental-webmcp",
-        "--chrome-arg=--enable-features=WebMCP,DevToolsWebMCPSupport"
-      ]
-    }
-  }
-}
-```
-
-- `--category-experimental-webmcp` turns on the `list_webmcp_tools` / `execute_webmcp_tool`
-  tools. `--chrome-arg=--enable-features=WebMCP,DevToolsWebMCPSupport` passes the WebMCP feature
-  flags to the Chrome it launches (stable 149+).
-- To drive your **already-running** Chrome instead of launching one, add
-  `--browser-url=http://127.0.0.1:9222` (start that Chrome yourself with
-  `--remote-debugging-port=9222 --enable-features=WebMCP,DevToolsWebMCPSupport`), or
-  `--auto-connect` (Chrome 144+, after enabling remote debugging at
-  `chrome://inspect/#remote-debugging`).
+1. **Launch a WebMCP Chrome** (helper script wraps the right flags):
+   ```bash
+   npm run chrome:webmcp                 # opens system Chrome 149+ on :9222 + the studio
+   # ≡ Google Chrome --remote-debugging-port=9222 \
+   #     --enable-features=WebMCP,DevToolsWebMCPSupport \
+   #     --user-data-dir=… http://localhost:5175/?webmcp=full
+   ```
+2. **Point `chrome-devtools-mcp` at it** — the `.mcp.json` entry shipped in this repo:
+   ```jsonc
+   {
+     "mcpServers": {
+       "chrome-devtools": {
+         "command": "npx",
+         "args": [
+           "-y", "chrome-devtools-mcp@latest",
+           "--category-experimental-webmcp",
+           "--browser-url=http://127.0.0.1:9222"
+         ]
+       }
+     }
+   }
+   ```
+   `--category-experimental-webmcp` turns on `list_webmcp_tools` / `execute_webmcp_tool`;
+   `--browser-url` attaches to the Chrome from step 1. (`--auto-connect`, Chrome 144+, also works
+   once you've enabled remote debugging — but that Chrome **still** needs the WebMCP features, so
+   the helper-launched instance is simplest.)
 
 Drive loop:
-1. `new_page` / `navigate_page` → `http://localhost:5175/?webmcp=full`
+1. `select_page` the studio tab (or `new_page http://localhost:5175/?webmcp=full` in the
+   connected Chrome).
 2. `list_webmcp_tools` → the studio's 24 tools.
 3. `execute_webmcp_tool` `{ "toolName": "set_headline", "input": "{\"text\":\"…\"}" }`
    (`input` is **JSON-stringified** params). Returns `{status, output, errorText}`.
@@ -153,8 +162,14 @@ summarized in the §4 table of `2026-06-25-webmcp-studio-control-design.md`.
   150 — `browser_launch` → `webmcp_list_tools` returned all **24** studio tools with correct
   JSON-Schemas; `webmcp_call_tool set_headline` + `set_emotion` then `get_state` round-tripped
   the mutations; `screenshot` returned a viewable 720×405 JPEG image block.
-- **Option A premise, over CDP:** plain **system Chrome 149.0.7827.201** launched with
-  `--enable-features=WebMCP,DevToolsWebMCPSupport,WebMCPTesting` + the studio at `?webmcp=full`
-  exposed `navigator.modelContext` (`registerTool` present) and the studio had registered all
-  **24** tools — confirming `chrome-devtools-mcp` (which reads the same registry via Puppeteer's
-  `page.webmcp`) will drive them on stable Chrome 149, no chrome-beta needed.
+- **Option A, live end-to-end:** `chrome-devtools-mcp` v1.4.0 connected via
+  `--browser-url=http://127.0.0.1:9222` to **system Chrome 149.0.7827.201** (launched with
+  `--enable-features=WebMCP,DevToolsWebMCPSupport`) — `list_webmcp_tools` returned all **24**
+  studio tools; `execute_webmcp_tool set_headline` + `set_emotion` then `get_state` round-tripped
+  the mutations; native `take_screenshot` saved a full-res 756×469 PNG showing the studio with
+  `excited` selected.
+- **Confirmed `WebMCP,DevToolsWebMCPSupport` alone is sufficient** (no `WebMCPTesting`):
+  `navigator.modelContext` + `registerTool` present, studio registered its tools.
+- **Confirmed launch mode is insufficient:** with `--chrome-arg=--enable-features=…` (no
+  `--browser-url`), `navigator.modelContext` was `undefined` and `list_webmcp_tools` returned
+  `[]` — Puppeteer's own `--enable-features` wins. Hence connect mode + `npm run chrome:webmcp`.
