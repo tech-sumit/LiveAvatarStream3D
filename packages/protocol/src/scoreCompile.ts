@@ -419,6 +419,17 @@ function compileCamera(
       follow: false,
     };
   }
+  if ('pose' in dir) {
+    // Authored absolute pose: the framing is DATA carried verbatim from the score — no preset
+    // math. Held every frame as a static (follow:false) keyframe (live == export).
+    return {
+      tSec,
+      pos: [dir.pose.pos[0], dir.pose.pos[1], dir.pose.pos[2]],
+      target: [dir.pose.target[0], dir.pose.target[1], dir.pose.target[2]],
+      fov: dir.pose.fov,
+      follow: false,
+    };
+  }
   if ('move' in dir) {
     // Relative move: no absolute pose; the runtime applies moveCamera against the prior keyframe.
     const kf: CameraKeyframe = {
@@ -493,6 +504,10 @@ export function compileNewsReportToScore(doc: NewsReportDoc): Score {
   const d: Partial<DocDefaults> = doc.defaults ?? {};
   const defEmotion = (d.emotion ?? 'neutral') as EmotionPreset;
   const defShot = newsShotSize(d.camera?.shot);
+  // An authored studio camera pose (DATA) locks the framing for the whole newscast — emit it
+  // once at the top and suppress the shot-bucket frame cues (the preset path) entirely.
+  const cameraPose = d.cameraPose;
+  let poseEmitted = false;
 
   const beats: ScoreBeat[] = [];
   let prevSize: ShotSize | null = null;
@@ -511,8 +526,14 @@ export function compileNewsReportToScore(doc: NewsReportDoc): Score {
       const kind = NEWS_GESTURE_TO_KIND[rawGesture] ?? 'none';
 
       const cues: Cue[] = [];
-      // Camera: replace + carry-forward — emit a frame cue only when the bucket changes.
-      if (curSize !== prevSize) {
+      // Camera: an authored pose (DATA) wins and is emitted once; otherwise replace +
+      // carry-forward the shot-bucket preset frame cue only when the bucket changes.
+      if (cameraPose) {
+        if (!poseEmitted) {
+          cues.push({ camera: { pose: cameraPose } });
+          poseEmitted = true;
+        }
+      } else if (curSize !== prevSize) {
         cues.push({ camera: { frame: { subjects: ['self.face'], size: curSize } } });
         prevSize = curSize;
       }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const Ref = z.string(); // Stage mark/target id, OR 'self.face'/'self.chest'/'self.root', OR a savedShot id
+const Vec3 = z.tuple([z.number(), z.number(), z.number()]); // local — `Vec3` is publicly owned by stage.ts
 export const Ease = z.enum(['linear', 'ease_in', 'ease_out', 'ease_in_out']);
 export const WordAnchor = z.object({ word: z.number().int().min(0) }); // index into the beat's words
 export const ShotSize = z.enum(['cu', 'mcu', 'medium', 'wide']); // NAMED — presets.ts imports this
@@ -49,6 +50,10 @@ export const CameraDirective = z.union([
     follow: z.boolean().optional(),
   }),
   z.object({ shot: z.string() }), // SavedShot id
+  // An explicit, authored camera pose — direction as DATA, not a preset. The framing values
+  // (where the camera sits / aims, the fov) live in the score JSON, so a composition like the
+  // anchor-beside-the-video-wall two-shot is tuned in the script rather than in engine code.
+  z.object({ pose: z.object({ pos: Vec3, target: Vec3, fov: z.number().positive() }) }),
   z.object({ move: CameraMove, amount: z.number(), ease: Ease.optional() }), // relative dolly/orbit/pan/truck/pedestal
 ]);
 
