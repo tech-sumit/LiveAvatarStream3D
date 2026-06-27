@@ -35,6 +35,30 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(bin);
 }
 
+/**
+ * Downscale a (PNG) screenshot blob to a compact JPEG for the see→verify loop. A full-res PNG
+ * is multiple MB of base64 — too large to flow through an MCP client's tool-result budget (the
+ * bridge JSON-stringifies the image content). A ~1280px JPEG is plenty to *verify* a frame, and
+ * an order of magnitude smaller. The full-res PNG path is unchanged for the WS-bridge sink.
+ */
+async function downscaleToJpeg(
+  png: Blob,
+  maxWidth = 720,
+  quality = 0.5,
+): Promise<{ blob: Blob; width: number; height: number }> {
+  const bmp = await createImageBitmap(png);
+  const scale = bmp.width > maxWidth ? maxWidth / bmp.width : 1;
+  const width = Math.round(bmp.width * scale);
+  const height = Math.round(bmp.height * scale);
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('no 2d context for screenshot downscale');
+  ctx.drawImage(bmp, 0, 0, width, height);
+  bmp.close();
+  const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality });
+  return { blob, width, height };
+}
+
 /** Trigger a browser download of a blob under `filename`. */
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -72,8 +96,10 @@ export function initWebMcp(app: StudioContext, controllers: BridgeControllers): 
     dispatch,
     allowExecuteJs,
     screenshot: async (params) => {
-      const { blob, width, height } = await screenshotBlob(app, controllers, params);
-      return { data: await blobToBase64(blob), mimeType: 'image/png', width, height };
+      const png = await screenshotBlob(app, controllers, params);
+      // Return a compact JPEG inline — a full-res PNG overruns the MCP client's result budget.
+      const { blob, width, height } = await downscaleToJpeg(png.blob);
+      return { data: await blobToBase64(blob), mimeType: 'image/jpeg', width, height };
     },
     exportVideo: async () => {
       const blob = await exportBlob(controllers);

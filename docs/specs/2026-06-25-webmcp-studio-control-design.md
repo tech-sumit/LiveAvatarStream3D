@@ -108,8 +108,11 @@ the scripting spec, now agent-operable).
 - **Capability scoping for `execute_js`** → **opt-in only.** The eval escape hatch is *not*
   registered by default; it requires `?webmcp=full` (or `VITE_WEBMCP=full`). All other tools
   register whenever the API is present. (A richer per-tool consent model is still future work.)
-- **`screenshot` return** → returned **inline** as an MCP `image` content block (base64 PNG), so
-  the AI closes the see→verify loop locally with no HTTP sink.
+- **`screenshot` return** → returned **inline** as an MCP `image` content block, so the AI closes
+  the see→verify loop locally with no HTTP sink. It is a **downscaled JPEG thumbnail** (~720px),
+  not a full-res PNG: a bridge like `mcp-webmcp` JSON-stringifies the tool result, and a full PNG
+  (~3.4 MB base64) overruns the client's per-result token budget. See the Claude Code integration
+  doc (`2026-06-27-webmcp-claude-code-integration.md`).
 - **`export_mp4` return** → v1 renders in-browser and **triggers a browser download**, returning
   `{ bytes, filename }` metadata (a 50 MB+ base64 payload inline is impractical, and the in-page
   server has no sink). **R2 persistence + returning a URL remains the v2 option.**
