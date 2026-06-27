@@ -1,0 +1,7 @@
+# Generated render artifacts (MP4/WebM/etc.) are large binaries — kept locally, not in git.
+# The folder, this ignore, and README.md ARE tracked so the convention is documented.
+*.mp4
+*.webm
+*.mov
+*.gif
+!README.md
