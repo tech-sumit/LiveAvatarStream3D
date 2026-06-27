@@ -83,16 +83,18 @@ move the body.
 
 ### `idleMotion` and the talk-animation caveat
 
-`defaults.idleMotion` (`avatar/avatarController.ts`):
-- `false` (default) — the avatar holds still between sentences (no breathing/sway). Calmer.
-- `true` — plays the idle/talk cycle for subtle life, but **occasionally gesticulates**.
+`defaults.idleMotion` (`avatar/avatarController.ts`) is the single "how lively is the body"
+knob — it governs **both** idle sway *and* the energy of the talking-base animation:
+- `false` (default) — **calm anchor.** Holds still between sentences (no breathing/sway) **and**
+  pins the speaking base to the calm talk pool (`idle_calm`/`talk1`), so the body doesn't throw
+  wide arms mid-sentence even on high-energy beats. Use this for straight news reads.
+- `true` — **lively.** Plays the idle/talk cycle for subtle life and lets the speaking base use
+  the full energy pool (up to the broad `talk4`/`talk5` clips), so the anchor gesticulates more.
 
-**Caveat:** even with `idleMotion: false`, the **talk body animation that plays while the
-anchor is speaking** can still throw an occasional wide-arm gesture. That motion is the
-speaking clip, not a gesture or idle sway, and is **not controllable from the newscast**
-today. Expect the anchor to be calm most of the time with an occasional hand movement
-mid-sentence. Removing it entirely would require a studio/avatar code change (a calmer talk
-clip or suppressing body gesticulation during narration).
+This is wired through `scoreDrive.selectTalkClip(..., calm = !avatar.idleMotion)`
+(`avatar/gestures.ts` `TALK_BUCKETS`): a calm anchor only ever draws from the `low` pool
+regardless of the beat's emotional energy. The energy buckets themselves are still driven by
+`emotion` (`EMOTION_ENERGY`) when lively.
 
 ---
 
@@ -194,8 +196,9 @@ dark abstract backdrop per section.
 - **`point` turns the anchor toward the screen, away from camera** — don't use it as a generic
   emphasis gesture.
 - **Clip gestures (`wave`/`nod`/`open_palms`/`hand_to_chest`/…) throw the arms wide** — sparing use only.
-- **The speaking talk-animation gesticulates even with `idleMotion: false`** — occasional and
-  not newscast-controllable (§3).
+- **A lively anchor (`idleMotion: true`) gesticulates wide while speaking** (the talk pool reaches
+  `talk4`/`talk5`). Set `idleMotion: false` for a calm read — it pins the speaking base to the
+  calm pool too (§3).
 - **Camera `move` (except orbit) does nothing** in the NewsReport path (§2).
 - **The ticker must be authored** — there is no longer a hardcoded fallback string worth relying on.
 - **Single exported frames during speech catch mid-phoneme mouth shapes** — judge motion from the
