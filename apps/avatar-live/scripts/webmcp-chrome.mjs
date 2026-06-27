@@ -8,7 +8,9 @@
 // `--browser-url=http://127.0.0.1:9222`.
 //
 // Usage: node apps/avatar-live/scripts/webmcp-chrome.mjs [url] [--port 9222] [--headless]
-//   url defaults to http://localhost:5175/?webmcp=full
+//   url defaults to http://localhost:5175/ — the studio auto-registers its SAFE WebMCP tool set
+//   when navigator.modelContext is present. Append `?webmcp=full` yourself ONLY if you need the
+//   execute_js arbitrary-eval escape hatch (full studio-origin access — not the default).
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { platform } from 'node:os';
@@ -17,7 +19,7 @@ const args = process.argv.slice(2);
 const portFlag = args.indexOf('--port');
 const port = portFlag !== -1 ? args[portFlag + 1] : '9222';
 const headless = args.includes('--headless');
-const url = args.find((a) => /^https?:\/\//.test(a)) ?? 'http://localhost:5175/?webmcp=full';
+const url = args.find((a) => /^https?:\/\//.test(a)) ?? 'http://localhost:5175/';
 
 // Candidate stable-Chrome paths per OS (must be ≥149 for WebMCP).
 const CANDIDATES = {

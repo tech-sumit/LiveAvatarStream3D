@@ -73,4 +73,25 @@ describe('buildStudioTools', () => {
     expect(res.isError).toBe(true);
     expect(res.content).toEqual([{ type: 'text', text: 'boom' }]);
   });
+
+  it('validates input against the protocol zod params before dispatching', async () => {
+    const deps = stubDeps();
+    const tools = buildStudioTools(deps);
+    // rate 10 is out of the 0.5–2 range; set_backscreen_media{} satisfies neither union branch;
+    // emotion must be an enum member. All must be rejected without reaching the dispatcher.
+    for (const [name, bad] of [
+      ['set_voice', { voiceId: 'v', rate: 10 }],
+      ['set_backscreen_media', {}],
+      ['set_emotion', { emotion: 'bogus' }],
+      ['add_cue', { track: 'camera', type: 'x', start: -5 }],
+    ] as const) {
+      const res = await byName(tools, name).execute(bad);
+      expect(res.isError, `${name} should reject ${JSON.stringify(bad)}`).toBe(true);
+    }
+    expect(deps.dispatch).not.toHaveBeenCalled();
+
+    // a valid call passes the parsed params through
+    await byName(tools, 'set_voice').execute({ voiceId: 'v', rate: 1.5 });
+    expect(deps.dispatch).toHaveBeenCalledWith('setVoice', { voiceId: 'v', rate: 1.5 });
+  });
 });

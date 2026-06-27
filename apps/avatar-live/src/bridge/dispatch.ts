@@ -125,9 +125,12 @@ export async function screenshotBlob(
   params: { target?: unknown; seek?: unknown },
 ): Promise<{ blob: Blob; width: number; height: number }> {
   if (typeof params.seek === 'number') seekTimeline(c, params.seek);
-  const target = String(params.target);
+  // Default to `output`: it renders an on-demand frame, so it works in a hidden/headless tab.
+  // `viewport` reads the live preview canvas, whose rAF loop is paused when the tab is hidden,
+  // so it can be a stale/black frame under automation.
+  const target = params.target == null ? 'output' : String(params.target);
   const canvas =
-    target === 'output' ? app.stage.renderOutputFrame() : (app.dom.stageEl.querySelector('canvas') as HTMLCanvasElement | null);
+    target === 'viewport' ? (app.dom.stageEl.querySelector('canvas') as HTMLCanvasElement | null) : app.stage.renderOutputFrame();
   if (!canvas) throw new Error('no canvas to capture');
   const blob = await blobFromCanvas(canvas);
   return { blob, width: canvas.width, height: canvas.height };
@@ -137,7 +140,14 @@ export async function screenshotBlob(
  *  the WS bridge (uploads to sink) and the WebMCP server (downloads in-page). */
 export async function exportBlob(c: BridgeControllers): Promise<Blob> {
   const blob = await c.performer.exportMp4ToBlob();
-  if (!blob) throw new Error('export produced no output');
+  if (!blob) {
+    // exportMp4ToBlob returns null for several reasons (a take/preview already running, WebCodecs
+    // unavailable, narration build failed), logging the specific cause to the in-page log. Give
+    // the caller the actionable hint rather than a bare "no output".
+    throw new Error(
+      'export produced no output — if a take or preview is still running, wait for it to finish and retry; otherwise WebCodecs may be unavailable in this browser (see the studio log for the specific cause)',
+    );
+  }
   return blob;
 }
 
@@ -159,6 +169,10 @@ async function uploadBlob(kind: 'png' | 'mp4', id: string, blob: Blob): Promise<
  */
 export function createDispatcher(app: StudioContext, c: BridgeControllers) {
   const d = app.dom;
+  // Last-applied newscast doc, scoped to THIS dispatcher (one per transport). Module-global
+  // state here would let a patch_newscast on one transport (WS bridge) merge over a doc applied
+  // on another (WebMCP), importing a hybrid the caller never authored.
+  let lastNewscast: unknown = null;
 
   /** Fire the native change/input handler the UI relies on after a programmatic set. */
   const fire = (el: HTMLElement, type: 'input' | 'change') => el.dispatchEvent(new Event(type, { bubbles: true }));
@@ -415,7 +429,6 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
 // The active request id, set by the WS client per inbound request so screenshot /
 // export uploads can name their sink ref after the correlation id.
 let activeReqId = '';
-let lastNewscast: unknown = null;
 export function setActiveReqId(id: string): void {
   activeReqId = id;
 }

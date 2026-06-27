@@ -65,7 +65,7 @@ way (2026-06-27, v1.4.0).** Use connect mode instead:
    npm run chrome:webmcp                 # opens system Chrome 149+ on :9222 + the studio
    # ≡ Google Chrome --remote-debugging-port=9222 \
    #     --enable-features=WebMCP,DevToolsWebMCPSupport \
-   #     --user-data-dir=… http://localhost:5175/?webmcp=full
+   #     --user-data-dir=… http://localhost:5175/
    ```
 2. **Point `chrome-devtools-mcp` at it** — the `.mcp.json` entry shipped in this repo:
    ```jsonc
@@ -88,8 +88,7 @@ way (2026-06-27, v1.4.0).** Use connect mode instead:
    the helper-launched instance is simplest.)
 
 Drive loop:
-1. `select_page` the studio tab (or `new_page http://localhost:5175/?webmcp=full` in the
-   connected Chrome).
+1. `select_page` the studio tab (or `new_page http://localhost:5175/` in the connected Chrome).
 2. `list_webmcp_tools` → the studio's 24 tools.
 3. `execute_webmcp_tool` `{ "toolName": "set_headline", "input": "{\"text\":\"…\"}" }`
    (`input` is **JSON-stringified** params). Returns `{status, output, errorText}`.
@@ -117,7 +116,7 @@ agent calling `browser_launch`.
 
 ### Option B drive loop
 
-1. **`browser_launch`** `{ "channel": "chrome-beta", "url": "http://localhost:5175/?webmcp=full" }`
+1. **`browser_launch`** `{ "channel": "chrome-beta", "url": "http://localhost:5175/" }`
    — opens Chrome Beta with WebMCP enabled and loads the studio.
 2. **`webmcp_list_tools`** — discovers the studio's tools and their JSON-Schemas.
 3. **`webmcp_call_tool`** `{ "name": "<tool>", "arguments": { … } }`.
@@ -133,14 +132,23 @@ Both bridges expose the same 24 tools. A natural sequence:
 
 - `apply_newscast` `{doc}` (a Score or NewsReportDoc) — or `set_script` / `set_voice` /
   `set_avatar` / `set_emotion` / `set_lighting` / `set_look` / `set_headline`.
-- **see → verify**: native `take_screenshot` (Option A) or the studio's `screenshot`
-  `{target:"viewport"}` (Option B), then adjust and repeat.
+- **see → verify**: native `take_screenshot` (Option A) or the studio's `screenshot` (Option B,
+  defaults to the `output` frame — works headless; the WebMCP image is a downscaled JPEG
+  thumbnail), then adjust and repeat.
 - `export_mp4` to render — it downloads the MP4 in-browser and returns `{bytes, filename}`.
 
-`?webmcp=full` (on the studio URL) additionally registers the `execute_js` escape hatch; omit
-it for the safe default set; `?webmcp=off` disables the in-page server entirely. The full tool
-list + schemas live in `packages/protocol/src/bridgeTools.ts` (`BRIDGE_TOOLS`) and are
-summarized in the §4 table of `2026-06-25-webmcp-studio-control-design.md`.
+The plain studio URL registers the **safe** tool set (everything except `execute_js`).
+**`?webmcp=full` additionally registers `execute_js`** — arbitrary JS in the studio origin, full
+access — so add it **only** when you specifically need that hatch, never as your default launch
+URL. `?webmcp=off` disables the in-page server entirely. The full tool list + schemas live in
+`packages/protocol/src/bridgeTools.ts` (`BRIDGE_TOOLS`) and are summarized in the §4 table of
+`2026-06-25-webmcp-studio-control-design.md`.
+
+> **Security posture.** Registering tools exposes studio-state mutation (and, with
+> `?webmcp=full`, full-origin eval) to whatever AI client is attached to the tab — there is no
+> per-session consent gate in this POC. Keep `execute_js` off by default, treat a
+> remote-debugging Chrome as trusted-local-only, and add an explicit opt-in before registering
+> if this is ever deployed beyond a local dev studio.
 
 ## Gotchas (learned wiring this up)
 
