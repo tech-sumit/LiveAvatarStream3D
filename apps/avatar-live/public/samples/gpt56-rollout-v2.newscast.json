@@ -14,7 +14,7 @@
     "emotion": "neutral",
     "idleMotion": false,
     "camera": { "shot": "medium", "move": "static" },
-    "cameraPose": { "pos": [0.97, 1.5, 3.81], "target": [1.66, 1.5, -0.3], "fov": 32 },
+    "cameraPose": { "pos": [0.55, 1.47, 4.1], "target": [1.2, 1.16, -0.22], "fov": 34 },
     "ticker": "GPT-5.6 UPDATE  ·  GATED PREVIEW NOW OPENING  ·  CHATGPT, CODEX & API ROLLING OUT  ·  PARTNERS FIRST"
   },
   "rundown": [
