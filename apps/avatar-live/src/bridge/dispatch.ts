@@ -113,6 +113,34 @@ async function blobFromCanvas(canvas: HTMLCanvasElement): Promise<Blob> {
   });
 }
 
+/**
+ * Render a screenshot PNG of the viewport or the output frame (optionally after seeking),
+ * returning the raw blob + pixel dims. Shared by the WS bridge (which then uploads it to the
+ * HTTP sink) and the in-page WebMCP server (which returns it inline) — so the capture logic
+ * lives in one place.
+ */
+export async function screenshotBlob(
+  app: StudioContext,
+  c: BridgeControllers,
+  params: { target?: unknown; seek?: unknown },
+): Promise<{ blob: Blob; width: number; height: number }> {
+  if (typeof params.seek === 'number') seekTimeline(c, params.seek);
+  const target = String(params.target);
+  const canvas =
+    target === 'output' ? app.stage.renderOutputFrame() : (app.dom.stageEl.querySelector('canvas') as HTMLCanvasElement | null);
+  if (!canvas) throw new Error('no canvas to capture');
+  const blob = await blobFromCanvas(canvas);
+  return { blob, width: canvas.width, height: canvas.height };
+}
+
+/** Render the performance to an MP4 blob (throws if the export produced nothing). Shared by
+ *  the WS bridge (uploads to sink) and the WebMCP server (downloads in-page). */
+export async function exportBlob(c: BridgeControllers): Promise<Blob> {
+  const blob = await c.performer.exportMp4ToBlob();
+  if (!blob) throw new Error('export produced no output');
+  return blob;
+}
+
 /** POST a binary result to the MCP HTTP sink; returns the saved ref descriptor. */
 async function uploadBlob(kind: 'png' | 'mp4', id: string, blob: Blob): Promise<{ ref: string; bytes: number }> {
   const ref = `${kind}/${id}`;
@@ -316,13 +344,9 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
         return snapshotState(app, c);
 
       case 'screenshot': {
-        if (typeof params.seek === 'number') seekTimeline(c, params.seek);
-        const target = String(params.target);
-        const canvas = target === 'output' ? app.stage.renderOutputFrame() : (d.stageEl.querySelector('canvas') as HTMLCanvasElement | null);
-        if (!canvas) throw new Error('no canvas to capture');
-        const blob = await blobFromCanvas(canvas);
+        const { blob, width, height } = await screenshotBlob(app, c, params);
         const saved = await uploadBlob('png', currentReqId(), blob);
-        return { ...saved, width: canvas.width, height: canvas.height };
+        return { ...saved, width, height };
       }
 
       case 'preview': {
@@ -331,9 +355,7 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
       }
 
       case 'exportMp4': {
-        const blob = await c.performer.exportMp4ToBlob();
-        if (!blob) throw new Error('export produced no output');
-        const saved = await uploadBlob('mp4', currentReqId(), blob);
+        const saved = await uploadBlob('mp4', currentReqId(), await exportBlob(c));
         return saved;
       }
 

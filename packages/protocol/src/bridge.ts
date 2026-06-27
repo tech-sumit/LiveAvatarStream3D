@@ -211,6 +211,40 @@ export const BRIDGE_COMMANDS = [
 ] as const;
 export type BridgeCommandName = (typeof BRIDGE_COMMANDS)[number];
 
+/**
+ * The per-command params schema, keyed by command name. This is the SAME zod
+ * object each branch of {@link BridgeCommand} carries — surfaced as a map so a
+ * single source (the WebMCP tool manifest in `bridgeTools.ts`) can derive each
+ * tool's JSON-Schema directly from the wire contract, with no second hand-kept
+ * copy that could drift.
+ */
+export const BRIDGE_PARAM_SCHEMAS = {
+  applyNewscast: NewscastDocParams,
+  patchNewscast: NewscastPatchParams,
+  validateNewscast: NewscastDocParams,
+  setScript: SetScriptParams,
+  setVoice: SetVoiceParams,
+  setAvatar: SetAvatarParams,
+  setEmotion: SetEmotionParams,
+  setLighting: SetLightingParams,
+  setLook: SetLookParams,
+  setCaptureFormat: SetCaptureFormatParams,
+  addCue: AddCueParams,
+  updateCue: UpdateCueParams,
+  removeCue: RemoveCueParams,
+  listCues: EmptyParams,
+  captureView: CaptureViewParams,
+  setTimelineLength: SetTimelineLengthParams,
+  clearTimeline: EmptyParams,
+  setHeadline: SetHeadlineParams,
+  setBackscreenMedia: SetBackscreenMediaParams,
+  getState: EmptyParams,
+  screenshot: ScreenshotParams,
+  preview: EmptyParams,
+  exportMp4: EmptyParams,
+  executeJs: ExecuteJsParams,
+} as const satisfies Record<BridgeCommandName, z.ZodTypeAny>;
+
 // ---------------------------------------------------------------------------
 // Envelopes: request, result, register handshake.
 // ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ import { initSliderReadouts } from './app/sliderReadout.js';
 import { initScriptEditor } from './app/scriptEditor.js';
 import { initCameraQuickAccess } from './app/cameraQuickAccess.js';
 import { initBridge } from './bridge/index.js';
+import { initWebMcp } from './mcp/server.js';
 
 const app = new StudioContext();
 
@@ -71,4 +72,11 @@ app.log(`ready · avatar: ${app.avatar.description}`);
 
 // Studio Bridge — no-op unless enabled via ?bridge=<port> or VITE_BRIDGE. When
 // enabled, a reconnecting WS client lets the Newsroom MCP server drive this studio.
-initBridge(app, { lighting, look, recording, backScreen, transform, voices, library, timeline, performer, projects });
+const bridgeControllers = { lighting, look, recording, backScreen, transform, voices, library, timeline, performer, projects };
+initBridge(app, bridgeControllers);
+
+// In-page WebMCP server — registers the studio's tools on navigator.modelContext so any
+// WebMCP-capable AI app attached to the tab can drive the studio directly. No-op when the
+// runtime lacks navigator.modelContext (normal browsers) or ?webmcp=off. Reuses the same
+// dispatcher as the bridge, so the tool surface == the BridgeCommand vocabulary.
+initWebMcp(app, bridgeControllers);
