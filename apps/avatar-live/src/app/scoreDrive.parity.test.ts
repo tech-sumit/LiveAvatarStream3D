@@ -74,6 +74,7 @@ class FakeAvatar implements AvatarLike {
   headHeight = 0.42;
   group = { position: { x: 0, y: 0, z: 0 } };
   animationClips = ['idle', 'idle_calm', 'talk1', 'talk2', 'talk3', 'talk4', 'talk5', 'wave', 'point'];
+  idleMotion = true; // lively by default; flip to false to exercise the calm talk pool
   emotions: { name: EmotionName; intensity: number }[] = [];
   turns: number[] = [];
   gazes: (Vec3Like | null)[] = [];
@@ -299,6 +300,23 @@ describe('scoreDrive: selectTalkClip determinism across a live-then-export seque
     // And the sequence visibly varies (not all the same clip → the rotation actually rotates).
     const bases = exp.gestures.map((g) => g.base);
     expect(new Set(bases).size).toBeGreaterThan(1);
+  });
+
+  it('a CALM anchor (idleMotion off) holds the speaking base to the calm pool — no wide talk clips', () => {
+    const stage = new FakeStage();
+    const avatar = new FakeAvatar();
+    avatar.idleMotion = false; // calm anchor
+    const sd = new ScoreDrive(stage, avatar, SCREEN_ANCHOR);
+    sd.load(talkPerf()); // beats span happy/serious/excited/warm/confident (low→high energy)
+    const total = Math.ceil(3 * fps);
+    const dt = 1 / fps;
+    for (let i = 0; i < total; i++) sd.drive(i / fps, dt, SILENT);
+    // Every chosen talking base is from the LOW pool, even on the high-energy beats —
+    // the armsy talk3/talk4/talk5 never appear.
+    const bases = avatar.gestures.map((g) => g.base);
+    expect(bases.length).toBeGreaterThan(0);
+    expect(bases.every((b) => b === 'idle_calm' || b === 'talk1')).toBe(true);
+    expect(bases.some((b) => /talk[2-5]/.test(b))).toBe(false);
   });
 
   it('live-speak reload() appends a gesture without replaying prior ones (same score.drive)', () => {
