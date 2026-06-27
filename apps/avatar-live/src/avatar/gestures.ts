@@ -106,9 +106,13 @@ export function gestureClipFor(kind: Gesture): string | null {
  * last clip so it visibly varies. PURE: `seq` is a caller-owned, monotonically-increasing
  * index (the former module-global `rotation`), so live and export pick the SAME clip
  * sequence — no hidden module state that could diverge between the two drive paths.
+ *
+ * `calm` (a calm anchor — `idleMotion` off) holds the base to the LOW pool
+ * (`idle_calm`/`talk1`) regardless of the beat's emotional energy, so the body doesn't throw
+ * wide arms (talk4/talk5) mid-sentence. Lively (`calm` false) keeps the full energy pool.
  */
-export function selectTalkClip(emotion: EmotionName, lastClip: string, seq: number): string {
-  const bucket = TALK_BUCKETS[EMOTION_ENERGY[emotion] ?? 'med'];
+export function selectTalkClip(emotion: EmotionName, lastClip: string, seq: number, calm = false): string {
+  const bucket = calm ? TALK_BUCKETS.low : TALK_BUCKETS[EMOTION_ENERGY[emotion] ?? 'med'];
   const choices = bucket.filter((c) => c !== lastClip);
   const pool = choices.length ? choices : bucket;
   return pool[seq % pool.length] ?? bucket[0] ?? 'talk1';

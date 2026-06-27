@@ -42,6 +42,7 @@ export interface AvatarLike {
   readonly headHeight: number;
   readonly group: { readonly position: Vec3Like }; // world root (walked); self.root
   readonly animationClips: string[]; // gates talk-clip selection (empty → no body clips)
+  readonly idleMotion: boolean; // false → calm anchor: hold the speaking base to the calm talk pool
   setMouth(cue: MouthCue): void;
   setEmotion(name: EmotionName, intensity?: number): void;
   setTurn(yaw: number): void;
@@ -265,7 +266,9 @@ export class ScoreDrive {
     if (this.avatar.animationClips.length === 0) return;
     const energy = g.drive.baseEnergy ?? 'med';
     const emotion = bucketEmotion(energy);
-    this.lastTalkClip = selectTalkClip(emotion, this.lastTalkClip, this.talkSeq++);
+    // Calm anchor (idleMotion off): hold the speaking base to the calm talk pool so the body
+    // doesn't gesticulate wide mid-sentence; lively (idleMotion on) keeps the full energy pool.
+    this.lastTalkClip = selectTalkClip(emotion, this.lastTalkClip, this.talkSeq++, !this.avatar.idleMotion);
     const overlay = overlayClipFor(g);
     if (overlay) this.avatar.playGesture(overlay, this.lastTalkClip);
     else this.avatar.playClip(this.lastTalkClip);

@@ -123,7 +123,7 @@ export class AvatarController {
 
   // idle motion
   private idleClock = 0;
-  private idleMotion = false; // default: avatar holds still (no breathing/sway)
+  private _idleMotion = false; // default: avatar holds still (no breathing/sway)
   private idleHoldT = 0; // time spent settling the current pose before freezing
 
   // Renderer is needed for KTX2 transcoder support detection.
@@ -511,8 +511,13 @@ export class AvatarController {
 
   /** Idle breathing/sway. Off → the avatar settles into a still standing pose. */
   setIdleMotion(on: boolean): void {
-    this.idleMotion = on;
+    this._idleMotion = on;
     if (on) this.idleHoldT = 0;
+  }
+  /** Whether the body is "lively" (idle sway + the full talk-gesticulation pool). Off → a
+   *  calm anchor: no idle sway AND the speaking base is held to the calm talk clips. */
+  get idleMotion(): boolean {
+    return this._idleMotion;
   }
 
   get animationClips(): string[] {
@@ -740,7 +745,7 @@ export class AvatarController {
     // settle into a still pose then freeze it (no breathing/weight-shift) — but
     // always animate while speaking, or while walking to a mark, so the legs move.
     let adv = dt;
-    if (!this.idleMotion && !this.speaking && !this.moving) {
+    if (!this._idleMotion && !this.speaking && !this.moving) {
       if (this.idleHoldT < 1.6) this.idleHoldT += dt;
       else adv = 0; // hold the settled pose
     }
@@ -805,7 +810,7 @@ export class AvatarController {
   }
 
   private updateIdle(dt: number): void {
-    if (!this.idleMotion) {
+    if (!this._idleMotion) {
       // Hold perfectly still (skeletal idle clip is frozen separately in update()).
       this.motion.position.y = 0;
       this.motion.rotation.set(0, 0, 0);
