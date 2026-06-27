@@ -1,9 +1,18 @@
 # In-browser WebMCP control for the studio — design / task
 
-**Status:** task captured · **Date:** 2026-06-25 · **Depends on / complements:** the Performance
-Score DSL design (`2026-06-25-performance-score-dsl-design.md`). This is **additional** to the
-scripting spec: the Score/Stage is the *authored artifact*; this is the *live control channel*
-an AI app uses to drive the studio.
+**Status:** **v1 implemented** (2026-06-27) · **Date:** 2026-06-25 · **Depends on / complements:**
+the Performance Score DSL design (`2026-06-25-performance-score-dsl-design.md`). This is
+**additional** to the scripting spec: the Score/Stage is the *authored artifact*; this is the
+*live control channel* an AI app uses to drive the studio.
+
+> **v1 landed.** The §4 tool surface is live: `@las/protocol` exports a `BRIDGE_TOOLS` manifest
+> (one entry per `BridgeCommand`, JSON-Schema generated from the same zod params), and
+> `apps/avatar-live/src/mcp/` registers them on `navigator.modelContext` via `initWebMcp`
+> (wired in `main.ts`). It reuses the existing `bridge/dispatch.ts` handlers verbatim, so the
+> MCP tool surface and the WS bridge can never diverge. No-op when the runtime lacks
+> `navigator.modelContext` (normal browsers) or `?webmcp=off`. The **v2** parameterized
+> authoring/direction tools (`load_stage`/`load_score`/`frame(subjects)`/…) remain to be added
+> as the Score/Stage surfacing lands. See "Open questions" for the v1 resolutions.
 
 ## 1. Goal
 
@@ -90,11 +99,24 @@ the scripting spec, now agent-operable).
 3. Deprecate `services/newsroom-mcp` (stdio + bridge) in favor of the in-page server; keep a thin
    headless shim only if a non-browser client is needed.
 
-## 7. Open questions
+## 7. Open questions — v1 resolutions
 
-- Which WebMCP registration surface to target (browser-extension bridge vs a `navigator.
-  modelContext` polyfill) — align with `projects/webmcp`.
-- Auth / capability scoping for `execute_js` and `export_mp4` (a page exposing MCP tools to an
-  external client needs a consent/permission model).
-- Whether `export_mp4` returns the blob to the client or persists to R2 and returns a URL.
+- **Registration surface** → target `navigator.modelContext` directly (the W3C WebMCP page API,
+  Chrome 146+ / the shape `projects/webmcp/library` augments). No React dependency: avatar-live
+  declares a minimal local type surface (`src/mcp/types.ts`) and feature-detects the API, so the
+  studio is a plain no-op in browsers without WebMCP.
+- **Capability scoping for `execute_js`** → **opt-in only.** The eval escape hatch is *not*
+  registered by default; it requires `?webmcp=full` (or `VITE_WEBMCP=full`). All other tools
+  register whenever the API is present. (A richer per-tool consent model is still future work.)
+- **`screenshot` return** → returned **inline** as an MCP `image` content block (base64 PNG), so
+  the AI closes the see→verify loop locally with no HTTP sink.
+- **`export_mp4` return** → v1 renders in-browser and **triggers a browser download**, returning
+  `{ bytes, filename }` metadata (a 50 MB+ base64 payload inline is impractical, and the in-page
+  server has no sink). **R2 persistence + returning a URL remains the v2 option.**
+
+### Still open (v2)
+
+- A per-tool consent / permission prompt for a page exposing MCP tools to an external client.
+- `export_mp4` → R2 persistence returning a signed URL instead of a local download.
+- The v2 parameterized authoring/direction tools once the Score/Stage authoring surface lands.
 ```
