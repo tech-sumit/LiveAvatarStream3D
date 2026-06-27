@@ -1,0 +1,117 @@
+{
+  "version": 2,
+  "meta": {
+    "title": "LiveAvatarStream3D — Product Demo",
+    "anchors": [
+      { "id": "ava", "name": "Ava Lin", "avatarUrl": "avaturn-model", "voiceId": "EXAVITQu4vr4xnSDxMaL" }
+    ],
+    "language": "en",
+    "fps": 30,
+    "aspect": "16:9"
+  },
+  "look": { "preset": "broadcast" },
+  "defaults": {
+    "emotion": "neutral",
+    "idleMotion": false,
+    "camera": { "shot": "medium", "move": "static" },
+    "cameraPose": { "pos": [0.55, 1.47, 4.1], "target": [1.2, 1.16, -0.22], "fov": 34 },
+    "ticker": "LIVEAVATARSTREAM3D  ·  A 3D TALKING-AVATAR STUDIO  ·  100% IN YOUR BROWSER  ·  NO RENDER SERVER"
+  },
+  "rundown": [
+    {
+      "id": "open",
+      "slug": "meet-the-studio",
+      "storyForm": "READER",
+      "headline": "Meet LiveAvatarStream3D",
+      "ticker": "PRODUCT DEMO  ·  BROWSER-BASED 3D AVATAR STUDIO  ·  LIP-SYNCED  ·  CLIENT-SIDE EXPORT",
+      "bullets": [
+        "A 3D talking-avatar studio that runs in the browser",
+        "No render farm and nothing to install",
+        "Write a script — a lip-synced presenter delivers it"
+      ],
+      "beats": [
+        { "id": "o1", "text": "Good evening. Tonight, a look at LiveAvatarStream3D, a three-D talking-avatar studio that runs entirely in your browser.", "emotion": "confident", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "o2", "text": "No render farm, no installs. You write a script, and a lip-synced three-D presenter brings it to life.", "emotion": "warm", "gesture": "open_palms", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 350 }
+      ]
+    },
+    {
+      "id": "author",
+      "slug": "direct-like-a-script",
+      "storyForm": "VO",
+      "headline": "Direct It Like a Script",
+      "ticker": "AUTHORING  ·  PLAIN-TEXT SCRIPT  ·  [EMOTION] [GESTURE] [CAMERA] TAGS  ·  DIRECTION AS DATA",
+      "bullets": [
+        "Type your lines in plain text",
+        "Tag emotion, gesture, and camera inline",
+        "Direction is data — not a code change"
+      ],
+      "beats": [
+        { "id": "a1", "text": "You author the performance as plain text. Type your lines, and tag them with emotion, gesture, and camera direction.", "emotion": "neutral", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "a2", "text": "Want the anchor to smile, gesture to a chart, or push in for a close-up? It is all just direction in the script.", "emotion": "warm", "gesture": "point", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 300 }
+      ]
+    },
+    {
+      "id": "realtime",
+      "slug": "realtime-3d",
+      "storyForm": "VO",
+      "headline": "Real-Time 3D, In the Browser",
+      "ticker": "REAL-TIME  ·  THREE.JS  ·  BLENDSHAPE LIP-SYNC  ·  GESTURES + CAMERA MOVES  ·  PREVIEW = EXPORT",
+      "bullets": [
+        "Rendered live with Three.js as it speaks",
+        "Blendshape lip-sync, gestures, camera moves",
+        "The preview is exactly what you export"
+      ],
+      "beats": [
+        { "id": "r1", "text": "Powered by Three-J-S, the avatar renders live as it speaks, with blendshape lip-sync, gestures, and camera moves.", "emotion": "confident", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "r2", "text": "What you see in the preview is exactly what you get on export. One drive path, zero surprises.", "emotion": "confident", "gesture": "none", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 300 }
+      ]
+    },
+    {
+      "id": "export",
+      "slug": "client-side-export",
+      "storyForm": "READER",
+      "headline": "Export 4K — Client-Side",
+      "ticker": "EXPORT  ·  1080P & 4K MP4  ·  WEBCODECS  ·  FRAME-EXACT  ·  NO GPU SERVER IN THE LOOP",
+      "bullets": [
+        "Full 1080p or 4K MP4, frame by frame",
+        "Rendered in the browser with WebCodecs",
+        "No GPU server — it runs on your machine"
+      ],
+      "beats": [
+        { "id": "e1", "text": "When you are happy, export a full ten-eighty-p or four-K M-P-4, rendered frame by frame in the browser with WebCodecs.", "emotion": "confident", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "e2", "text": "There is no G-P-U server in the loop. The render happens on your machine, even in a background tab.", "emotion": "neutral", "gesture": "none", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 400 }
+      ]
+    },
+    {
+      "id": "voices",
+      "slug": "voices-and-avatars",
+      "storyForm": "VO",
+      "headline": "Your Voice. Your Avatars.",
+      "ticker": "VOICE CLONING  ·  BRING YOUR OWN AVATARS  ·  CLOUD PROJECTS & ASSETS  ·  NEWSROOM-READY",
+      "bullets": [
+        "Clone a voice; load your own rigged avatars",
+        "Projects and assets saved to the cloud",
+        "Headlines, tickers, graphics, and music built in"
+      ],
+      "beats": [
+        { "id": "v1", "text": "Clone a voice, load your own rigged avatars, and the studio remembers your projects and assets in the cloud.", "emotion": "warm", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "v2", "text": "Headlines, tickers, wall graphics, and music beds. Everything a newsroom needs, built right in.", "emotion": "confident", "gesture": "open_palms", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 300 }
+      ]
+    },
+    {
+      "id": "close",
+      "slug": "ready-when-you-are",
+      "storyForm": "KICKER",
+      "headline": "Ready When You Are",
+      "ticker": "FROM BLANK SCRIPT TO BROADCAST IN MINUTES  ·  THE STUDIO IS THE BROWSER  ·  THANKS FOR WATCHING",
+      "bullets": [
+        "From a blank script to a finished clip in minutes",
+        "No pipeline, no servers to manage"
+      ],
+      "beats": [
+        { "id": "n1", "text": "From a blank script to a broadcast-ready clip in minutes, with no pipeline required.", "emotion": "confident", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "n2", "text": "LiveAvatarStream3D. The studio is the browser. That is the demo. Thanks for watching.", "emotion": "warm", "gesture": "none", "camera": { "shot": "medium", "move": "static" } }
+      ]
+    }
+  ]
+}
