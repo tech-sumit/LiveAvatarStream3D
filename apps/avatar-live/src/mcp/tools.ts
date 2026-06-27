@@ -1,4 +1,4 @@
-import { BRIDGE_TOOLS } from '@las/protocol';
+import { BRIDGE_TOOLS, BRIDGE_PARAM_SCHEMAS } from '@las/protocol';
 import type { McpToolResult, WebMcpTool } from './types.js';
 
 /**
@@ -40,8 +40,13 @@ export function buildStudioTools(deps: StudioToolDeps): WebMcpTool[] {
 
     const execute = async (input: Record<string, unknown>): Promise<McpToolResult> => {
       try {
+        // Validate input against the command's zod params BEFORE dispatching — the WS bridge
+        // does this via parseBridgeRequest, and createDispatcher only coerces (String/Number),
+        // never validates. Without this, set_voice{rate:10}, add_cue{start:-5}, or
+        // set_backscreen_media{} would pass silently into the studio. zod throws → errorResult.
+        const params = BRIDGE_PARAM_SCHEMAS[def.cmd].parse(input) as Record<string, unknown>;
         if (def.cmd === 'screenshot') {
-          const shot = await deps.screenshot(input);
+          const shot = await deps.screenshot(params);
           return {
             content: [
               { type: 'image', data: shot.data, mimeType: shot.mimeType },
@@ -52,7 +57,7 @@ export function buildStudioTools(deps: StudioToolDeps): WebMcpTool[] {
         if (def.cmd === 'exportMp4') {
           return textResult(await deps.exportVideo());
         }
-        return textResult(await deps.dispatch(def.cmd, input));
+        return textResult(await deps.dispatch(def.cmd, params));
       } catch (err) {
         return errorResult(err);
       }

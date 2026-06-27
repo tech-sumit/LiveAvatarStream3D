@@ -140,8 +140,13 @@ const SetBackscreenMediaParams = z.union([
 ]);
 
 const ScreenshotParams = z.object({
-  target: BridgeScreenshotTarget,
-  /** Optional timeline seek (seconds) before the shot. */
+  /**
+   * What to capture. `output` renders an on-demand frame (works in a hidden/headless tab);
+   * `viewport` reads the live preview canvas, whose rAF loop is PAUSED when the tab is hidden,
+   * so it can be stale under automation. Optional — defaults to `output` for that reason.
+   */
+  target: BridgeScreenshotTarget.optional(),
+  /** Optional timeline seek (seconds) before the shot. NOTE: this MOVES the playhead. */
   seek: z.number().min(0).optional(),
 });
 

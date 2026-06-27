@@ -66,8 +66,8 @@ const TOOL_META: Record<BridgeCommandName, { description: string; readOnly?: tru
     readOnly: true,
   },
   screenshot: {
-    description: 'Render and return a PNG of the viewport or the output frame (optionally after seeking to a time). The see→verify primitive.',
-    readOnly: true,
+    description:
+      'Render a screenshot of the studio (the see→verify primitive). `target` defaults to `output` (an on-demand frame that also works in a hidden/headless tab); `viewport` reads the live preview canvas, which is paused when the tab is hidden. Over WebMCP the image is returned as a downscaled JPEG thumbnail (not full-res). NOT read-only: `seek` moves the timeline playhead.',
   },
   preview: { description: 'Start live preview playback in the studio.' },
   exportMp4: { description: 'Render the performance to an MP4 in-browser and download it. Returns {bytes, filename}.' },
@@ -76,13 +76,30 @@ const TOOL_META: Record<BridgeCommandName, { description: string; readOnly?: tru
   },
 };
 
-/** Strip the `$schema` key zod-to-json-schema adds, leaving a plain inline schema. */
+/**
+ * Strip the `$schema` key zod-to-json-schema adds, and flatten a top-level `anyOf` of object
+ * branches (a zod `z.union(...)` of objects, e.g. setBackscreenMedia's url-or-clear) into a
+ * single `type: "object"` schema. WebMCP/MCP expect a tool `inputSchema` to be a JSON-Schema
+ * OBJECT — a bare `{ anyOf: [...] }` is rejected or unrendered by strict clients. The union is
+ * still enforced strictly at call time by the zod schema (see {@link BRIDGE_PARAM_SCHEMAS} +
+ * the WebMCP adapter's validation), so widening the advertised shape loses no safety.
+ */
 function toInputSchema(cmd: BridgeCommandName): Record<string, unknown> {
   const raw = zodToJsonSchema(BRIDGE_PARAM_SCHEMAS[cmd], { $refStrategy: 'none', target: 'jsonSchema7' }) as Record<
     string,
     unknown
   >;
   const { $schema, ...rest } = raw;
+  const anyOf = rest.anyOf as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(anyOf) && anyOf.every((b) => b?.type === 'object')) {
+    // Merge each branch's properties; no key is required (a property is only present in some
+    // branches), so drop `required`. additionalProperties:false matches the strict zod objects.
+    const properties: Record<string, unknown> = {};
+    for (const branch of anyOf) {
+      Object.assign(properties, (branch.properties as Record<string, unknown>) ?? {});
+    }
+    return { type: 'object', properties, additionalProperties: false };
+  }
   return rest;
 }
 

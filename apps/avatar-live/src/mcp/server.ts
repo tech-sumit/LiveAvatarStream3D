@@ -3,12 +3,24 @@
 //
 // On load, registers the studio's tools with `navigator.modelContext` so ANY WebMCP-capable
 // AI app attached to the tab can drive the studio — no out-of-process stdio MCP, no WS bridge
-// relay. Each tool routes back through the SAME bridge dispatcher (`createDispatcher`), so the
-// tool surface and the WS bridge can never diverge: both are the protocol's BridgeCommand set.
+// relay. Each tool routes back through the SAME bridge dispatcher (`createDispatcher`) and
+// validates against the SAME protocol zod params (in `buildStudioTools`), so the two surfaces
+// share one command vocabulary. They are NOT byte-identical, though: the WebMCP adapter gates
+// the `execute_js` arbitrary-eval hatch behind `?webmcp=full`, whereas the WS `?bridge=` channel
+// (a 127.0.0.1-only dev relay) exposes it ungated. `execute_js` is the one capability that
+// differs between the surfaces.
 //
-// OFF only when the runtime has no `navigator.modelContext` (normal browsers — a harmless
-// no-op) or it's explicitly disabled via `?webmcp=off` / `VITE_WEBMCP=off`. `?webmcp=full`
-// additionally registers the `execute_js` escape hatch (opt-in; see the spec's §7).
+// SECURITY: registering tools exposes studio-state mutation (set_script, apply_newscast,
+// set_avatar — which loads an arbitrary glTF URL, export_mp4 — which downloads a file) to
+// whatever AI client is attached to the tab. That is the WebMCP model, but it is NOT a consent
+// gate. For the POC/dev studio this is acceptable; a production deployment should add an
+// explicit per-session opt-in before registering, and must keep `execute_js` (full origin
+// access) off by default. The default tool set already excludes `execute_js`.
+//
+// OFF when the runtime has no `navigator.modelContext` (normal browsers — a harmless no-op) or
+// it's explicitly disabled via `?webmcp=off` / `VITE_WEBMCP=off`. `?webmcp=full` additionally
+// registers the `execute_js` escape hatch (opt-in; see the spec's §7) — do NOT make it the
+// default launch URL.
 import type { StudioContext } from '../app/context.js';
 import { createDispatcher, screenshotBlob, exportBlob, type BridgeControllers } from '../bridge/dispatch.js';
 import { buildStudioTools } from './tools.js';

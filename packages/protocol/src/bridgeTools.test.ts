@@ -31,10 +31,19 @@ describe('BRIDGE_TOOLS — WebMCP tool manifest', () => {
       expect(t.inputSchema).toBeTypeOf('object');
       // no leftover $schema key
       expect('$schema' in t.inputSchema).toBe(false);
-      // either a plain object schema or a union (setBackscreenMedia → anyOf)
-      const hasShape = t.inputSchema.type === 'object' || Array.isArray(t.inputSchema.anyOf);
-      expect(hasShape).toBe(true);
+      // EVERY tool advertises a JSON-Schema object (no bare top-level anyOf — strict MCP
+      // clients require type:object; the union for set_backscreen_media is flattened).
+      expect(t.inputSchema.type).toBe('object');
+      expect('anyOf' in t.inputSchema).toBe(false);
     }
+  });
+
+  it('flattens the set_backscreen_media union into one object schema (url + clear)', () => {
+    const tool = BRIDGE_TOOLS.find((t) => t.cmd === 'setBackscreenMedia');
+    if (!tool) throw new Error('no set_backscreen_media tool');
+    const schema = tool.inputSchema as { type?: string; properties?: Record<string, unknown> };
+    expect(schema.type).toBe('object');
+    expect(Object.keys(schema.properties ?? {}).sort()).toEqual(['clear', 'url']);
   });
 
   it('input schemas match the source zod params (required fields present)', () => {
@@ -51,8 +60,9 @@ describe('BRIDGE_TOOLS — WebMCP tool manifest', () => {
     expect(Object.keys(BRIDGE_PARAM_SCHEMAS).sort()).toEqual([...BRIDGE_COMMANDS].sort());
   });
 
-  it('read-only hints flag the non-mutating tools', () => {
+  it('read-only hints flag the non-mutating tools (screenshot is NOT read-only — seek moves the playhead)', () => {
     const readOnly = new Set(BRIDGE_TOOLS.filter((t) => t.readOnly).map((t) => t.cmd));
-    expect(readOnly).toEqual(new Set(['validateNewscast', 'listCues', 'getState', 'screenshot']));
+    expect(readOnly).toEqual(new Set(['validateNewscast', 'listCues', 'getState']));
+    expect(readOnly.has('screenshot')).toBe(false);
   });
 });
