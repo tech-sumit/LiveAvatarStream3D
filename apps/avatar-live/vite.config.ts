@@ -240,9 +240,21 @@ export default defineConfig(({ mode }) => {
   const elevenKey = env.ELEVENLABS_API_KEY;
   return {
     plugins: [r2Plugin(env), avatarPlugin()],
+    // `vite preview` serves the built bundle (a few files) — far faster to load over a
+    // high-latency tunnel than the dev server's hundreds of unbundled ES modules. Same
+    // ALLOWED_HOSTS gate for a temporary tunnel host.
+    preview: {
+      port: 5175,
+      host: true,
+      allowedHosts: env.ALLOWED_HOSTS ? env.ALLOWED_HOSTS.split(',').map((h) => h.trim()).filter(Boolean) : undefined,
+    },
     server: {
       port: 5175,
       host: true,
+      // Allow extra Host headers (comma-separated, e.g. a temporary `*.trycloudflare.com` tunnel
+      // used to expose the dev studio to an external recorder). Off by default — set ALLOWED_HOSTS
+      // in apps/avatar-live/.env only when intentionally tunnelling. A leading dot matches subdomains.
+      allowedHosts: env.ALLOWED_HOSTS ? env.ALLOWED_HOSTS.split(',').map((h) => h.trim()).filter(Boolean) : undefined,
       proxy: elevenKey
         ? {
             '/eleven': {
