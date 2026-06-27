@@ -1,14 +1,33 @@
 import * as THREE from 'three';
 
+/**
+ * A PowerPoint-style wall slide: a kicker chip, a headline, a few bullets, the lower
+ * ticker bar, and an optional backdrop image (cover-fit; falls back to a gradient when the
+ * image is missing or not yet loaded). Structurally compatible with @las/protocol's
+ * `SlideContent` — the studio is the renderer; the protocol carries the data.
+ */
+export type Slide = {
+  kicker: string;
+  headline: string;
+  bullets: string[];
+  ticker: string;
+  image?: string;
+};
+
 // A procedural news-studio set built around an anchor standing at the origin
 // (facing +Z, toward the camera). Everything is generated (no downloaded assets)
 // so it works offline. Returned as one Group you can toggle with `.visible`.
 export interface NewsStudio {
   group: THREE.Group;
-  /** Update the big video wall's headline text. */
+  /** Paint a full slide (kicker / headline / bullets / ticker / optional image) on the wall. */
+  setSlide(slide: Slide): void;
+  /** Back-compat: set just a headline (+ kicker) — wraps setSlide with a derived ticker. */
   setHeadline(title: string, kicker?: string): void;
+  /** Preload + cache slide backdrop images (by url) so setSlide never blocks on a fetch.
+   *  Call before an export's frame loop so slides render with their imagery. */
+  preloadSlideImages(urls: string[]): Promise<void>;
   /** Play a video element on the wall (its frames stream as the wall texture);
-   *  pass null to revert to the canvas headline. */
+   *  pass null to revert to the canvas slide. */
   setScreenVideo(video: HTMLVideoElement | null): void;
   /** The wall mesh — used for camera framing and the "screen source" cut. */
   screen: THREE.Mesh;
@@ -78,9 +97,39 @@ export function buildNewsStudio(): NewsStudio {
     group.add(bar);
   }
 
-  function setHeadline(title: string, kicker = 'LIVE'): void {
-    drawScreen(screenCanvas, title, kicker);
+  // Cache of preloaded slide backdrop images, keyed by url. Only successfully-loaded images
+  // land here; setSlide falls back to the gradient for any url it can't find / that failed.
+  const slideImages = new Map<string, HTMLImageElement>();
+
+  async function preloadSlideImages(urls: string[]): Promise<void> {
+    await Promise.all(
+      urls
+        .filter((u) => u && !slideImages.has(u))
+        .map(
+          (url) =>
+            new Promise<void>((resolve) => {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = () => {
+                slideImages.set(url, img);
+                resolve();
+              };
+              img.onerror = () => resolve(); // graceful: a failed image just uses the gradient
+              img.src = url;
+            }),
+        ),
+    );
+  }
+
+  function setSlide(slide: Slide): void {
+    const cached = slide.image ? slideImages.get(slide.image) : undefined;
+    const img = cached && cached.complete && cached.naturalWidth > 0 ? cached : null;
+    drawSlide(screenCanvas, slide, img);
     screenTex.needsUpdate = true;
+  }
+
+  function setHeadline(title: string, kicker = 'LIVE'): void {
+    setSlide({ kicker, headline: title, bullets: [], ticker: `${title.toUpperCase()}  ·  LIVE`, image: undefined });
   }
   setHeadline('LIVE AVATAR STREAM 3D', 'LIVE');
 
@@ -99,64 +148,115 @@ export function buildNewsStudio(): NewsStudio {
     screenMat.needsUpdate = true;
   }
 
-  return { group, setHeadline, setScreenVideo, screen };
+  return { group, setSlide, setHeadline, preloadSlideImages, setScreenVideo, screen };
 }
 
-// Draws the video-wall content: dark gradient, red LIVE chip, headline, ticker.
-function drawScreen(canvas: HTMLCanvasElement, title: string, kicker: string): void {
+// Draws a full wall slide: (a) backdrop = cover-fit image OR the dark gradient+grid fallback;
+// (b) a left→right scrim over an image for text legibility; (c) the red kicker chip; (d) the
+// wrapped headline; (e) up to 3 bullets; (f) the lower ticker bar (slide.ticker — never the old
+// hardcoded string). Renders fully with NO image (graceful gradient fallback). Exported for the
+// headless render smoke test — depends only on the passed canvas/context, no THREE / scene state.
+export function drawSlide(canvas: HTMLCanvasElement, slide: Slide, image: HTMLImageElement | null): void {
   const c = canvas.getContext('2d');
   if (!c) return;
   const { width: w, height: h } = canvas;
-  const g = c.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, '#0a1a3a');
-  g.addColorStop(1, '#06101f');
-  c.fillStyle = g;
-  c.fillRect(0, 0, w, h);
 
-  // subtle grid
-  c.strokeStyle = 'rgba(80,120,220,0.10)';
-  c.lineWidth = 2;
-  for (let x = 0; x < w; x += 64) {
-    c.beginPath();
-    c.moveTo(x, 0);
-    c.lineTo(x, h);
-    c.stroke();
+  // (a) backdrop
+  if (image) {
+    const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight); // cover-fit
+    const dw = image.naturalWidth * scale;
+    const dh = image.naturalHeight * scale;
+    c.drawImage(image, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    // (b) left→right scrim so the text stays legible over the imagery
+    const sc = c.createLinearGradient(0, 0, w, 0);
+    sc.addColorStop(0, 'rgba(4,12,28,0.92)');
+    sc.addColorStop(0.55, 'rgba(4,12,28,0.5)');
+    sc.addColorStop(1, 'rgba(4,12,28,0.1)');
+    c.fillStyle = sc;
+    c.fillRect(0, 0, w, h);
+  } else {
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#0a1a3a');
+    g.addColorStop(1, '#06101f');
+    c.fillStyle = g;
+    c.fillRect(0, 0, w, h);
+    c.strokeStyle = 'rgba(80,120,220,0.10)';
+    c.lineWidth = 2;
+    for (let x = 0; x < w; x += 64) {
+      c.beginPath();
+      c.moveTo(x, 0);
+      c.lineTo(x, h);
+      c.stroke();
+    }
   }
 
-  // LIVE chip
-  c.fillStyle = '#ff3b3b';
-  c.fillRect(60, 70, 150, 56);
-  c.fillStyle = '#fff';
-  c.font = 'bold 34px system-ui, sans-serif';
+  // (c) kicker chip (red LIVE-style chip; text = slide.kicker)
   c.textBaseline = 'middle';
+  c.font = 'bold 34px system-ui, sans-serif';
+  const kicker = (slide.kicker || 'LIVE').toUpperCase();
+  const chipW = Math.max(120, c.measureText(kicker).width + 48);
+  c.fillStyle = '#ff3b3b';
+  c.fillRect(60, 70, chipW, 56);
+  c.fillStyle = '#fff';
   c.fillText(kicker, 84, 99);
 
-  // headline
+  // (d) headline (wrapped, big)
   c.fillStyle = '#eaf0ff';
   c.font = 'bold 64px system-ui, sans-serif';
-  wrap(c, title.toUpperCase(), 60, 230, w - 120, 70);
+  c.textBaseline = 'alphabetic';
+  let y = wrap(c, slide.headline.toUpperCase(), 60, 230, w - 120, 70, 3);
 
-  // lower ticker bar
+  // (e) up to 3 bullets
+  c.font = '30px system-ui, sans-serif';
+  y += 26;
+  for (const bullet of slide.bullets.slice(0, 3)) {
+    c.fillStyle = '#2f6bff';
+    c.beginPath();
+    c.arc(74, y - 10, 7, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#cfe0ff';
+    y = wrap(c, bullet, 96, y, w - 160, 40, 2) + 12;
+  }
+
+  // (f) lower ticker bar (story-derived; the hardcoded-string bug is fixed)
   c.fillStyle = '#2f6bff';
   c.fillRect(0, h - 70, w, 70);
   c.fillStyle = '#fff';
+  c.textBaseline = 'middle';
   c.font = '28px system-ui, sans-serif';
-  c.fillText('BREAKING  ·  REALTIME 3D ANCHOR  ·  BROWSER-RENDERED  ·  LIP-SYNCED', 30, h - 35);
+  c.fillText(slide.ticker, 30, h - 35);
 }
 
-function wrap(c: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lh: number): void {
+// Word-wrap `text` from baseline y; returns the baseline y AFTER the last line (so bullets can
+// flow below the headline). Stops after `maxLines` lines (truncating the rest).
+function wrap(
+  c: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxW: number,
+  lh: number,
+  maxLines = Infinity,
+): number {
   const words = text.split(' ');
   let line = '';
   let yy = y;
+  let lines = 0;
   for (const word of words) {
     const test = line ? `${line} ${word}` : word;
     if (c.measureText(test).width > maxW && line) {
       c.fillText(line, x, yy);
+      lines++;
+      if (lines >= maxLines) return yy + lh;
       line = word;
       yy += lh;
     } else {
       line = test;
     }
   }
-  if (line) c.fillText(line, x, yy);
+  if (line) {
+    c.fillText(line, x, yy);
+    return yy + lh;
+  }
+  return yy;
 }

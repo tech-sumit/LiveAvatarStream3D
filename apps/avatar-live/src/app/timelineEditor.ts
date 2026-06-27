@@ -2,6 +2,7 @@ import { TimelinePlayer } from '../timeline/player.js';
 import { TimelineUI } from '../timeline/ui.js';
 import { CATALOG, poseToTuple, poseFor, tupleToPose } from '../timeline/catalog.js';
 import { cueId, type Cue, type PoseTuple, type Timeline } from '../timeline/types.js';
+import type { SlideContent } from '@las/protocol';
 import type { StudioContext } from './context.js';
 import type { Performer } from './performer.js';
 
@@ -112,6 +113,28 @@ export class TimelineEditor {
       .filter((c) => c.track === 'motion')
       .map((c) => ({ t: c.start, type: c.type }))
       .sort((a, b) => a.t - b.t);
+  }
+  /**
+   * The 'graphics'-track wall slides as {tSec, slide} (mirrors motionCues()) — folded into the
+   * Performance `slides` channel by buildNarrationPerformance so the wall slide deck swaps per
+   * newscast section from the unified score.drive path on BOTH the live and export clocks.
+   */
+  slideCues(): { tSec: number; slide: SlideContent }[] {
+    return this.timeline.cues
+      .filter((c): c is Cue & { slide: SlideContent } => c.track === 'graphics' && !!c.slide)
+      .map((c) => ({ tSec: c.start, slide: c.slide }))
+      .sort((a, b) => a.tSec - b.tSec);
+  }
+  /**
+   * The slide backdrop image urls referenced by the 'graphics' track (deduped, non-empty) —
+   * collected so the studio can preload them before a take/export's frame loop.
+   */
+  slideImageUrls(): string[] {
+    const urls = new Set<string>();
+    for (const c of this.timeline.cues) {
+      if (c.track === 'graphics' && c.slide?.image) urls.add(c.slide.image);
+    }
+    return [...urls];
   }
   /**
    * The authored camera-track framing cues (everything except the cam.screenSource cut),

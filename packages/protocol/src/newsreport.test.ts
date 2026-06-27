@@ -71,4 +71,57 @@ describe('compileNewsReport', () => {
   it('narration cue count == beat count', () => {
     expect(cues.filter((c) => c.track === 'narration')).toHaveLength(3);
   });
+  it('emits one graphics (wall-slide) cue per section, at each section start', () => {
+    const gfx = cues.filter((c) => c.track === 'graphics');
+    expect(gfx).toHaveLength(2); // two sections
+    expect(gfx[0]?.start).toBe(0); // section 1 starts at t=0
+    expect(gfx[1]?.start).toBeGreaterThan(0); // section 2 starts after section 1's beats
+    expect(gfx.every((c) => c.type === 'graphic.slide')).toBe(true);
+  });
+  it('the first slide payload is derived from the section (headline, LIVE kicker, empty bullets)', () => {
+    const gfx = cues.filter((c) => c.track === 'graphics');
+    expect(gfx[0]?.slide?.headline).toBe('Top story'); // section.headline
+    expect(gfx[0]?.slide?.kicker).toBe('LIVE');
+    expect(gfx[0]?.slide?.bullets).toEqual([]);
+    // Section 2 has no headline → falls back to the doc title.
+    expect(gfx[1]?.slide?.headline).toBe('Evening Edition');
+  });
+  it('the ticker is STORY-derived (not the old hardcoded studio string)', () => {
+    const gfx = cues.filter((c) => c.track === 'graphics');
+    const OLD = 'BREAKING  ·  REALTIME 3D ANCHOR  ·  BROWSER-RENDERED  ·  LIP-SYNCED';
+    expect(gfx[0]?.slide?.ticker).not.toBe(OLD);
+    expect(gfx[0]?.slide?.ticker).toContain('TOP STORY'); // derived from the headline
+  });
+});
+
+describe('compileNewsReport — authored slide content (bullets / graphic / ticker)', () => {
+  const RICH = {
+    version: 2 as const,
+    meta: { title: 'Newsdesk', anchors: [{ id: 'a1', name: 'Ava', avatarUrl: 'm', voiceId: 'v' }] },
+    defaults: { ticker: 'DEFAULT TICKER' },
+    rundown: [
+      {
+        id: 's1', slug: 'one', headline: 'Section one',
+        bullets: ['Point A', 'Point B'],
+        graphic: { kind: 'url' as const, src: 'https://cdn.example/back.jpg' },
+        ticker: 'CUSTOM SECTION TICKER',
+        beats: [{ id: 'b1', text: 'Hello there' }],
+      },
+      {
+        id: 's2', slug: 'two', headline: 'Section two',
+        beats: [{ id: 'b2', text: 'More news here' }], // no ticker → falls back to defaults.ticker
+      },
+    ],
+  };
+  const { cues } = compileNewsReport(NewsReportDoc.parse(RICH));
+  const gfx = cues.filter((c) => c.track === 'graphics');
+  it('carries authored bullets + the backdrop image src onto the slide', () => {
+    expect(gfx[0]?.slide?.bullets).toEqual(['Point A', 'Point B']);
+    expect(gfx[0]?.slide?.image).toBe('https://cdn.example/back.jpg');
+  });
+  it('uses the section ticker, then the defaults ticker as fallback', () => {
+    expect(gfx[0]?.slide?.ticker).toBe('CUSTOM SECTION TICKER'); // section-level wins
+    expect(gfx[1]?.slide?.ticker).toBe('DEFAULT TICKER'); // defaults.ticker fallback
+    expect(gfx[1]?.slide?.image).toBeUndefined(); // no graphic authored
+  });
 });
