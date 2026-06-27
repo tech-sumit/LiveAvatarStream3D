@@ -7,6 +7,15 @@
     "mcp-webmcp": {
       "command": "npx",
       "args": ["-y", "@tech-sumit/mcp-webmcp", "--channel", "chrome-beta"]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--category-experimental-webmcp",
+        "--chrome-arg=--enable-features=WebMCP,DevToolsWebMCPSupport"
+      ]
     }
   }
 }
