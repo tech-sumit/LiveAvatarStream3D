@@ -52,6 +52,14 @@ api_keys
 .dev.vars
 !.env.example
 
+# Generated render artifacts (exported MP4/WebM/etc.) — large binaries kept locally, not in
+# git. The studio writes renders here; see apps/avatar-live/public/generated/README.md for the
+# naming convention. (Also enforced by that folder's own .gitignore, which keeps README tracked.)
+apps/avatar-live/public/generated/*.mp4
+apps/avatar-live/public/generated/*.webm
+apps/avatar-live/public/generated/*.mov
+apps/avatar-live/public/generated/*.gif
+
 # Misc
 *.log
 .DS_Store
