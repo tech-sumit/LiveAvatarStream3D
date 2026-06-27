@@ -1,0 +1,104 @@
+{
+  "version": 2,
+  "meta": {
+    "title": "OpenAI Limits GPT-5.6 Rollout",
+    "anchors": [
+      { "id": "ava", "name": "Ava Lin", "avatarUrl": "avaturn-model", "voiceId": "EXAVITQu4vr4xnSDxMaL" }
+    ],
+    "language": "en",
+    "fps": 30,
+    "aspect": "16:9"
+  },
+  "look": { "preset": "broadcast" },
+  "defaults": {
+    "emotion": "neutral",
+    "idleMotion": false,
+    "camera": { "shot": "medium", "move": "static" },
+    "ticker": "GPT-5.6  ·  GATED PREVIEW  ·  GOVERNMENT-APPROVED PARTNERS ONLY  ·  BROADER RELEASE IN WEEKS"
+  },
+  "rundown": [
+    {
+      "id": "open",
+      "slug": "cold-open",
+      "storyForm": "READER",
+      "headline": "OpenAI Limits GPT-5.6 Rollout",
+      "bullets": [
+        "New flagship models held back from general release",
+        "Available only to government-approved partners",
+        "OpenAI: restrictions “shouldn’t be the norm”"
+      ],
+      "graphic": { "kind": "url", "src": "/samples/gpt56/01-open.jpg" },
+      "beats": [
+        { "id": "o1", "text": "Good evening. OpenAI is pulling back the rollout of its newest models.", "emotion": "serious", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "o2", "text": "The company is limiting access to its GPT-5.6 lineup to a small group of government-approved partners.", "emotion": "serious", "gesture": "none", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 350 }
+      ]
+    },
+    {
+      "id": "request",
+      "slug": "the-government-request",
+      "storyForm": "VO",
+      "headline": "A Government Request",
+      "ticker": "WASHINGTON  ·  CONTROLLED DEPLOYMENT REQUESTED  ·  SAFETY CONCERNS CITED",
+      "bullets": [
+        "Trump administration asked for controlled deployment",
+        "All three models restricted, citing safety concerns",
+        "Follows the Anthropic Fable 5 withdrawal"
+      ],
+      "graphic": { "kind": "url", "src": "/samples/gpt56/02-request.jpg" },
+      "beats": [
+        { "id": "r1", "text": "The move follows a request from the Trump administration for controlled deployment of advanced A-I systems.", "emotion": "serious", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "r2", "text": "The administration restricted all three models, citing safety concerns, just weeks after Anthropic withdrew its Fable 5 model.", "emotion": "concerned", "gesture": "none", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 300 }
+      ]
+    },
+    {
+      "id": "models",
+      "slug": "three-new-models",
+      "storyForm": "VO",
+      "headline": "Three New Models",
+      "ticker": "GPT-5.6 LINEUP  ·  SOL  ·  TERRA  ·  LUNA",
+      "bullets": [
+        "Sol — the flagship model",
+        "Terra — balanced, for everyday use",
+        "Luna — faster and lower-cost"
+      ],
+      "graphic": { "kind": "url", "src": "/samples/gpt56/03-models.jpg" },
+      "beats": [
+        { "id": "m1", "text": "The lineup has three models: Sol, the flagship; Terra, for everyday use; and Luna, a faster, lower-cost option.", "emotion": "neutral", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "m2", "text": "OpenAI says Sol edges out Anthropic’s Claude Mythos 5 at coding, while using a third fewer output tokens.", "emotion": "confident", "gesture": "none", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 300 }
+      ]
+    },
+    {
+      "id": "position",
+      "slug": "openai-pushes-back",
+      "storyForm": "READER",
+      "headline": "OpenAI Pushes Back",
+      "ticker": "OPENAI STATEMENT  ·  “SHORT-TERM STEP”  ·  NEW CYBERSECURITY FRAMEWORKS PLANNED",
+      "bullets": [
+        "Complying, but calls the arrangement a “short-term step”",
+        "“Shouldn’t become the long-term default”",
+        "Working with the administration on new frameworks"
+      ],
+      "graphic": { "kind": "url", "src": "/samples/gpt56/04-position.jpg" },
+      "beats": [
+        { "id": "p1", "text": "OpenAI is complying, but it made its displeasure clear, calling the arrangement a short-term step.", "emotion": "serious", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "p2", "text": "Quote: We don’t believe this kind of government access process should become the long-term default.", "emotion": "confident", "gesture": "none", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 400 }
+      ]
+    },
+    {
+      "id": "next",
+      "slug": "whats-next",
+      "storyForm": "KICKER",
+      "headline": "What's Next",
+      "ticker": "ROLLOUT  ·  PARTNERS NOW  ·  CHATGPT, CODEX & API IN COMING WEEKS",
+      "bullets": [
+        "Preview limited to select partners for now",
+        "ChatGPT, Codex, and API access in coming weeks"
+      ],
+      "graphic": { "kind": "url", "src": "/samples/gpt56/05-next.jpg" },
+      "beats": [
+        { "id": "n1", "text": "For now, the preview is limited to those select partners.", "emotion": "neutral", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "n2", "text": "OpenAI says broader access for ChatGPT, Codex, and its A-P-I is planned in the coming weeks. We'll keep following this story. Thanks for watching.", "emotion": "warm", "gesture": "none", "camera": { "shot": "medium", "move": "static" } }
+      ]
+    }
+  ]
+}
