@@ -1,0 +1,104 @@
+{
+  "version": 2,
+  "meta": {
+    "title": "GPT-5.6 Rollout Widens (V2)",
+    "anchors": [
+      { "id": "ava", "name": "Ava Lin", "avatarUrl": "avaturn-model", "voiceId": "EXAVITQu4vr4xnSDxMaL" }
+    ],
+    "language": "en",
+    "fps": 30,
+    "aspect": "16:9"
+  },
+  "look": { "preset": "broadcast" },
+  "defaults": {
+    "emotion": "neutral",
+    "idleMotion": false,
+    "camera": { "shot": "medium", "move": "static" },
+    "ticker": "GPT-5.6 UPDATE  ·  GATED PREVIEW NOW OPENING  ·  CHATGPT, CODEX & API ROLLING OUT  ·  PARTNERS FIRST"
+  },
+  "rundown": [
+    {
+      "id": "open",
+      "slug": "cold-open",
+      "storyForm": "READER",
+      "headline": "GPT-5.6 Rollout Widens",
+      "bullets": [
+        "The gated preview is starting to open up",
+        "Access expanding beyond government-approved partners",
+        "A developing follow-up to last week's restrictions"
+      ],
+      "graphic": { "kind": "url", "src": "/samples/gpt56/01-open.jpg" },
+      "beats": [
+        { "id": "o1", "text": "Good evening, and welcome back. We have a developing update on the GPT-5.6 story.", "emotion": "serious", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "o2", "text": "The rollout that was held to a handful of partners is now beginning to widen.", "emotion": "confident", "gesture": "none", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 350 }
+      ]
+    },
+    {
+      "id": "whatchanged",
+      "slug": "what-changed",
+      "storyForm": "VO",
+      "headline": "What Changed",
+      "ticker": "ACCESS EXPANDS  ·  STAGED ROLLOUT BEGINS  ·  SAFETY REVIEW CLEARED",
+      "bullets": [
+        "Staged access now reaching more developers",
+        "Cleared an initial safety-and-deployment review",
+        "ChatGPT and Codex onboarding has begun"
+      ],
+      "graphic": { "kind": "url", "src": "/samples/gpt56/02-request.jpg" },
+      "beats": [
+        { "id": "w1", "text": "Since our last report, the controlled deployment has cleared its first review, and access is expanding in stages.", "emotion": "neutral", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "w2", "text": "Onboarding for ChatGPT and Codex users has quietly begun, with the A-P-I close behind.", "emotion": "confident", "gesture": "none", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 300 }
+      ]
+    },
+    {
+      "id": "models",
+      "slug": "the-lineup-now",
+      "storyForm": "VO",
+      "headline": "The Lineup, Now Available",
+      "ticker": "GPT-5.6 LINEUP  ·  SOL  ·  TERRA  ·  LUNA  ·  WIDER ACCESS",
+      "bullets": [
+        "Sol — the flagship, now to more teams",
+        "Terra — balanced, for everyday use",
+        "Luna — faster and lower-cost, broadly rolling out"
+      ],
+      "graphic": { "kind": "url", "src": "/samples/gpt56/03-models.jpg" },
+      "beats": [
+        { "id": "m1", "text": "All three models, Sol, Terra, and Luna, are reaching a wider set of teams this week.", "emotion": "neutral", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "m2", "text": "Early users echo OpenAI's claim that Sol leads on coding while spending fewer output tokens.", "emotion": "confident", "gesture": "none", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 300 }
+      ]
+    },
+    {
+      "id": "position",
+      "slug": "openai-vindicated",
+      "storyForm": "READER",
+      "headline": "OpenAI's Position",
+      "ticker": "OPENAI STATEMENT  ·  “A SHORT-TERM STEP, AS WE SAID”  ·  FRAMEWORKS NOW IN PLACE",
+      "bullets": [
+        "Calls the faster opening proof of its “short-term step”",
+        "New cybersecurity frameworks now operational",
+        "Says access process should keep getting lighter"
+      ],
+      "graphic": { "kind": "url", "src": "/samples/gpt56/04-position.jpg" },
+      "beats": [
+        { "id": "p1", "text": "OpenAI says the quicker opening is exactly the short-term step it described, not a permanent gate.", "emotion": "serious", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "p2", "text": "With new security frameworks in place, the company says the access process should keep getting lighter.", "emotion": "confident", "gesture": "none", "camera": { "shot": "medium", "move": "static" }, "pause_ms_after": 400 }
+      ]
+    },
+    {
+      "id": "next",
+      "slug": "whats-next",
+      "storyForm": "KICKER",
+      "headline": "What's Next",
+      "ticker": "ROLLOUT  ·  GENERAL ACCESS TARGETED IN WEEKS  ·  WE'LL KEEP FOLLOWING",
+      "bullets": [
+        "General availability now targeted within weeks",
+        "Watch for pricing and rate-limit details next"
+      ],
+      "graphic": { "kind": "url", "src": "/samples/gpt56/05-next.jpg" },
+      "beats": [
+        { "id": "n1", "text": "OpenAI is now targeting general availability within weeks, rather than months.", "emotion": "neutral", "gesture": "none", "camera": { "shot": "medium", "move": "static" } },
+        { "id": "n2", "text": "We'll be watching for pricing and rate limits as the doors open wider. That's our update. Thanks for watching.", "emotion": "warm", "gesture": "none", "camera": { "shot": "medium", "move": "static" } }
+      ]
+    }
+  ]
+}
