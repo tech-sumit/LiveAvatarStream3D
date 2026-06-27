@@ -125,3 +125,25 @@ describe('compileNewsReport — authored slide content (bullets / graphic / tick
     expect(gfx[1]?.slide?.image).toBeUndefined(); // no graphic authored
   });
 });
+
+describe('compileNewsReport — authored camera pose (DATA) → cam.custom', () => {
+  const POSE = { pos: [0.97, 1.5, 3.81] as [number, number, number], target: [1.66, 1.5, -0.3] as [number, number, number], fov: 32 };
+  const DOC_POSE = {
+    version: 2 as const,
+    meta: { title: 'Posed', anchors: [{ id: 'a1', name: 'Ava', avatarUrl: 'm', voiceId: 'v' }] },
+    defaults: { cameraPose: POSE },
+    rundown: [
+      { id: 's1', slug: 'one', beats: [{ id: 'b1', text: 'Good evening', camera: { shot: 'close_up' as const } }] },
+      { id: 's2', slug: 'two', beats: [{ id: 'b2', text: 'Markets rose', camera: { shot: 'wide' as const } }] },
+    ],
+  };
+  const { cues } = compileNewsReport(NewsReportDoc.parse(DOC_POSE));
+  it('emits ONE cam.custom cue with the explicit pose tuple, suppressing the preset cam buckets', () => {
+    const cam = cues.filter((c) => c.track === 'camera');
+    expect(cam).toHaveLength(1);
+    expect(cam[0]?.type).toBe('cam.custom');
+    // PoseTuple = [px,py,pz, tx,ty,tz, fov] — the studio's resolvePose/tupleToPose consumes this verbatim.
+    expect(cam[0]?.pose).toEqual([0.97, 1.5, 3.81, 1.66, 1.5, -0.3, 32]);
+    expect(cam.some((c) => c.type === 'cam.close' || c.type === 'cam.wide')).toBe(false);
+  });
+});
