@@ -18,6 +18,7 @@
     "test": "npm run test --workspaces --if-present",
     "dev:avatar": "npm run dev --workspace @las/avatar-live",
     "dev:api": "npm run dev --workspace services/control-api",
+    "chrome:webmcp": "node apps/avatar-live/scripts/webmcp-chrome.mjs",
     "protocol:schema": "npm run schema --workspace @las/protocol"
   },
   "devDependencies": {
