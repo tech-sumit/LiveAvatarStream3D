@@ -69,7 +69,7 @@ export interface StageLike {
    */
   frameAnchorScreen(anchor: Vec3Like, screen: Vec3Like, dt: number, snap?: boolean): void;
   /** Directly place the camera (authored static / move framing cues — follow:false keyframes). */
-  setCameraPose(pos: Vec3Like, target: Vec3Like, fov?: number): void;
+  setCameraPose(pos: Vec3Like, target: Vec3Like, fov?: number, roll?: number): void;
   /** Scrub the back-wall montage video to time t (seekable for the frame-stepped export). */
   seekScreen(t: number): void;
   /** Vision-mixer cut: while active, the recorded output is the wall/cast video. */
@@ -343,7 +343,7 @@ export class ScoreDrive {
     this._camTgt.y = kf.target[1];
     this._camTgt.z = kf.target[2];
     this.cameraArmed = true; // a later follow eases from this authored pose, not a hard snap
-    this.stage.setCameraPose(this._camPos, this._camTgt, kf.fov);
+    this.stage.setCameraPose(this._camPos, this._camTgt, kf.fov, kf.roll ?? 0);
   }
 
   // ── screen channel (back-wall montage cut, frame-seekable for export) ───────
@@ -524,6 +524,7 @@ export interface CameraCue {
   pos: [number, number, number];
   target: [number, number, number];
   fov: number;
+  roll?: number; // dutch tilt (deg) from a catalog shot preset; default 0
 }
 
 /** A timeline graphics-track cue: the wall slide to show from `tSec` (mirrors a ScreenWindow). */
@@ -621,10 +622,10 @@ export function buildNarrationPerformance(
   // the latest keyframe at-or-before t, so the follow covers the gaps before/between cues.
   const camera: Performance['camera'] = [];
   if (extra.followCamera ?? true) {
-    camera.push({ tSec: 0, pos: [0, 0, 0], target: [0, 0, 0], fov: 0, follow: true, followSubjects: [{ bind: 'root' }] });
+    camera.push({ tSec: 0, pos: [0, 0, 0], target: [0, 0, 0], fov: 0, roll: 0, follow: true, followSubjects: [{ bind: 'root' }] });
   }
   for (const c of extra.cameraCues ?? []) {
-    camera.push({ tSec: c.tSec, pos: c.pos, target: c.target, fov: c.fov, follow: false });
+    camera.push({ tSec: c.tSec, pos: c.pos, target: c.target, fov: c.fov, roll: c.roll ?? 0, follow: false });
   }
   // Stable sort keeps the follow keyframe BEFORE an authored cue at the same tSec, so an
   // authored framing at t=0 wins over the follow there (advanceCamera takes the later index).

@@ -19,11 +19,19 @@ export interface Subject {
 export type ShotSize = 'cu' | 'mcu' | 'medium' | 'wide';
 
 export interface Composition {
-  size?: ShotSize;
+  // A named size preset OR a number of head-heights of distance (lets a move interpolate
+  // tightness continuously, e.g. a push-in 7.0 → 4.2).
+  size?: ShotSize | number;
   height?: number; // look-at height bias
   balance?: number; // horizontal lead (-1 left .. +1 right)
   lens?: number; // fov override
   follow?: boolean; // recompute per-frame as subjects move
+  // ── Spatial orbit around the look-target (degrees) ──
+  // Defaults are identity (0) — a composition with none of these is byte-for-byte the
+  // pre-orbit head-on framing, so the CAMERA_* parity fixtures are preserved.
+  azimuth?: number; // orbit about world-Y: 0 = head-on (camera on +Z), + = toward the anchor's right (screen side)
+  elevation?: number; // camera pitch: + = high/looking-down, − = low/looking-up
+  roll?: number; // dutch tilt of the horizon (a lookAt pose can't express this; carried on Pose.roll)
 }
 
 export type CameraMove = 'dolly' | 'orbit' | 'pan' | 'truck' | 'pedestal';
@@ -32,6 +40,7 @@ export interface Pose {
   pos: Vec3;
   target: Vec3;
   fov: number;
+  roll?: number; // dutch tilt in degrees (default 0); applied by the renderer as a view-axis roll
 }
 
 export interface PathSample {

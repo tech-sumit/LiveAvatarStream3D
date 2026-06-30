@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { type Shot } from '../scene/stage.js';
 import type { StudioContext } from './context.js';
+import { applyShot, populateShotDropdown } from './shotPresets.js';
 
 /** Camera framing, align-to-face (+ auto-align), and the move/rotate gizmo. */
 export class AvatarTransform {
@@ -58,11 +58,11 @@ export class AvatarTransform {
     d.rotateModeBtn.classList.toggle('primary', mode === 'rotate');
   }
   private setGizmoOn(on: boolean): void {
-    const { stage, avatar, dom } = this.app;
+    const { dom } = this.app;
     if (on) {
       this.syncGizmoToAvatar();
-      stage.frame(avatar.headCenter, avatar.headHeight, 'wide', true); // reveal the avatar + gizmo
       dom.shotSel.value = 'wide';
+      applyShot(this.app, 'wide'); // reveal the avatar + gizmo
       this.flashGate();
     }
     this.gizmo.visible = on;
@@ -88,6 +88,9 @@ export class AvatarTransform {
     const { stage, avatar, dom } = this.app;
     // Start with the gizmo-off hint visible (no class on #stage means "gizmo off").
     dom.stageEl.classList.remove('gizmo-on');
+    // Expose the full shot-preset catalog in the #shot dropdown (one shared source with the
+    // newscast cam cues). Preserves the current selection / defaults to medium.
+    populateShotDropdown(dom.shotSel);
     dom.alignFaceBtn.addEventListener('click', () => {
       stage.alignToFace(this.faceWorld());
       this.flashGate();
@@ -101,7 +104,7 @@ export class AvatarTransform {
       if (this.autoAlignOn) stage.alignToFace(this.faceWorld()); // snap immediately, then keep aligned
     });
     dom.resetViewBtn.addEventListener('click', () => {
-      stage.frame(avatar.headCenter, avatar.headHeight, dom.shotSel.value as Shot, true);
+      applyShot(this.app, dom.shotSel.value);
       this.flashGate();
     });
     dom.centerAvatarBtn.addEventListener('click', () => {
@@ -110,7 +113,7 @@ export class AvatarTransform {
       this.syncGizmoToAvatar();
     });
     dom.shotSel.addEventListener('change', () => {
-      stage.frame(avatar.headCenter, avatar.headHeight, dom.shotSel.value as Shot);
+      applyShot(this.app, dom.shotSel.value);
       this.flashGate();
     });
 

@@ -58,6 +58,28 @@ describe('compileNewsReport', () => {
     expect(cam.some((c) => c.type === 'cam.wide')).toBe(true); // section 2 wide
     expect(cues.some((c) => c.track === 'motion' && c.type === 'motion.wave')).toBe(true);
   });
+  it('a catalog shot preset on a beat emits its data-driven cue type (and overrides shot)', () => {
+    const doc = {
+      ...DOC,
+      rundown: [
+        {
+          id: 's1', slug: 'top', storyForm: 'READER' as const, headline: 'H',
+          beats: [
+            { id: 'b1', text: 'Over the shoulder', camera: { preset: 'ots-screen' as const, shot: 'wide' as const } },
+            { id: 'b2', text: 'Now a dutch angle', camera: { preset: 'dutch' as const } },
+            { id: 'b3', text: 'And push in', camera: { preset: 'push-in' as const } },
+          ],
+        },
+      ],
+    };
+    const out = compileNewsReport(NewsReportDoc.parse(doc));
+    const types = out.cues.filter((c) => c.track === 'camera').map((c) => c.type);
+    // preset wins over the descriptive `shot: 'wide'` on the same cue
+    expect(types).toContain('cam.otsScreen');
+    expect(types).toContain('cam.dutch');
+    expect(types).toContain('cam.pushIn');
+    expect(types).not.toContain('cam.wide');
+  });
   it('bridges the flat look spec into ProjectDoc.look.params + lights', () => {
     expect(project.look?.preset).toBe('noir');
     expect(project.look?.params?.saturation).toBe(-1);
