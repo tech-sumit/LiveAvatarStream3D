@@ -1,5 +1,6 @@
-import { type Shot } from '../scene/stage.js';
+import type { CameraShotId } from '@las/performer-core';
 import type { StudioContext } from './context.js';
+import { applyShot } from './shotPresets.js';
 
 // Folders are auto-indexed by the Vite avatar plugin (→ /avatars.json). Each avatar
 // carries its own lip-sync config so "how much the lips move" is per-model.
@@ -8,7 +9,8 @@ interface AvatarConfig {
   label: string;
   description?: string;
   model: string; // filename inside the folder
-  shot?: Shot;
+  shot?: CameraShotId; // the avatar's default framing — any shot-preset id from the catalog
+
   bodyAnim?: boolean; // force body animation on/off (undefined → humanoid auto-detect)
   lipsync: { gain: number; jaw: number; wide: number; round: number; smoothing: number };
 }
@@ -39,7 +41,7 @@ export class AvatarLibrary {
 
   // bodyAnim true/false forces body animation on/off; undefined → humanoid auto-detect.
   private loadAvatar = async (url: string, label: string, bodyAnim?: boolean, avatarId?: string): Promise<boolean> => {
-    const { avatar, stage, dom, log } = this.app;
+    const { avatar, dom, log } = this.app;
     log(`loading ${label}…`);
     try {
       const res = await avatar.loadGltf(url);
@@ -49,7 +51,7 @@ export class AvatarLibrary {
       }
       avatar.setPosition(0, 0, 0);
       avatar.group.quaternion.identity();
-      stage.frame(avatar.headCenter, avatar.headHeight, dom.shotSel.value as Shot);
+      applyShot(this.app, dom.shotSel.value);
       dom.statusEl.textContent = avatar.description;
       dom.statusEl.className = 'badge success';
       log(`loaded ${label} — ${res.detail}`);
@@ -214,7 +216,7 @@ export class AvatarLibrary {
   }
 
   async init(): Promise<void> {
-    const { dom, log, avatar, stage } = this.app;
+    const { dom, log, avatar } = this.app;
     dom.glbInput.addEventListener('change', async () => {
       const file = dom.glbInput.files?.[0];
       if (!file) return;
@@ -262,7 +264,7 @@ export class AvatarLibrary {
       const cfg = this.avatarConfigs.get(this.currentAvatarId);
       if (!cfg) return;
       cfg.lipsync = this.readLipSliders();
-      cfg.shot = dom.shotSel.value as Shot; // persist the live shot too, not the stale cached one
+      cfg.shot = dom.shotSel.value as CameraShotId; // persist the live shot too, not the stale cached one
       const docOut = { label: cfg.label, description: cfg.description, model: cfg.model, shot: cfg.shot, lipsync: cfg.lipsync };
       try {
         const r = await fetch(`/avatar-config/${this.currentAvatarId}`, {
@@ -277,7 +279,7 @@ export class AvatarLibrary {
     });
 
     // Initial framing + discovery + auto-load (prefer the photoreal Avaturn anchor).
-    stage.frame(avatar.headCenter, avatar.headHeight, dom.shotSel.value as Shot);
+    applyShot(this.app, dom.shotSel.value);
     dom.statusEl.textContent = avatar.description;
     dom.statusEl.className = 'badge loading'; // discovering + auto-loading an avatar
     await this.discoverAvatars();

@@ -32,8 +32,13 @@ ONE interpreter.
 ## Non-goals
 
 - No change to the 7-element `PoseTuple` / `cam.custom` explicit-pose path (kept as the
-  bespoke escape hatch). Roll reaches the newscast via the new `cam.preset` cue, not via
-  tuples.
+  bespoke escape hatch). Roll reaches the newscast via the per-preset cue type
+  (`cam.dutch` etc.), runtime-resolved by `poseFor`, not via tuples.
+- **No Score-level `{preset}` directive.** Catalog presets are head-height-scaled and only
+  resolve correctly against the *live* avatar (which the #shot dropdown and the newscast
+  runtime both do via `poseFor`). Resolving them at Score-compile time with a nominal head
+  height would frame wrong, so the Score keeps its existing `{frame}` / `{pose}` camera
+  directives; the catalog lives on the two runtime surfaces.
 - No new lighting / set-geometry layouts (separate concern).
 
 ## The catalog
@@ -75,12 +80,9 @@ tuned during implementation against real preview renders.
                   CAMERA_SHOT_IDS
         │
         ├── @las/protocol (DSL vocab + compilers)
-        │     re-exports CAMERA_SHOT_IDS as the DSL enum
-        │     score.ts        CameraDirective |= { preset: enum }
-        │     newsreport.ts   CameraCue.preset?: enum
-        │     scoreCompile    preset → composeShot keyframe vs stage subjects;
-        │                     push-in → from/to keyframes over durationSec
-        │     newsreportCompile  preset → `cam.preset` cue carrying the id
+        │     dsl.ts          CameraCue.preset?: z.enum(CAMERA_SHOT_IDS)
+        │     newsreportCompile  preset → the cam.<id> cue type (PRESET_TO_CUE_TYPE)
+        │     performance.ts  CameraKeyframe.roll? (dutch, carried to the renderer)
         │
         └── apps/avatar-live (studio)
               timeline/catalog.ts  poseFor() resolves catalog ids (single + two-subject,

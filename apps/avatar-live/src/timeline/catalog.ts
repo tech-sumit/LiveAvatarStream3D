@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import type { Composition, Pose, Subject } from '@las/performer-core';
+import { CAMERA_SHOTS, sampleShot, type CameraShotId } from '@las/performer-core';
 import type { AvatarController } from '../avatar/avatarController.js';
 import { frameSubject, makePose } from '../scene/coreAdapter.js';
+import { SCREEN_STAND_POS } from '../scene/studio.js';
 import { motionCueTurn } from './motionCues.js';
 import type { TrackKind } from './types.js';
 
@@ -24,6 +26,14 @@ export const CATALOG: Record<string, CueDef> = {
   'cam.close': { track: 'camera', label: 'Close-up', color: '#5b8cff', defaultDuration: 1.5, icon: '🔍', desc: 'Tight head & shoulders' },
   'cam.screen': { track: 'camera', label: 'Two-shot + screen', color: '#5b8cff', defaultDuration: 1.8, icon: '🖥', desc: 'Two-shot with the video wall' },
   'cam.orbit': { track: 'camera', label: 'Slow orbit', color: '#5b8cff', defaultDuration: 4.0, icon: '🔄', desc: 'Slow arc around the anchor' },
+  // ── Catalog shot presets (data-driven; resolved via @las/performer-core sampleShot) ──
+  // These six extend the live #shot dropdown AND newscast cam cues from one catalog.
+  'cam.otsScreen': { track: 'camera', label: 'Over-the-shoulder', color: '#5b8cff', defaultDuration: 2.0, icon: '🎞', desc: 'Over the anchor toward the wall' },
+  'cam.profile': { track: 'camera', label: 'Profile ¾', color: '#5b8cff', defaultDuration: 2.0, icon: '📐', desc: 'Angled ¾ side view' },
+  'cam.heroLow': { track: 'camera', label: 'Hero (low)', color: '#5b8cff', defaultDuration: 2.0, icon: '🦸', desc: 'Low, authoritative angle' },
+  'cam.dutch': { track: 'camera', label: 'Dutch tilt', color: '#5b8cff', defaultDuration: 1.8, icon: '🎢', desc: 'Canted breaking-news energy' },
+  'cam.establish': { track: 'camera', label: 'Establish', color: '#5b8cff', defaultDuration: 2.6, icon: '🏙', desc: 'High ¾ wide that sets the room' },
+  'cam.pushIn': { track: 'camera', label: 'Push-in', color: '#5b8cff', defaultDuration: 3.0, icon: '🎥', desc: 'Slow dolly from wide to tight' },
   // Authored framings: a captured static view, or a recorded free move.
   'cam.custom': { track: 'camera', label: 'Custom view', color: '#7c5bff', defaultDuration: 1.5, icon: '🎯', desc: 'Your captured viewport framing' },
   'cam.path': { track: 'camera', label: 'Recorded move', color: '#ff8c42', defaultDuration: 3.0, icon: '⏺', desc: 'Replay a recorded camera move' },
@@ -43,6 +53,44 @@ export interface CameraPose {
   pos: THREE.Vector3;
   target: THREE.Vector3;
   fov: number;
+  roll?: number; // dutch tilt in degrees (default 0); applied by stage.setCameraPose
+}
+
+// ── Catalog shot-preset cue types ↔ @las/performer-core catalog ids ───────────
+// Only the SIX new presets route through the data catalog here; the legacy cam.close /
+// cam.anchor / cam.wide / cam.screen / cam.enterLeft / cam.orbit types keep their exact
+// prior resolution below (zero regression to existing newscasts/timelines). The dropdown
+// uses the catalog ids directly via poseForShotId.
+const PRESET_CUE_TO_ID: Record<string, CameraShotId> = {
+  'cam.otsScreen': 'ots-screen',
+  'cam.profile': 'profile',
+  'cam.heroLow': 'hero-low',
+  'cam.dutch': 'dutch',
+  'cam.establish': 'establish',
+  'cam.pushIn': 'push-in',
+};
+
+const _shotPose: Pose = makePose();
+
+/**
+ * Resolve a catalog shot preset (by id) to a concrete CameraPose around the live anchor head
+ * (hc, sized by hh) and the studio screen, at time `tSec` into the shot (for moves like
+ * push-in; static presets ignore it). This is the single studio-side resolver the live #shot
+ * dropdown and the preset cue types share. Carries `roll` (dutch) onto the CameraPose.
+ */
+export function poseForShotId(id: CameraShotId, hc: THREE.Vector3, hh: number, tSec = 0, out?: CameraPose): CameraPose {
+  const dst = out ?? { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 0 };
+  const preset = CAMERA_SHOTS[id];
+  const anchor: Subject = { pos: [hc.x, hc.y, hc.z], size: hh };
+  const screen: Subject = { pos: [SCREEN_STAND_POS.x, SCREEN_STAND_POS.y, SCREEN_STAND_POS.z], size: 1.0 };
+  const subjects: Subject[] =
+    preset.subject === 'both' ? [anchor, screen] : preset.subject === 'screen' ? [screen] : [anchor];
+  const pose = sampleShot(preset, subjects, tSec, _shotPose);
+  dst.pos.set(pose.pos[0], pose.pos[1], pose.pos[2]);
+  dst.target.set(pose.target[0], pose.target[1], pose.target[2]);
+  dst.fov = pose.fov;
+  dst.roll = pose.roll ?? 0;
+  return dst;
 }
 
 import type { PoseTuple } from './types.js';
@@ -127,9 +175,13 @@ const _presetPose: Pose = makePose();
 // the per-frame path (allocation-free); omit it to allocate a fresh pose.
 export function poseFor(type: string, hc: THREE.Vector3, hh: number, out?: CameraPose): CameraPose {
   const dst = out ?? { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 0 };
+  // Catalog shot presets (the six data-driven framings) resolve through performer-core.
+  const presetId = PRESET_CUE_TO_ID[type];
+  if (presetId) return poseForShotId(presetId, hc, hh, 0, dst);
   if (type === 'cam.screen' || type === 'cam.enterLeft' || type === 'cam.orbit') {
     return anglePose(type, hc, hh, dst);
   }
+  dst.roll = 0; // legacy size presets are never canted
   // Size-preset cues (cu/wide/medium) go through composeShot via the core adapter.
   const pose = frameSubject(hc, hh, compositionFor(type), _presetPose);
   dst.pos.set(pose.pos[0], pose.pos[1], pose.pos[2]);

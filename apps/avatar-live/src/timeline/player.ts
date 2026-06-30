@@ -118,7 +118,7 @@ export class TimelinePlayer {
     const from = idx > 0 ? this.resolvePose(cam[idx - 1], hc, hh, this._poseFrom) : to;
     const e = easeInOut(active.duration > 0 ? clamp01((t - active.start) / active.duration) : 1);
     const pose = lerpPose(from, to, e);
-    this.stage.setCameraPose(pose.pos, pose.target, pose.fov);
+    this.stage.setCameraPose(pose.pos, pose.target, pose.fov, pose.roll ?? 0);
   }
 
   // A cue's end framing: recorded path's last key, a captured pose, or a preset.
@@ -169,5 +169,6 @@ function lerpPose(a: CameraPose, b: CameraPose, t: number): CameraPose {
     pos: new THREE.Vector3().lerpVectors(a.pos, b.pos, t),
     target: new THREE.Vector3().lerpVectors(a.target, b.target, t),
     fov: a.fov + (b.fov - a.fov) * t,
+    roll: (a.roll ?? 0) + ((b.roll ?? 0) - (a.roll ?? 0)) * t,
   };
 }

@@ -10,6 +10,7 @@ const _afTgt = new THREE.Vector3();
 // arrow-key relative-move path — no allocation in the per-frame camera path (rule C).
 const _twoShotPose: Pose = makePose();
 const _nudgePose: Pose = makePose();
+const _rollDir = new THREE.Vector3(); // dutch-tilt view axis scratch (rule C)
 
 export type Shot = 'close' | 'medium' | 'wide';
 
@@ -266,9 +267,23 @@ export class Stage {
   /** Directly place the camera (used by the timeline director each frame, and by the unified
    *  score.drive for authored follow:false framing cues). `pos`/`target` are read structurally
    *  (x/y/z), so a plain {x,y,z} from ScoreDrive works as well as a THREE.Vector3. */
-  setCameraPose(pos: { x: number; y: number; z: number }, target: { x: number; y: number; z: number }, fov?: number): void {
+  setCameraPose(
+    pos: { x: number; y: number; z: number },
+    target: { x: number; y: number; z: number },
+    fov?: number,
+    roll = 0,
+  ): void {
     this.camera.position.set(pos.x, pos.y, pos.z);
     this.controls.target.set(target.x, target.y, target.z);
+    // Dutch tilt: cant the camera up-vector around the view axis so BOTH the manual lookAt and
+    // OrbitControls (which reads camera.up) honour the roll. roll 0 restores world-up, so every
+    // non-dutch pose stays byte-identical to before.
+    if (roll) {
+      const dir = _rollDir.set(target.x - pos.x, target.y - pos.y, target.z - pos.z).normalize();
+      this.camera.up.set(0, 1, 0).applyAxisAngle(dir, (roll * Math.PI) / 180);
+    } else {
+      this.camera.up.set(0, 1, 0);
+    }
     this.camera.lookAt(this.controls.target); // lookAt a real Vector3 (the just-set target)
     if (fov && Math.abs(fov - this.camera.fov) > 0.01) {
       this.camera.fov = fov;

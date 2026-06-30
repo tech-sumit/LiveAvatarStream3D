@@ -107,7 +107,26 @@ function shotFor(cam: Partial<CameraCue> | undefined): 'close' | 'medium' | 'wid
   if (shot && WIDE_SHOTS.includes(shot)) return 'wide';
   return 'medium';
 }
+// A catalog shot-preset id → the studio cue type that resolves it (timeline/catalog.ts).
+// close/medium/wide/two-shot reuse the existing size/angle cue types; the six new presets
+// get their own data-driven cue types.
+const PRESET_TO_CUE_TYPE: Record<string, string> = {
+  close: 'cam.close',
+  medium: 'cam.anchor',
+  wide: 'cam.wide',
+  'two-shot': 'cam.screen',
+  'ots-screen': 'cam.otsScreen',
+  profile: 'cam.profile',
+  'hero-low': 'cam.heroLow',
+  dutch: 'cam.dutch',
+  establish: 'cam.establish',
+  'push-in': 'cam.pushIn',
+};
+
 function cameraTypeFor(cam: Partial<CameraCue> | undefined): string {
+  // A named catalog preset (direction-as-data) wins over the descriptive shot/move fields.
+  const presetCue = cam?.preset ? PRESET_TO_CUE_TYPE[cam.preset] : undefined;
+  if (presetCue) return presetCue;
   if (cam?.move === 'orbit_left' || cam?.move === 'orbit_right') return 'cam.orbit';
   const s = shotFor(cam);
   return s === 'close' ? 'cam.close' : s === 'wide' ? 'cam.wide' : 'cam.anchor';
