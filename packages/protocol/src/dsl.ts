@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CAMERA_SHOT_IDS } from '@las/performer-core';
 
 /**
  * The performance DSL. This is the contract between the director LLM (and the
@@ -103,6 +104,10 @@ export const CameraCue = z.object({
   easing: CameraEasing.default('ease_in_out'),
   /** Move magnitude 0..1 scaling distance/angle travelled across the beat. */
   intensity: z.number().min(0).max(1).default(0.5),
+  /** A named shot-preset from the shared @las/performer-core catalog (close / two-shot /
+   *  ots-screen / profile / hero-low / dutch / establish / push-in …). When set it overrides
+   *  shot/move — the same data the live #shot dropdown reads, so direction stays as DATA. */
+  preset: z.enum(CAMERA_SHOT_IDS).optional(),
 });
 export type CameraCue = z.infer<typeof CameraCue>;
 

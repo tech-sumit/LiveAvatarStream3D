@@ -23,6 +23,7 @@ export const CameraKeyframe = z.object({
   pos: Vec3,
   target: Vec3,
   fov: z.number(),
+  roll: z.number().optional(), // dutch tilt (deg, default 0); from a catalog shot preset, applied as a camera-up cant
   follow: z.boolean().default(false), // authored snap-follow (the live/export divergence, made explicit)
   followSubjects: z.array(ResolvedTargetRef).optional(), // when follow: re-frame these per-frame (self.* tracks avatar)
   ease: z.enum(['linear', 'ease_in', 'ease_out', 'ease_in_out']).optional(),

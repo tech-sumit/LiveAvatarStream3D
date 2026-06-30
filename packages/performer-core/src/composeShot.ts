@@ -41,8 +41,50 @@ const TWO_SHOT_TGT_OFF_X = 0.1;
 const TWO_SHOT_TGT_Y = 1.25;
 const TWO_SHOT_TGT_OFF_Z = 0.9;
 
+const DEG = Math.PI / 180;
+
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+// Orbit a camera position `(px,py,pz)` around the look-`target` by `azimuthDeg` (about
+// world-Y: 0 = unchanged, + = toward +X / the anchor's right) then `elevationDeg` (camera
+// pitch: + = higher / looking-down). Done in spherical coordinates around the target, so the
+// radius (camera→target distance) is preserved exactly and az = el = 0 round-trips to the
+// input — the CAMERA_* parity fixtures depend on that identity. Writes the orbited camera
+// position into the reused `out3` tuple (no allocation, rule C).
+function orbitAround(
+  px: number,
+  py: number,
+  pz: number,
+  tx: number,
+  ty: number,
+  tz: number,
+  azimuthDeg: number,
+  elevationDeg: number,
+  out3: Vec3,
+): Vec3 {
+  const ox = px - tx;
+  const oy = py - ty;
+  const oz = pz - tz;
+  const radius = Math.hypot(ox, oy, oz) || 1e-6;
+  const az = Math.atan2(ox, oz) + azimuthDeg * DEG; // angle from +Z toward +X
+  // clamp the resulting elevation just shy of the poles so cos(el) never collapses the frame
+  const el = clamp(Math.asin(clamp(oy / radius, -1, 1)) + elevationDeg * DEG, -85 * DEG, 85 * DEG);
+  const horiz = radius * Math.cos(el);
+  out3[0] = tx + horiz * Math.sin(az);
+  out3[1] = ty + radius * Math.sin(el);
+  out3[2] = tz + horiz * Math.cos(az);
+  return out3;
+}
+
+// Reused orbit scratch (rule C) — fully consumed by writePose before the next composeShot.
+const _orbit: Vec3 = [0, 0, 0];
+
 // Write scalar components into `out` in place when supplied (no allocation, cross-cutting
-// rule C); only build fresh Vec3 tuples on the allocating (no-`out`) path.
+// rule C); only build fresh Vec3 tuples on the allocating (no-`out`) path. Applies the
+// camera orbit (azimuth/elevation about the target) and carries `roll` (dutch) onto the Pose;
+// all three default to 0 → trig-free identity that preserves today's framings.
 function writePose(
   out: Pose | undefined,
   px: number,
@@ -52,18 +94,42 @@ function writePose(
   ty: number,
   tz: number,
   fov: number,
+  azimuth = 0,
+  elevation = 0,
+  roll = 0,
 ): Pose {
+  let cx = px;
+  let cy = py;
+  let cz = pz;
+  if (azimuth !== 0 || elevation !== 0) {
+    const o = orbitAround(px, py, pz, tx, ty, tz, azimuth, elevation, _orbit);
+    cx = o[0];
+    cy = o[1];
+    cz = o[2];
+  }
   if (out) {
-    out.pos[0] = px;
-    out.pos[1] = py;
-    out.pos[2] = pz;
+    out.pos[0] = cx;
+    out.pos[1] = cy;
+    out.pos[2] = cz;
     out.target[0] = tx;
     out.target[1] = ty;
     out.target[2] = tz;
     out.fov = fov;
+    out.roll = roll;
     return out;
   }
-  return { pos: [px, py, pz], target: [tx, ty, tz], fov };
+  return { pos: [cx, cy, cz], target: [tx, ty, tz], fov, roll };
+}
+
+// Resolve `composition.size` to a SizeSpec. A named preset reads the table; a NUMBER is a
+// continuous count of head-heights of distance (so a move can interpolate tightness, e.g.
+// push-in 7.0 → 4.2). The numeric drop curve keeps the face in the upper third and the fov
+// comes from `lens` (default 32) — head-on, no offsets (orbit/roll add any angle).
+function sizeSpecFor(size: Composition['size'], lens: number | undefined): SizeSpec {
+  if (typeof size === 'number') {
+    return { distHeads: size, dropHeads: size * 0.12, fov: lens ?? 32, camOff: [0, 0, 0], tgtOff: [0, 0, 0] };
+  }
+  return SIZE_TABLE[size ?? 'medium'];
 }
 
 /**
@@ -79,6 +145,10 @@ function writePose(
 export function composeShot(subjects: Subject[], composition: Composition, out?: Pose): Pose {
   const s0 = subjects[0];
   if (!s0) throw new Error('composeShot: at least one subject is required');
+
+  const azimuth = composition.azimuth ?? 0;
+  const elevation = composition.elevation ?? 0;
+  const roll = composition.roll ?? 0;
 
   // Two-shot: frame the midpoint of the first two subjects, dollying so both fit.
   const s1 = subjects[1];
@@ -102,12 +172,15 @@ export function composeShot(subjects: Subject[], composition: Composition, out?:
       TWO_SHOT_TGT_Y + heightBias,
       mz + TWO_SHOT_TGT_OFF_Z,
       fov,
+      azimuth,
+      elevation,
+      roll,
     );
   }
 
   // Single subject.
   const hh = s0.size ?? 1;
-  const spec = SIZE_TABLE[composition.size ?? 'medium'];
+  const spec = sizeSpecFor(composition.size, composition.lens);
   const dist = spec.dist ?? (spec.distHeads ?? 0) * hh;
   const drop = spec.drop ?? (spec.dropHeads ?? 0) * hh;
   const fov = composition.lens ?? spec.fov;
@@ -125,5 +198,8 @@ export function composeShot(subjects: Subject[], composition: Composition, out?:
     eyeY - drop + heightBias + spec.tgtOff[1],
     eyeZ + spec.tgtOff[2],
     fov,
+    azimuth,
+    elevation,
+    roll,
   );
 }

@@ -21,6 +21,9 @@ export type {
   Drive,
 } from './types.js';
 
+export type { ShotSubject, ShotMove, ShotPreset, CameraShotId } from './cameraShots.js';
+export { CAMERA_SHOTS, CAMERA_SHOT_IDS, sampleShot } from './cameraShots.js';
+
 export { composeShot } from './composeShot.js';
 export { moveCamera } from './moveCamera.js';
 export { planPath } from './planPath.js';

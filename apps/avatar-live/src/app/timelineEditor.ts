@@ -143,7 +143,7 @@ export class TimelineEditor {
    * into the Performance camera channel as follow:false keyframes so the unified drive path
    * honors them (they were silently dropped on live narration after the cutover).
    */
-  cameraCues(): { tSec: number; pos: [number, number, number]; target: [number, number, number]; fov: number }[] {
+  cameraCues(): { tSec: number; pos: [number, number, number]; target: [number, number, number]; fov: number; roll: number }[] {
     const hc = this.app.avatar.headCenter.clone().add(this.app.avatar.group.position);
     const hh = this.app.avatar.headHeight;
     return this.timeline.cues
@@ -161,6 +161,7 @@ export class TimelineEditor {
           pos: [p.pos.x, p.pos.y, p.pos.z] as [number, number, number],
           target: [p.target.x, p.target.y, p.target.z] as [number, number, number],
           fov: p.fov,
+          roll: p.roll ?? 0,
         };
       });
   }
