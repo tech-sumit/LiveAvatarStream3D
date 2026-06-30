@@ -1,6 +1,6 @@
 import type { CameraShotId } from '@las/performer-core';
 import type { StudioContext } from './context.js';
-import { applyShot } from './shotPresets.js';
+import { applyShot, isShotId } from './shotPresets.js';
 
 // Folders are auto-indexed by the Vite avatar plugin (→ /avatars.json). Each avatar
 // carries its own lip-sync config so "how much the lips move" is per-model.
@@ -161,7 +161,9 @@ export class AvatarLibrary {
     const cfg = this.avatarConfigs.get(id);
     if (!cfg) return false;
     const prevShot = dom.shotSel.value;
-    if (cfg.shot) dom.shotSel.value = cfg.shot; // so loadAvatar frames with the right shot
+    // Only adopt a persisted shot that's a real catalog option — a stale/hand-edited id would
+    // otherwise blank the <select> (value '') and make loadAvatar's applyShot a no-op (no reframe).
+    if (cfg.shot && isShotId(cfg.shot)) dom.shotSel.value = cfg.shot;
     const ok = await this.loadAvatar(`/${id}/${cfg.model}`, cfg.label, cfg.bodyAnim, id);
     if (ok) {
       this.currentAvatarId = id;

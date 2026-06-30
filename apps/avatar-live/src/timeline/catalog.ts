@@ -175,13 +175,15 @@ const _presetPose: Pose = makePose();
 // the per-frame path (allocation-free); omit it to allocate a fresh pose.
 export function poseFor(type: string, hc: THREE.Vector3, hh: number, out?: CameraPose): CameraPose {
   const dst = out ?? { pos: new THREE.Vector3(), target: new THREE.Vector3(), fov: 0 };
+  // Default level — only the dutch preset cants. Reset up-front so a REUSED `out` buffer can't
+  // leak a prior dutch roll onto the legacy angled / size framings below (which never write roll).
+  dst.roll = 0;
   // Catalog shot presets (the six data-driven framings) resolve through performer-core.
   const presetId = PRESET_CUE_TO_ID[type];
   if (presetId) return poseForShotId(presetId, hc, hh, 0, dst);
   if (type === 'cam.screen' || type === 'cam.enterLeft' || type === 'cam.orbit') {
     return anglePose(type, hc, hh, dst);
   }
-  dst.roll = 0; // legacy size presets are never canted
   // Size-preset cues (cu/wide/medium) go through composeShot via the core adapter.
   const pose = frameSubject(hc, hh, compositionFor(type), _presetPose);
   dst.pos.set(pose.pos[0], pose.pos[1], pose.pos[2]);

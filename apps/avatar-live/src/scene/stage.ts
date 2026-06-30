@@ -111,6 +111,9 @@ export class Stage {
     this.controls.target.set(0, 1.5, 0);
     this.controls.minDistance = 0.2;
     this.controls.maxDistance = 8;
+    // Starting a manual orbit clears any dutch-shot tilt so dragging begins from a level
+    // horizon (the canted camera.up otherwise makes OrbitControls tumble).
+    this.controls.addEventListener('start', () => this.camera.up.set(0, 1, 0));
 
     this.setupLights();
     this.setupBackdrop();
@@ -153,10 +156,19 @@ export class Stage {
    *  heads), and it deliberately never changes the camera fov. composeShot has no size that
    *  reproduces those exact numbers, so routing this through it would change the DEFAULT
    *  (medium) shot — unifying it into the spatial Score model is deferred (Score/Stage). */
+  /** Restore a level horizon (world up). The dutch shot preset cants `camera.up` (a canted
+   *  view axis) via setCameraPose; that up-vector is shared mutable state, so EVERY other
+   *  framing op (and a fresh manual orbit) calls this first to clear a stale dutch tilt — only
+   *  an actual dutch pose stays canted. */
+  private levelUp(): void {
+    this.camera.up.set(0, 1, 0);
+  }
+
   frame(headCenter: THREE.Vector3, headHeight: number, shot: Shot = 'medium', snap = true): void {
     // News framing: eye-level camera; the look-at drops slightly toward the chest (more
     // on wider shots) so the frame reveals neck + torso while keeping the FACE comfortably
     // in the upper third — a head-and-shoulders anchor shot, not a torso crop.
+    this.levelUp();
     const factor = shot === 'close' ? 4.0 : shot === 'medium' ? 5.5 : 8.0;
     const drop = shot === 'close' ? 0.25 : shot === 'medium' ? 0.6 : 1.1;
     const dist = headHeight * factor;
@@ -174,6 +186,7 @@ export class Stage {
    *  stays an apply-layer op — it becomes an authored eyeline `follow` constraint in the
    *  Score model. `k` is the apply-layer damping (snap = 1 here; soft < 1 below). */
   alignToFace(face: THREE.Vector3): void {
+    this.levelUp(); // clear any prior dutch tilt — align is always level
     this.controls.target.copy(face);
     this.camera.position.y = face.y;
     this.camera.lookAt(face);
@@ -182,6 +195,7 @@ export class Stage {
 
   /** Soft per-frame pull toward a face-level framing (the auto-align toggle). */
   softAlignToFace(face: THREE.Vector3, k = 0.12): void {
+    this.levelUp();
     this.controls.target.lerp(face, k);
     this.camera.position.y += (face.y - this.camera.position.y) * k;
   }
@@ -198,6 +212,7 @@ export class Stage {
     // +0.9z, fov 40, dist = (spread + 2.75)/(2·tan(fov/2)) — so the captured news two-shot
     // is pixel-identical (parity-pinned by CAMERA_TWO_SHOT). The snap-vs-smoothed apply
     // stays here as the apply-layer follow damping (it becomes authored `follow` in 4c).
+    this.levelUp(); // the two-shot follow is always level (clears a prior dutch tilt)
     const pose = frameTwoShot(anchor, screen, { follow: true }, _twoShotPose);
     if (Math.abs(this.camera.fov - pose.fov) > 0.01) {
       this.camera.fov = pose.fov;
@@ -244,6 +259,7 @@ export class Stage {
    *  combined pan-then-dolly: a pan translates pos+target equally so the dolly axis is
    *  unchanged), then OrbitControls is updated. */
   nudgeCamera(truck: number, pedestal: number, dolly: number): void {
+    this.levelUp(); // arrow-key navigation is always level (clears a prior dutch tilt)
     if (truck !== 0) this.applyMove('truck', truck);
     if (pedestal !== 0) this.applyMove('pedestal', pedestal);
     if (dolly !== 0) this.applyMove('dolly', dolly);
