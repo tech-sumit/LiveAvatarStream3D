@@ -461,6 +461,10 @@ function seekTimeline(c: BridgeControllers, seconds: number): void {
  * the legacy NewsReport import (applyProject) used to leave behind.
  */
 async function applyScoreDoc(app: StudioContext, c: BridgeControllers, doc: unknown): Promise<{ beats: number; lowered: boolean }> {
+  // Same guard as the file path (projectStore.applyProject): applying a newscast mid-take
+  // swaps the avatar/lights/look/timeline under a running render — an automation client
+  // issuing apply_newscast during an export must get a loud error, not a corrupted MP4.
+  if (app.isBusy()) throw new Error('busy — finish the current take/export before applying a newscast.');
   let score: Score;
   let lowered = false;
   let nr: NewsReportDoc | undefined;

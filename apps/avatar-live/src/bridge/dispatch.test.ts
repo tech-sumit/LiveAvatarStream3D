@@ -57,13 +57,15 @@ function makeApp(voices: string[] = ['voice-xyz']) {
     emotionSel: selectStub(['neutral', 'warm']),
   };
   const logs: string[] = [];
+  let busy = false;
   const app = {
     dom,
     log: (m: string) => logs.push(m),
     avatar: { setEmotion: () => undefined },
     studio: { preloadSlideImages: async () => undefined },
+    isBusy: () => busy,
   } as unknown as Parameters<typeof createDispatcher>[0];
-  return { app, dom, logs };
+  return { app, dom, logs, setBusy: (v: boolean) => (busy = v) };
 }
 
 interface ImportCall {
@@ -392,5 +394,19 @@ describe('applyNewscast carries FULL chrome (parity with the file-import path)',
     const call = importCalls.at(-1)!;
     const perf = compileScore(call.stage, score, call.timings);
     expect(perf.camera.some((k) => k.preset === 'hero-low')).toBe(true);
+  });
+});
+
+// ── busy guard: apply_newscast must refuse to run under a take/export ────────────
+describe('applyNewscast busy guard (parity with applyProject)', () => {
+  it('rejects while the studio is busy — no chrome/timeline mutation lands mid-export', async () => {
+    const { app, setBusy } = makeApp();
+    const { c, importCalls, narrationCalls, chrome } = makeControllers();
+    const dispatch = createDispatcher(app, c);
+    setBusy(true);
+    await expect(dispatch('applyNewscast', { doc: NEWSCAST })).rejects.toThrow(/busy/i);
+    expect(importCalls.length).toBe(0);
+    expect(narrationCalls.length).toBe(0);
+    expect(chrome.library!.length).toBe(0);
   });
 });

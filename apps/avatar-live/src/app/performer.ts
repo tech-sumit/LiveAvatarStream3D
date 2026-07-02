@@ -289,7 +289,25 @@ export class Performer {
 
     // Recompile against the measured clock. A lowered NewsReportDoc re-derives its chrome
     // (beds/SFX/slides) on the SAME timings via newsReportChrome — one clock everywhere.
-    const timings: AudioTimings = { beats: spans.map((s) => ({ startSec: s.startSec, endSec: s.endSec, words: [] })) };
+    // Words are spread evenly across each MEASURED span (mirroring timingsFromScore's coarse
+    // spread) so word-anchored cues (`at:{word:N}`) keep their mid-beat placement — an empty
+    // words array would silently collapse every word anchor to the beat start.
+    const timings: AudioTimings = {
+      beats: spans.map((s, i) => {
+        const words = (beats[i]?.text ?? '').split(/\s+/).filter(Boolean);
+        const n = Math.max(words.length, 1);
+        const dur = s.endSec - s.startSec;
+        return {
+          startSec: s.startSec,
+          endSec: s.endSec,
+          words: words.map((word, w) => ({
+            word,
+            startSec: s.startSec + (w / n) * dur,
+            endSec: s.startSec + ((w + 1) / n) * dur,
+          })),
+        };
+      }),
+    };
     let audio: AudioCue[] | undefined;
     let slides: { tSec: number; slide: SlideContent }[] | undefined;
     if (authored.nr) {
@@ -313,10 +331,12 @@ export class Performer {
     this.narrationSegs = segTimeline;
     this.authoredPerf = perf;
     this.score.load(perf, this.fallbackEmotion());
-    deps.timeline.setNarrationCues(cues, total);
     if (authored.nr) {
       // Re-lay the editor's audio/graphics tracks on the real clock too (the live bed scheduler
       // reads TIMELINE cues; leaving them on the coarse clock would desync preview audio).
+      // These run BEFORE setNarrationCues: the duration owner recomputes over the FINAL cue set,
+      // so a real clock SHORTER than the coarse 3 s/beat grid actually shrinks the timeline
+      // (replaceTrackCues itself never shrinks; a stale coarse-length bed would pin the ruler).
       deps.timeline.replaceTrackCues(
         'audio',
         (audio ?? []).map((a) => ({
@@ -344,6 +364,7 @@ export class Performer {
         })),
       );
     }
+    deps.timeline.setNarrationCues(cues, total);
     app.log(
       `narration ready · ${total.toFixed(1)}s, ${cues.length} beat(s) — direction + chrome recompiled on the real clock.`,
     );
@@ -627,6 +648,9 @@ export class Performer {
    */
   loadPerformance(perf: Performance): void {
     this.authoredPerf = perf; // owns the next take/export until a script edit invalidates it
+    // A raw Performance supersedes any retained Score — otherwise Generate would recompile a
+    // STALE authoredScore over this newly landed perf. loadScore re-sets it right after this.
+    this.authoredScore = null;
     this.score.load(perf, this.fallbackEmotion());
   }
 

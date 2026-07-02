@@ -48,6 +48,7 @@ type CameraKeyframe = {
   move?: 'dolly' | 'orbit' | 'pan' | 'truck' | 'pedestal';
   moveAmount?: number;
   preset?: string; // catalog shot-preset id — the runtime resolves it against the live avatar
+  roll?: number; // dutch tilt (deg) from a preset snapshot
 };
 type MotionPath = {
   startSec: number;
@@ -501,9 +502,20 @@ function compileCamera(
       console.warn(`[compileScore] unknown camera preset '${dir.preset}' — ignored.`);
       return undefined;
     }
-    const face = refPos('self.face');
-    // 0.42 = nominal head height (the repo's reference avatar) — snapshot only; runtime resolves live.
-    const pose = sampleShot(shot, [{ pos: face as CoreVec3, size: 0.42 }], 0);
+    // Snapshot with the preset's OWN subject geometry (anchor / screen / both) so the baked
+    // pose is at least the right composition — it seeds resolveMoveKeyframes for a following
+    // {move} directive and any preset-less consumer. 0.42 = nominal head height (the repo's
+    // reference avatar); the runtime re-resolves against the live avatar every frame anyway.
+    const anchorSub: Subject = { pos: refPos('self.face') as CoreVec3, size: 0.42 };
+    const screenTarget = idx.targets.get('screen');
+    const screenSub: Subject | null = screenTarget?.pos ? { pos: screenTarget.pos as CoreVec3, size: 1 } : null;
+    const subjects: Subject[] =
+      shot.subject === 'both' && screenSub
+        ? [anchorSub, screenSub]
+        : shot.subject === 'screen' && screenSub
+          ? [screenSub]
+          : [anchorSub]; // no 'screen' target on this stage → anchor framing is the sane fallback
+    const pose = sampleShot(shot, subjects, 0);
     const kf: CameraKeyframe = {
       tSec,
       pos: [pose.pos[0], pose.pos[1], pose.pos[2]],
@@ -512,6 +524,7 @@ function compileCamera(
       follow: false,
       preset: dir.preset,
     };
+    if (pose.roll) kf.roll = pose.roll; // dutch tilt survives onto the keyframe snapshot
     return kf;
   }
   if ('move' in dir) {
