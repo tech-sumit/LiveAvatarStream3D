@@ -1,4 +1,4 @@
-import type { Performance, SlideContent } from '@las/protocol';
+import type { AudioCue as ProtocolAudioCue, Performance, SlideContent } from '@las/protocol';
 import { GESTURE_KIND_TO_CLIP, EMOTION_ENERGY } from '@las/protocol';
 import type { GestureKind } from '@las/protocol';
 import { CAMERA_SHOTS, resolveGesture, sampleShot } from '@las/performer-core';
@@ -582,6 +582,9 @@ export interface SlideCue {
 export interface NarrationExtras {
   motionCues?: MotionCue[];
   cameraCues?: CameraCue[];
+  /** The audio-track cues (beds/SFX) → the Performance `audio` channel — perf.audio is the
+   *  SINGLE audio source both the live scheduler and the export mixdown consume. */
+  audioCues?: ProtocolAudioCue[];
   /** Wall-slide deck cues (the 'graphics' timeline track) → the Performance `slides` channel. */
   slideCues?: SlideCue[];
   /** Emit the two-shot follow keyframe (default true); live free-text Speak passes the
@@ -720,6 +723,6 @@ export function buildNarrationPerformance(
     emotes: [],
     screen,
     slides,
-    audio: [],
+    audio: [...(extra.audioCues ?? [])],
   };
 }

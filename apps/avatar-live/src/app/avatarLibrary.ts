@@ -240,6 +240,7 @@ export class AvatarLibrary {
         log('finish the current take before changing the avatar.');
         return;
       }
+      dom.glbInput.value = ''; // allow re-selecting the same file (matches the other file inputs)
       const url = URL.createObjectURL(file);
       try {
         await this.loadAdHoc(url, file.name);

@@ -1,16 +1,32 @@
 # Operations
 
+> **⚠️ Scope note (2026-06-26):** Historical — this doc describes the pre-2026-06-26
+> multi-path product; the repo is now **3D-browser-only** (see `ARCHITECTURE.md`'s scope note
+> and `CLAUDE.md`). The GPU render/realtime paths (`avatar-video`, `finishing`, `realtime`,
+> `SessionDO`) moved to `../LiveAvatarStream` or were removed. What still runs from this repo:
+> the studio (`npm run dev:avatar` → http://localhost:5175), the control-api Worker
+> (`cd services/control-api && npx wrangler deploy`), and three GPU services the control plane
+> uses (`services/gpu/{voice,avatar-build,image-gen}`). Sections below are annotated where
+> they no longer apply.
+
 Day-to-day running notes for the internal deployment.
 
 ## Topology
 
 - **Control plane** — one Cloudflare Worker (`@las/control-api`) + D1 + R2 + KV +
-  Queues + two Durable Object classes (`JobDO`, `SessionDO`).
-- **GPU plane** — six containerized services (`avatar-build`, `image-gen`,
-  `voice`, `avatar-video`, `finishing`, `realtime`) on Modal or self-hosted H100s.
-- **Web** — static SPA on Cloudflare Pages, proxying `/api/*` to the Worker.
+  Queues + one Durable Object class (`JobDO`). (`SessionDO` was removed with the
+  realtime path.)
+- **GPU plane** — three containerized services remain (`avatar-build`, `image-gen`,
+  `voice`) on Modal or self-hosted pods; `avatar-video`, `finishing`, and `realtime`
+  moved to `../LiveAvatarStream`.
+- **Web** — the studio (`apps/avatar-live`) is a Vite app; there is no `apps/web`
+  Pages SPA anymore.
 
-## Offline render lifecycle
+## Offline render lifecycle (historical)
+
+> Rendering is now client-side in the studio (WebCodecs MP4 export) — there is no
+> GPU render job. The Queue/orchestrator still exists but runs `voice_clone` and
+> `avatar_build` jobs only (`services/control-api/src/orchestrator.ts`).
 
 `POST /api/jobs` → D1 row + Queue message → consumer `handleQueue`:
 
@@ -22,7 +38,7 @@ Status is written to D1 (`jobs`, `job_events`) and pushed to `JobDO`. The web
 app polls `GET /api/jobs/:id`; a WebSocket is available at
 `GET /api/jobs/:id/subscribe`.
 
-## Realtime session lifecycle
+## Realtime session lifecycle (historical — moved to `../LiveAvatarStream`)
 
 `POST /api/sessions` → `SessionDO.start`:
 
@@ -41,15 +57,16 @@ the GPU worker, which drains its audio/video queues immediately.
 
 | Task | Command |
 |---|---|
+| Run the studio | `npm run dev:avatar` → http://localhost:5175 |
+| Typecheck + tests (CI mirrors this) | `npm run typecheck && npm test` |
 | Tail worker logs | `npx wrangler tail --name las-control-api` |
 | Inspect a job | `npx wrangler d1 execute las_db --remote --command "SELECT * FROM jobs ORDER BY created_at DESC LIMIT 10"` |
 | Re-run migrations | `npm run migrate:remote --workspace @las/control-api` |
-| GPU health round-trip | `curl -X POST https://<worker>/api/_health/gpu` |
-| Quality eval a render | `python scripts/eval/eval.py --generated out.mp4 --ref-image face.png` |
+| GPU health round-trip | `curl -X POST https://<worker>/api/_health/gpu` (needs a live GPU plane) |
 | Redeploy worker | `npm run deploy --workspace @las/control-api` |
-| Redeploy GPU plane | `modal deploy services/gpu/modal_app.py` |
+| Redeploy GPU plane | `modal deploy services/gpu/modal_app.py` (voice / avatar-build / image-gen only) |
 
-## Latency budgets (realtime)
+## Latency budgets (realtime — historical, moved to `../LiveAvatarStream`)
 
 - Steady-state motion-to-photon: **< 150 ms** (fast tier, `tiers.py`).
 - Turn response (end-of-speech → avatar starts speaking): **~0.8–1.5 s**.
@@ -62,12 +79,10 @@ active.
 ## Cost levers
 
 - Offline GPU (Modal) scales to zero between jobs.
-- Realtime keeps `REALTIME_WARM` nodes hot — set to 0 to save cost at the price
-  of cold-start on first session.
-- Premium tier (OmniAvatar + RIFE) is the expensive path; default live sessions
-  to the `fast` tier.
+- (Historical) realtime warm nodes and render tiers moved to `../LiveAvatarStream`;
+  rendering here is client-side and free.
 
 ## Cleanup
 
-`npm run clean` (per workspace) and `npx wrangler r2 object delete` for stale
-`work/<jobId>` intermediates in `las-outputs`.
+`npx wrangler r2 object delete` for stale `work/<jobId>` intermediates in
+`las-outputs`. (There is no `npm run clean` script in any workspace.)

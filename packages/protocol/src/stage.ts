@@ -21,14 +21,14 @@ export const Target = z.object({
 
 export const SavedShot = z.object({
   id: z.string(),
-  pose: z.object({ pos: Vec3, target: Vec3, fov: z.number() }),
+  pose: z.object({ pos: Vec3, target: Vec3, fov: z.number().positive().finite() }),
 });
 
 export const CameraNode = z.object({
   id: z.string(),
   pos: Vec3,
   target: Vec3.optional(),
-  fov: z.number().default(35),
+  fov: z.number().positive().finite().default(35),
 });
 
 export const LightNode = z.object({

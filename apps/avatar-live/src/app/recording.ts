@@ -42,6 +42,10 @@ export class Recording {
   downloadClip(url: string, filename: string): void {
     if (!url) return;
     const d = this.app.dom;
+    // Revoke the PREVIOUS take's object URL before overwriting it — each export/recording
+    // otherwise pins its whole blob in memory for the page lifetime.
+    const prev = d.downloadEl.href;
+    if (prev.startsWith('blob:') && prev !== url) URL.revokeObjectURL(prev);
     d.downloadEl.href = url;
     d.downloadEl.download = filename;
     d.downloadEl.textContent = `⬇ Download ${filename}`;
@@ -74,6 +78,7 @@ export class Recording {
     d.exportMp4Btn.disabled = on;
     d.recordBtn.disabled = on;
     d.exportMp4Btn.textContent = on ? '… exporting' : '⬇ Export MP4';
+    d.exportCancelBtn.hidden = !on; // Cancel is visible exactly while an export runs
   }
 
   /** Show export progress; (0,0) clears it. */

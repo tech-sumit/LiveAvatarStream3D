@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { CloneVoiceRequest, type QueueMessage } from '@las/protocol';
 import type { Env } from '../env.js';
-import { ensureUser, rowToVoice } from '../lib/db.js';
+import { ensureUser, insertJob, rowToVoice } from '../lib/db.js';
 import { newId, now } from '../lib/ids.js';
 import { bucket } from '../lib/r2.js';
 
@@ -43,7 +43,8 @@ voices.post('/api/voices', async (c) => {
   // Clone on the GPU plane via the durable job queue (not a request waitUntil,
   // which Cloudflare can evict once the response returns and leave the row stuck
   // 'cloning'). The queue consumer calls /voice/clone and flips the row to
-  // ready/failed.
+  // ready/failed. The paired jobs row is the durable operator record
+  // (GET /api/jobs, retry).
   const spec = {
     voiceId: id,
     userId: body.userId,
@@ -52,7 +53,8 @@ voices.post('/api/voices', async (c) => {
     language: body.language,
     outPrefix: r2Prefix,
   };
-  await c.env.JOBS.send({ jobId: id, kind: 'voice_clone', userId: body.userId, spec } satisfies QueueMessage);
+  const jobId = await insertJob(c.env, body.userId, 'voice_clone', spec);
+  await c.env.JOBS.send({ jobId, kind: 'voice_clone', userId: body.userId, spec } satisfies QueueMessage);
 
   const row = await c.env.DB.prepare('SELECT * FROM voices WHERE id = ?').bind(id).first();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,7 +91,8 @@ voices.post('/api/voices/:id/retry', async (c) => {
     language: v.language,
     outPrefix: v.r2_prefix,
   };
-  await c.env.JOBS.send({ jobId: id, kind: 'voice_clone', userId: v.user_id, spec } satisfies QueueMessage);
+  const jobId = await insertJob(c.env, v.user_id, 'voice_clone', spec);
+  await c.env.JOBS.send({ jobId, kind: 'voice_clone', userId: v.user_id, spec } satisfies QueueMessage);
 
   const updated = await c.env.DB.prepare('SELECT * FROM voices WHERE id = ?').bind(id).first();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -61,20 +61,39 @@ function schedule(
 }
 
 /**
+ * Fade-overlap normalization shared by the live scheduler AND the export mixdown: when
+ * fadeIn+fadeOut exceed the clip length, scale both down proportionally — otherwise the
+ * gain automation events land out of order (a full-length fade-in ending in a hard cut,
+ * or worse). ONE implementation so the two clocks can't render different envelopes.
+ */
+export function normalizedFades(lenSec: number, fadeIn: number, fadeOut: number): { fadeIn: number; fadeOut: number } {
+  let fi = Math.max(0, fadeIn);
+  let fo = Math.max(0, fadeOut);
+  if (fi + fo > lenSec && fi + fo > 0) {
+    const s = lenSec / (fi + fo);
+    fi *= s;
+    fo *= s;
+  }
+  return { fadeIn: fi, fadeOut: fo };
+}
+
+/**
  * Map a protocol {@link AudioCue} (music bed / SFX, carrying a `src` URL + timeline placement)
- * onto a mixdown {@link AudioClip} once its buffer has been decoded. Pure field projection — the
- * decode (the only browser-dependent step) is {@link fetchDecodeAudio}, kept separate so this is
- * unit-testable without an AudioContext.
+ * onto a mixdown {@link AudioClip} once its buffer has been decoded. Pure field projection plus
+ * the shared fade normalization — the decode (the only browser-dependent step) is
+ * {@link fetchDecodeAudio}, kept separate so this is unit-testable without an AudioContext.
  */
 export function clipFromCue(cue: AudioCue, buffer: AudioBuffer): AudioClip {
+  // AudioCue.duration defaults to 0 = "unspecified" → play the whole buffer (clamping to 0
+  // would render the clip silent). A positive duration clamps like the live scheduler.
+  const lenSec = Math.min(buffer.duration, cue.duration > 0 ? cue.duration : buffer.duration);
+  const fades = normalizedFades(lenSec, cue.fadeIn, cue.fadeOut);
   return {
     buffer,
     start: cue.start,
     volume: cue.volume,
-    fadeIn: cue.fadeIn,
-    fadeOut: cue.fadeOut,
-    // AudioCue.duration defaults to 0 = "unspecified" → play the whole buffer (clamping to 0
-    // would render the clip silent). A positive duration clamps like the live scheduler.
+    fadeIn: fades.fadeIn,
+    fadeOut: fades.fadeOut,
     ...(cue.duration > 0 ? { durationSec: cue.duration } : {}),
   };
 }
@@ -97,6 +116,15 @@ async function fetchDecodeAudio(src: string, ctx: BaseAudioContext): Promise<Aud
 export async function audioCuesToClips(
   cues: readonly AudioCue[],
   ctx: BaseAudioContext,
+  lookupBuffer?: (id: string) => AudioBuffer | undefined,
 ): Promise<AudioClip[]> {
-  return Promise.all(cues.map(async (cue) => clipFromCue(cue, await fetchDecodeAudio(cue.src, ctx))));
+  return Promise.all(
+    cues.map(async (cue) => {
+      // Prefer the timeline's already-decoded buffer (the SAME bytes the live take played);
+      // fetch by src only as the fallback. A `session:` pseudo-src with no decoded buffer
+      // fails loudly here — the asset genuinely no longer exists.
+      const cached = lookupBuffer?.(cue.id);
+      return clipFromCue(cue, cached ?? (await fetchDecodeAudio(cue.src, ctx)));
+    }),
+  );
 }

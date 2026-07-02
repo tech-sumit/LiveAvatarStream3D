@@ -8,7 +8,7 @@ import { voices } from './routes/voices.js';
 import { jobs } from './routes/jobs.js';
 import { director } from './routes/director.js';
 import { internal } from './routes/internal.js';
-import { handleQueue } from './orchestrator.js';
+import { handleQueue, sweepStuckJobs } from './orchestrator.js';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -47,6 +47,11 @@ export default {
   // Cloudflare Queue consumer (offline job orchestration).
   async queue(batch: MessageBatch, env: Env): Promise<void> {
     await handleQueue(batch, env);
+  },
+  // Cron (wrangler.toml [triggers]): fail rows stuck mid-flight > 2 h.
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    const swept = await sweepStuckJobs(env);
+    if (swept > 0) console.warn(`sweepStuckJobs: marked ${swept} stuck job(s) as timed out`);
   },
 };
 
