@@ -47,6 +47,10 @@ def install_internal_auth(app) -> None:
         if request.url.path in _EXEMPT_PATHS:
             return await call_next(request)
         presented = request.headers.get(INTERNAL_TOKEN_HEADER, "")
-        if not hmac.compare_digest(presented, expected):
+        # Compare BYTES: str-mode compare_digest raises TypeError on non-ASCII input, so a
+        # garbage header (Starlette decodes header bytes as latin-1) would 500 instead of 401.
+        # latin-1 re-encoding of the header can't fail; a mismatched-encoding token just
+        # compares unequal, which is the correct outcome.
+        if not hmac.compare_digest(presented.encode("latin-1", "replace"), expected.encode("utf-8")):
             return JSONResponse({"detail": "unauthorized"}, status_code=401)
         return await call_next(request)

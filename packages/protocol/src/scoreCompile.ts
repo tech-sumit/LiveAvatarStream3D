@@ -394,6 +394,10 @@ export function compileScore(
     durationSec = Math.max(durationSec, beatEnd);
   }
 
+  // Sort by time BEFORE resolving moves: word-anchored cues can emit out of array order, and
+  // (a) a move must resolve against its TIME-preceding keyframe, not an array neighbor, and
+  // (b) the runtime's advanceCamera scans for the latest keyframe ≤ t assuming ascending tSec.
+  cameraKfs.sort((a, b) => a.tSec - b.tSec); // Array.sort is stable — equal-tSec cues keep authored order
   return {
     stageId: stage.id,
     durationSec,

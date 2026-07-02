@@ -48,7 +48,13 @@ class HttpGpuProvider implements GpuProvider {
       // GPU routes are all known-good, so a 404 here is the RunPod proxy not yet
       // having the upstream ready — transient. Ride through it (callers may still
       // override attempts/backoff for cold starts).
-      { retry404: true, ...retry },
+      //
+      // timeoutMs: GPU dispatches are SYNCHRONOUS heavy work — the deployment provisions
+      // many-minute budgets for them (modal_app timeout=1800, nginx proxy_read_timeout 3600:
+      // "renders run for minutes; never time out the upstream mid-job"). 30 min keeps the
+      // hung-socket protection without aborting (then 8x-retrying a non-idempotent POST of)
+      // a legitimately long build. fetchWithRetry's 120 s default is for short calls only.
+      { retry404: true, timeoutMs: 1_800_000, ...retry },
     );
     if (!res.ok) {
       throw new Error(`gpu ${service}${path} failed: ${res.status} ${await res.text()}`);

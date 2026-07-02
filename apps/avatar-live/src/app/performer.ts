@@ -58,6 +58,10 @@ export class Performer {
   // script-derived take.
   private authoredPerf: Performance | null = null;
   private exporting = false;
+  // True ONLY while the offline frame loop is actually rendering (a subset of `exporting`,
+  // which also spans the TTS-synthesis prep). tick() keys off THIS so the avatar keeps its
+  // idle motion during the multi-second prep and is only hands-off while score.drive owns it.
+  private renderingOffline = false;
   private performing = false; // guards re-entry while synthesizing / playing
   private session: RealtimeSession;
 
@@ -230,8 +234,10 @@ export class Performer {
       app.log('finish the current take before exporting.');
       return;
     }
-    const prep = await this.prepareForExport();
-    if (!prep) return; // buildNarration already logged why
+    // Decide the webm fallback BEFORE any narration prep (canExportMp4 is a cheap codec
+    // probe) so all TTS synthesis happens inside exportMp4ToBlob's synchronous latch — a
+    // pre-latch prepareForExport here would reopen the exact double-click / preview-during-
+    // synthesis window the latch exists to close.
     const fmt = deps.recording.currentFormat();
     if (!(await canExportMp4(fmt.w, fmt.h))) {
       app.log('MP4/WebCodecs unavailable here — falling back to the webm quick preview.');
@@ -300,6 +306,11 @@ export class Performer {
       // image just falls back to the gradient. live == export: the slides drive identically.
       await app.studio.preloadSlideImages(deps.timeline.slideImageUrls());
       deps.timeline.beginNarration(); // take the camera (authored framing cues) for the export loop
+      // Frame-stepped rendering starts here: pause the wall video so its element clock can't
+      // self-advance between exact seeks (a PLAYING video would drift at wall-clock speed
+      // between the export's encode-speed frames), and stop tick() driving the avatar.
+      this.renderingOffline = true;
+      app.stage.setScreenScrub(true);
       // Mux the audio beds/SFX into the MP4 alongside the narration. Bridge-authored newscasts
       // carry them on perf.audio (threaded through importScore's { audio } channel) — decoded
       // here, failures surface loudly (no retries). On the legacy path (UI newscast drop /
@@ -328,6 +339,8 @@ export class Performer {
       return null;
     } finally {
       // (exporting flag + export UI are released by exportMp4ToBlob's outer latch.)
+      this.renderingOffline = false;
+      app.stage.setScreenScrub(false); // resume the wall video if it was playing
       deps.recording.setExportProgress(0, 0);
       // Release the camera back to OrbitControls + clear any screen cut, then rest to idle
       // (the offline loop left the avatar on the last beat's gesture).
@@ -485,7 +498,7 @@ export class Performer {
 
   /** The synced per-frame loop (registered on stage.onFrame). */
   private tick = (dt: number): void => {
-    if (this.exporting) return; // offline export drives the avatar; don't double-step
+    if (this.renderingOffline) return; // the offline frame loop drives the avatar; don't double-step
     const { app, deps } = this;
     const { avatar, stage } = app;
     // Idle auto-align ONLY: keep the anchor + screen in shot (presenter beside the screen).
