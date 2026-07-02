@@ -8,4 +8,8 @@
 # a local convenience artifact paired with the (also-ignored) video, not source of truth.
 *.newscast.json
 *.score.json
+# demodu scene-DSL script saved next to each recorder-produced demo (same convention).
+*.scene.json
+# synced custom-recorder script paired with its demo
+*.record.mjs
 !README.md

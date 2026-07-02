@@ -29,7 +29,7 @@ import { randomUUID } from 'node:crypto';
 
 import { z } from 'zod';
 import { defineTool, type ToolDef, type ToolResult } from '../server.js';
-import { assetUrl, registerAsset, workDir } from '../transport.js';
+import { assetUrl, registerAsset, workDir } from '../assets/serve.js';
 
 // ---------------------------------------------------------------------------
 // Small result helpers.

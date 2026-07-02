@@ -18,7 +18,6 @@ import { initCollapsibleSections } from './app/collapsible.js';
 import { initSliderReadouts } from './app/sliderReadout.js';
 import { initScriptEditor } from './app/scriptEditor.js';
 import { initCameraQuickAccess } from './app/cameraQuickAccess.js';
-import { initBridge } from './bridge/index.js';
 import { createDispatcher } from './bridge/dispatch.js';
 import { initWebMcp } from './mcp/server.js';
 
@@ -63,10 +62,10 @@ initCameraQuickAccess(app.dom);
 
 app.log(`ready · avatar: ${app.avatar.description}`);
 
-// Studio Bridge — no-op unless enabled via ?bridge=<port> or VITE_BRIDGE. When
-// enabled, a reconnecting WS client lets the Newsroom MCP server drive this studio.
+// The bridge-command controllers: consumed by the in-page WebMCP server (below) and the
+// __las.dispatch debug handle. (The old WS bridge client to the Newsroom MCP server is
+// RETIRED — WebMCP supersedes it; newsroom-mcp is now a pure asset-generation server.)
 const bridgeControllers = { lighting, look, recording, backScreen, transform, voices, library, timeline, performer, projects };
-initBridge(app, bridgeControllers);
 
 // Debug handle for inspecting the scene/camera from the console. `dispatch` exposes the SAME
 // bridge-command surface WebMCP registers (one dispatcher vocabulary), so a plain browser

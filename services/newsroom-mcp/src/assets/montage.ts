@@ -14,7 +14,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { workDir } from '../transport.js';
+import { workDir } from './serve.js';
 
 export interface MontageOptions {
   /** Seconds each card holds on screen (incl. the crossfade). Default 5.5. */

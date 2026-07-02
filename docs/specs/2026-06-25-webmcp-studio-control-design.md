@@ -99,6 +99,11 @@ the scripting spec, now agent-operable).
 3. Deprecate `services/newsroom-mcp` (stdio + bridge) in favor of the in-page server; keep a thin
    headless shim only if a non-browser client is needed.
 
+   > **Status (2026-07-03, round 4):** DONE — the WS bridge transport + all studio-control
+   > tools were removed from `services/newsroom-mcp` (now a pure asset-generation MCP) and the
+   > studio's WS client (`bridge/index.ts`, the 9778 sink, `VITE_BRIDGE`/`?bridge=`) was deleted.
+   > WebMCP is the only studio-control surface.
+
 ## 7. Open questions — v1 resolutions
 
 - **Registration surface** → target `navigator.modelContext` directly (the W3C WebMCP page API,
