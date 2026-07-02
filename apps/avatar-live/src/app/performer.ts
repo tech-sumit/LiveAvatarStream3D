@@ -8,7 +8,9 @@ import { canExportMp4 } from '../capture/mp4Encoder.js';
 import { cueId, type Cue } from '../timeline/types.js';
 import { SCREEN_STAND_POS } from '../scene/studio.js';
 import { ScoreDrive, buildNarrationPerformance, type NarrationSeg } from './scoreDrive.js';
-import type { Performance } from '@las/protocol';
+import { compileScore, newsReportChrome } from '@las/protocol';
+import type { AudioCue, AudioTimings, NewsReportDoc, Performance, Score, SlideContent, Stage } from '@las/protocol';
+import { resolveAssetUrl } from '../storage/r2.js';
 import type { EmotionName } from '../avatar/emotion.js';
 import type { StudioContext } from './context.js';
 import type { VoicePicker } from './voicePicker.js';
@@ -57,6 +59,10 @@ export class Performer {
   // (live == export). Cleared by invalidateNarration: any script edit drops back to the
   // script-derived take.
   private authoredPerf: Performance | null = null;
+  // The authored SCORE behind authoredPerf (the Score/bridge path). Retained so Generate can
+  // RECOMPILE the direction + chrome against the real TTS clock — the provisional Performance
+  // is compiled on a coarse 3 s/beat grid before any audio exists. Cleared with authoredPerf.
+  private authoredScore: { score: Score; stage: Stage; nr?: NewsReportDoc } | null = null;
   private exporting = false;
   // True ONLY while the offline frame loop is actually rendering (a subset of `exporting`,
   // which also spans the TTS-synthesis prep). tick() keys off THIS so the avatar keeps its
@@ -139,6 +145,7 @@ export class Performer {
   invalidateNarration(): void {
     this.narrationAudio = null;
     this.authoredPerf = null; // a script change supersedes any landed authored Performance
+    this.authoredScore = null; // …and the Score behind it (no stale recompiles over new words)
   }
 
   private setSpeakingUi(on: boolean): void {
@@ -163,6 +170,10 @@ export class Performer {
       app.log('narration needs ElevenLabs — add ELEVENLABS_API_KEY to apps/avatar-live/.env.');
       return false;
     }
+    // An authored Score owns its own narration build: per-BEAT synthesis (not the re-split
+    // textarea), authored pauses honored, and the whole Performance + chrome recompiled
+    // against the measured clock.
+    if (this.authoredScore) return this.buildAuthoredNarration(this.authoredScore);
     const lines = app.dom.scriptEl.value
       .replace(/\s+/g, ' ')
       .split(/(?<=[.!?])\s+/)
@@ -213,6 +224,150 @@ export class Performer {
     this.narrationSegs = segTimeline;
     deps.timeline.setNarrationCues(cues, total / sr);
     app.log(`narration ready · ${(total / sr).toFixed(1)}s, ${cues.length} sentence(s). Preview to play it.`);
+    return true;
+  };
+
+  /**
+   * The authored-Score narration build (the one-clock fix): synthesize per BEAT from the Score
+   * itself, honor `pauseMsAfter` as the inter-beat gap (default 0.18 s — authored dramatic
+   * pauses land), measure the REAL per-beat AudioTimings from the synthesized buffers, then
+   * RECOMPILE the Score against that clock — direction, beds/SFX, and wall slides all land on
+   * the audio they will actually play against. Replaces the provisional 3 s/beat Performance.
+   */
+  private buildAuthoredNarration = async (authored: {
+    score: Score;
+    stage: Stage;
+    nr?: NewsReportDoc;
+  }): Promise<boolean> => {
+    const { app, deps } = this;
+    const activeTts = deps.voices.activeTts;
+    const beats = authored.score.beats;
+    const ctx = app.audio();
+    await ctx.resume();
+    app.log(`narration: synthesizing ${beats.length} beat(s) from the authored score…`);
+    let buffers: (AudioBuffer | null)[];
+    try {
+      buffers = await Promise.all(
+        beats.map((b) => (b.text.trim() ? activeTts.synthesize!(b.text, deps.voices.ttsOpts()) : Promise.resolve(null))),
+      );
+    } catch (err) {
+      app.log(`narration failed (TTS): ${String(err)}`);
+      return false;
+    }
+
+    const sr = buffers.find((b) => b)?.sampleRate ?? 48000;
+    // The real clock: beat i spans [startSec, endSec]; its authored pauseMsAfter (default 180 ms)
+    // is the gap AFTER it. Empty-text beats occupy a zero-length slot (keeps beat↔timing indexes
+    // aligned for compileScore).
+    let total = 0;
+    const spans = beats.map((b, i) => {
+      const buf = buffers[i];
+      const len = buf ? buf.length / buf.sampleRate : 0;
+      const startSec = total;
+      total += len + (b.pauseMsAfter ?? 180) / 1000;
+      return { startSec, endSec: startSec + len };
+    });
+    const out = ctx.createBuffer(1, Math.max(1, Math.ceil(total * sr)), sr);
+    const od = out.getChannelData(0);
+    const segTimeline: NarrationSeg[] = [];
+    const cues: Cue[] = [];
+    beats.forEach((b, i) => {
+      const buf = buffers[i];
+      const span = spans[i]!;
+      if (buf) od.set(this.monoData(buf), Math.round(span.startSec * sr));
+      segTimeline.push({ t: span.startSec, gesture: 'none', ...(b.emotion ? { emotion: b.emotion as never } : {}) });
+      cues.push({
+        id: cueId(),
+        track: 'narration',
+        type: 'narration',
+        start: Math.round(span.startSec * 10) / 10,
+        duration: Math.round((span.endSec - span.startSec) * 10) / 10,
+        text: b.text,
+        emotion: b.emotion,
+      });
+    });
+
+    // Recompile against the measured clock. A lowered NewsReportDoc re-derives its chrome
+    // (beds/SFX/slides) on the SAME timings via newsReportChrome — one clock everywhere.
+    // Words are spread evenly across each MEASURED span (mirroring timingsFromScore's coarse
+    // spread) so word-anchored cues (`at:{word:N}`) keep their mid-beat placement — an empty
+    // words array would silently collapse every word anchor to the beat start.
+    const timings: AudioTimings = {
+      beats: spans.map((s, i) => {
+        const words = (beats[i]?.text ?? '').split(/\s+/).filter(Boolean);
+        const n = Math.max(words.length, 1);
+        const dur = s.endSec - s.startSec;
+        return {
+          startSec: s.startSec,
+          endSec: s.endSec,
+          words: words.map((word, w) => ({
+            word,
+            startSec: s.startSec + (w / n) * dur,
+            endSec: s.startSec + ((w + 1) / n) * dur,
+          })),
+        };
+      }),
+    };
+    let audio: AudioCue[] | undefined;
+    let slides: { tSec: number; slide: SlideContent }[] | undefined;
+    if (authored.nr) {
+      const chrome = newsReportChrome(authored.nr, timings);
+      audio = chrome.audio.length ? chrome.audio : undefined;
+      // Resolve slide backdrop keys ONCE so the Performance, the timeline cues, and the studio's
+      // url-keyed image cache all agree on the final url.
+      slides = chrome.slides.map((s) => ({
+        tSec: s.tSec,
+        slide: { ...s.slide, ...(s.slide.image ? { image: resolveAssetUrl(s.slide.image) } : {}) },
+      }));
+    }
+    const perf = compileScore(authored.stage, authored.score, timings, undefined, {
+      ...(audio ? { audio } : {}),
+      ...(slides?.length ? { slides } : {}),
+    });
+    const slideUrls = (slides ?? []).map((s) => s.slide.image).filter((u): u is string => !!u);
+    if (slideUrls.length) await app.studio.preloadSlideImages(slideUrls);
+
+    this.narrationAudio = out;
+    this.narrationSegs = segTimeline;
+    this.authoredPerf = perf;
+    this.score.load(perf, this.fallbackEmotion());
+    if (authored.nr) {
+      // Re-lay the editor's audio/graphics tracks on the real clock too (the live bed scheduler
+      // reads TIMELINE cues; leaving them on the coarse clock would desync preview audio).
+      // These run BEFORE setNarrationCues: the duration owner recomputes over the FINAL cue set,
+      // so a real clock SHORTER than the coarse 3 s/beat grid actually shrinks the timeline
+      // (replaceTrackCues itself never shrinks; a stale coarse-length bed would pin the ruler).
+      deps.timeline.replaceTrackCues(
+        'audio',
+        (audio ?? []).map((a) => ({
+          id: a.id,
+          track: 'audio' as const,
+          type: 'audio.clip',
+          start: a.start,
+          duration: a.duration,
+          src: a.src,
+          volume: a.volume,
+          fadeIn: a.fadeIn,
+          fadeOut: a.fadeOut,
+          label: a.label ?? a.kind,
+        })),
+      );
+      deps.timeline.replaceTrackCues(
+        'graphics',
+        (slides ?? []).map((s) => ({
+          id: cueId(),
+          track: 'graphics' as const,
+          type: 'graphic.slide',
+          start: s.tSec,
+          duration: 0,
+          slide: s.slide,
+        })),
+      );
+    }
+    deps.timeline.setNarrationCues(cues, total);
+    app.log(
+      `narration ready · ${total.toFixed(1)}s, ${cues.length} beat(s) — direction + chrome recompiled on the real clock.`,
+    );
     return true;
   };
 
@@ -493,7 +648,33 @@ export class Performer {
    */
   loadPerformance(perf: Performance): void {
     this.authoredPerf = perf; // owns the next take/export until a script edit invalidates it
+    // A raw Performance supersedes any retained Score — otherwise Generate would recompile a
+    // STALE authoredScore over this newly landed perf. loadScore re-sets it right after this.
+    this.authoredScore = null;
     this.score.load(perf, this.fallbackEmotion());
+  }
+
+  /**
+   * Land an authored SCORE (the bridge/import path): compile a provisional Performance on the
+   * supplied coarse pre-TTS clock (so the studio previews immediately) and RETAIN the Score —
+   * Generate re-synthesizes per beat and recompiles direction + chrome against the real TTS
+   * clock (buildAuthoredNarration), which is what makes live/export timing exact.
+   */
+  loadScore(args: {
+    score: Score;
+    stage: Stage;
+    nr?: NewsReportDoc;
+    timings: AudioTimings;
+    audio?: AudioCue[];
+    slides?: { tSec: number; slide: SlideContent }[];
+  }): Performance {
+    const perf = compileScore(args.stage, args.score, args.timings, undefined, {
+      ...(args.audio?.length ? { audio: args.audio } : {}),
+      ...(args.slides?.length ? { slides: args.slides } : {}),
+    });
+    this.loadPerformance(perf);
+    this.authoredScore = { score: args.score, stage: args.stage, ...(args.nr ? { nr: args.nr } : {}) };
+    return perf;
   }
 
   /** The synced per-frame loop (registered on stage.onFrame). */

@@ -19,6 +19,7 @@ import { initSliderReadouts } from './app/sliderReadout.js';
 import { initScriptEditor } from './app/scriptEditor.js';
 import { initCameraQuickAccess } from './app/cameraQuickAccess.js';
 import { initBridge } from './bridge/index.js';
+import { createDispatcher } from './bridge/dispatch.js';
 import { initWebMcp } from './mcp/server.js';
 
 const app = new StudioContext();
@@ -62,18 +63,22 @@ initCameraQuickAccess(app.dom);
 
 app.log(`ready · avatar: ${app.avatar.description}`);
 
-// Debug handle for inspecting the scene/camera from the console.
+// Studio Bridge — no-op unless enabled via ?bridge=<port> or VITE_BRIDGE. When
+// enabled, a reconnecting WS client lets the Newsroom MCP server drive this studio.
+const bridgeControllers = { lighting, look, recording, backScreen, transform, voices, library, timeline, performer, projects };
+initBridge(app, bridgeControllers);
+
+// Debug handle for inspecting the scene/camera from the console. `dispatch` exposes the SAME
+// bridge-command surface WebMCP registers (one dispatcher vocabulary), so a plain browser
+// console — or a Playwright smoke in a WebMCP-less Chromium — can drive apply_newscast /
+// set_* end-to-end.
 (window as unknown as { __las: unknown }).__las = {
   stage: app.stage,
   avatar: app.avatar,
   studio: app.studio,
   wallVideo: backScreen.video,
+  dispatch: createDispatcher(app, bridgeControllers),
 };
-
-// Studio Bridge — no-op unless enabled via ?bridge=<port> or VITE_BRIDGE. When
-// enabled, a reconnecting WS client lets the Newsroom MCP server drive this studio.
-const bridgeControllers = { lighting, look, recording, backScreen, transform, voices, library, timeline, performer, projects };
-initBridge(app, bridgeControllers);
 
 // In-page WebMCP server — registers the studio's tools on navigator.modelContext so any
 // WebMCP-capable AI app attached to the tab can drive the studio directly. No-op when the

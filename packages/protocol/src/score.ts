@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CAMERA_SHOT_IDS } from '@las/performer-core';
 
 export const Ref = z.string(); // Stage mark/target id, OR 'self.face'/'self.chest'/'self.root', OR a savedShot id
 const Vec3 = z.tuple([z.number(), z.number(), z.number()]); // local — `Vec3` is publicly owned by stage.ts
@@ -54,6 +55,11 @@ export const CameraDirective = z.union([
   // (where the camera sits / aims, the fov) live in the score JSON, so a composition like the
   // anchor-beside-the-video-wall two-shot is tuned in the script rather than in engine code.
   z.object({ pose: z.object({ pos: Vec3, target: Vec3, fov: z.number().positive() }) }),
+  // A named shot-preset from the shared @las/performer-core catalog (the same data the live
+  // #shot dropdown and the legacy cam.<id> cue types read). The runtime resolves it against
+  // the LIVE avatar (head-height-correct, push-in progression, dutch roll) via the keyframe's
+  // `preset` field — the compiler only snapshots an approximate pose for preset-less consumers.
+  z.object({ preset: z.enum(CAMERA_SHOT_IDS) }),
   z.object({ move: CameraMove, amount: z.number(), ease: Ease.optional() }), // relative dolly/orbit/pan/truck/pedestal
 ]);
 

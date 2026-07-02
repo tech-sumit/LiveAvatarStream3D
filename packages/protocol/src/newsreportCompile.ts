@@ -89,6 +89,24 @@ function ensureTerminal(s: string): string {
 // A story-derived lower-third ticker, used when neither the section nor defaults author one.
 // Replaces the studio's old HARDCODED "BREAKING · REALTIME 3D ANCHOR · …" string so the wall
 // ticker always reflects the current story (the ticker bug fix).
+/**
+ * The wall slide for a section — ONE construction shared by compileNewsReport (legacy graphics
+ * cues) and newsReportChrome (the Score-path slides channel), so the two entry points can never
+ * drift on what the wall shows.
+ */
+export function sectionSlide(section: Section, doc: NewsReportDoc): CompiledSlide {
+  const d: Partial<DocDefaults> = doc.defaults ?? {};
+  const slideHeadline = section.headline ?? doc.meta.title;
+  const slide: CompiledSlide = {
+    kicker: 'LIVE',
+    headline: slideHeadline,
+    bullets: section.bullets ?? [],
+    ticker: section.ticker ?? d.ticker ?? defaultTicker(slideHeadline),
+  };
+  if (section.graphic) slide.image = section.graphic.src;
+  return slide;
+}
+
 export function defaultTicker(headline: string): string {
   return `${headline.toUpperCase()}  ·  LIVE`;
 }
@@ -193,18 +211,9 @@ export function compileNewsReport(doc: NewsReportDoc): { project: CompiledProjec
     const sectionStart = t;
 
     // Wall slide for this section: emitted ONCE at the section's start so the on-screen
-    // graphics swap (PowerPoint-style) in lockstep with the narration. The lower ticker is
-    // story-derived (section → defaults → headline-derived default), never the old hardcoded
-    // studio string. The optional backdrop image src is resolved + preloaded by the studio.
-    const slideHeadline = section.headline ?? doc.meta.title;
-    const slideTicker = section.ticker ?? d.ticker ?? defaultTicker(slideHeadline);
-    const slide: CompiledSlide = {
-      kicker: 'LIVE',
-      headline: slideHeadline,
-      bullets: section.bullets ?? [],
-      ticker: slideTicker,
-    };
-    if (section.graphic) slide.image = section.graphic.src;
+    // graphics swap (PowerPoint-style) in lockstep with the narration. Construction shared
+    // with the Score path via sectionSlide (one source of truth for what the wall shows).
+    const slide = sectionSlide(section, doc);
     cues.push({ id: id('gfx'), track: 'graphics', type: 'graphic.slide', start: round1(sectionStart), duration: 0, slide });
 
     for (const beat of section.beats) {
