@@ -10,8 +10,8 @@
 // counters. `self.*` refs are emitted as a late-bound BodyRef marker (NEVER baked) so score.drive
 // re-resolves them per-frame against the live GLB.
 
-import { composeShot, planPath, turnToward } from '@las/performer-core';
-import type { Vec3 as CoreVec3, Subject } from '@las/performer-core';
+import { composeShot, moveCamera, planPath, turnToward } from '@las/performer-core';
+import type { Vec3 as CoreVec3, Pose as CorePose, Subject } from '@las/performer-core';
 
 import type { Stage, Mark, Target, SavedShot, Vec3 } from './stage.js';
 import type {
@@ -355,9 +355,19 @@ export function compileScore(
 
       if ('camera' in cue) {
         const kf = compileCamera(cue.camera, tSec, resolveRef, refPos, idx);
-        if (kf) cameraKfs.push(kf);
-        // An authored camera establishes the shot — the default must never seed/snap after it.
-        emittedAnyCamera = true;
+        if (kf) {
+          cameraKfs.push(kf);
+          // An authored camera establishes the shot — the default must never seed/snap after it.
+          emittedAnyCamera = true;
+        } else {
+          // Emitted NOTHING (e.g. an unknown SavedShot id): surface it loudly and do NOT latch
+          // emittedAnyCamera — otherwise the sticky default camera is suppressed by a cue that
+          // produced no keyframe at all, and the opening shot silently never gets seeded.
+          console.warn(
+            `[compileScore] camera cue at ${tSec}s resolved to no keyframe ` +
+              `(${'shot' in cue.camera ? `unknown shot id '${cue.camera.shot}'` : 'unresolvable directive'}) — ignored.`,
+          );
+        }
         continue;
       }
     }
@@ -388,7 +398,7 @@ export function compileScore(
     stageId: stage.id,
     durationSec,
     beats: projection,
-    camera: cameraKfs,
+    camera: resolveMoveKeyframes(cameraKfs),
     motion,
     turns,
     gestures,
@@ -398,6 +408,48 @@ export function compileScore(
     slides: [], // the Score path authors no wall slides yet (newscasts emit them via compileNewsReport)
     audio,
   };
+}
+
+/**
+ * Resolve relative `move` keyframes to absolute poses at compile time. compileCamera emits a
+ * `{pos:[0,0,0], fov:0, move, moveAmount}` sentinel for a `camera:{move}` directive, but NO
+ * runtime interprets it — scoreDrive.advanceCamera has no move branch, so the sentinel was
+ * applied verbatim and teleported the camera to the origin. Here each move keyframe is applied
+ * (performer-core `moveCamera`) against the nearest PRECEDING keyframe's pose. Every non-move
+ * keyframe compileScore emits carries a real compile-time pose (frame/pose/shot are composed
+ * absolutes; a follow keyframe holds its compile-time snapshot), so the base is that snapshot —
+ * resolved moves chain, so consecutive dollies compose. A move with NO predecessor at all
+ * cannot be resolved and is DROPPED with a loud warning (repo convention: failures surface,
+ * never silently corrupt — the sentinel used to corrupt silently).
+ */
+function resolveMoveKeyframes(kfs: CameraKeyframe[]): CameraKeyframe[] {
+  const out: CameraKeyframe[] = [];
+  for (const kf of kfs) {
+    if (kf.move === undefined) {
+      out.push(kf);
+      continue;
+    }
+    const base = out[out.length - 1];
+    if (!base) {
+      console.warn(
+        `[compileScore] camera move '${kf.move}' at ${kf.tSec}s has no preceding camera ` +
+          `keyframe to resolve against — dropping it (author a frame/pose/shot first).`,
+      );
+      continue;
+    }
+    const basePose: CorePose = { pos: [...base.pos], target: [...base.target], fov: base.fov };
+    const moved = moveCamera(basePose, kf.move, kf.moveAmount ?? 0);
+    const resolved: CameraKeyframe = {
+      tSec: kf.tSec,
+      pos: [moved.pos[0], moved.pos[1], moved.pos[2]],
+      target: [moved.target[0], moved.target[1], moved.target[2]],
+      fov: moved.fov || base.fov,
+      follow: false,
+    };
+    if (kf.ease !== undefined) resolved.ease = kf.ease;
+    out.push(resolved);
+  }
+  return out;
 }
 
 // ── Camera directive lowering ────────────────────────────────────────────────

@@ -6,6 +6,7 @@ small. The DSL / job contracts are validated against the JSON Schemas exported
 from packages/protocol.
 """
 
+from .auth import install_internal_auth, INTERNAL_TOKEN_HEADER
 from .config import Settings, settings, realtime_expressive_enabled
 from .r2 import R2Client
 from .webhook import ProgressReporter
@@ -21,6 +22,8 @@ from .motion_states import (
 from . import optim
 
 __all__ = [
+    "install_internal_auth",
+    "INTERNAL_TOKEN_HEADER",
     "Settings",
     "settings",
     "realtime_expressive_enabled",

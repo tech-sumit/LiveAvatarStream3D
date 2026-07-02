@@ -100,9 +100,13 @@ function makeControllers() {
     },
   };
   const timeline = {
-    setNarrationCues(cues: NarrationCall['cues'], totalSec: number) {
+    // The bridge import now REPLACES the cue set (importCues) instead of merging via
+    // setNarrationCues (whose keep-audio semantics duplicated beds on repeated imports).
+    importCues(cues: NarrationCall['cues'], totalSec: number) {
       narrationCalls.push({ cues, totalSec });
     },
+    // Decodes imported audio-cue files for the live preview; a stub no-op here.
+    async loadAudioAssets() {},
   };
   const c = { projects, timeline, performer } as unknown as BridgeControllers;
   return { c, importCalls, narrationCalls, getInvalidated: () => invalidated, getOrder: () => order };

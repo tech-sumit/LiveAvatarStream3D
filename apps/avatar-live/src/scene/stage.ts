@@ -344,7 +344,16 @@ export class Stage {
     const v = this.screenVideo;
     if (!v || !v.duration || !isFinite(v.duration)) return;
     try {
-      v.currentTime = t % v.duration;
+      const want = t % v.duration;
+      // Live preview: the video is PLAYING natively — assigning currentTime every rAF frame
+      // (~60x/s) forces a continuous decoder seek (stutter + CPU). Only correct real drift.
+      // The offline export scrubs a PAUSED video frame-by-frame and needs the exact seek.
+      if (!v.paused) {
+        const drift = Math.abs(v.currentTime - want);
+        // 0.35s tolerance; also handle the wrap-around (end vs start of the loop).
+        if (drift < 0.35 || drift > v.duration - 0.35) return;
+      }
+      v.currentTime = want;
     } catch {
       /* not seekable yet */
     }
