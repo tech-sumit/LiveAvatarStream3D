@@ -156,7 +156,20 @@ export class AvatarLibrary {
     dom.lipSmoothEl.value = String(this.lipCfg.smoothing);
   }
 
-  loadById = async (id: string): Promise<boolean> => {
+  // Avatar loads are SERIALIZED through this chain: avatarController.loadGltf always swaps the
+  // model in on completion, so two concurrent loads (rapid selector clicks, or a bridge
+  // set_avatar racing a project load) would finish in NETWORK order — the displayed avatar
+  // could be the first pick, not the last. Queueing keeps last-selected = last-applied.
+  private loadChain: Promise<unknown> = Promise.resolve();
+  private enqueueLoad<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.loadChain.then(fn, fn);
+    this.loadChain = run.catch(() => undefined); // a failed load never wedges the queue
+    return run;
+  }
+
+  loadById = (id: string): Promise<boolean> => this.enqueueLoad(() => this.doLoadById(id));
+
+  private doLoadById = async (id: string): Promise<boolean> => {
     const { dom } = this.app;
     const cfg = this.avatarConfigs.get(id);
     if (!cfg) return false;
@@ -179,13 +192,14 @@ export class AvatarLibrary {
 
   // A file/URL-loaded avatar isn't a discovered folder, so it can't save config.
   // http(s) URLs are remembered so the project can persist them; blob: cannot.
-  loadAdHoc = (url: string, label: string): Promise<boolean> => {
-    this.currentAvatarId = null;
-    this.adHocUrl = /^https?:\/\//.test(url) ? url : null;
-    this.app.dom.lipSaveBtn.disabled = true;
-    this.applyLipCfg(DEFAULT_LIP);
-    return this.loadAvatar(url, label);
-  };
+  loadAdHoc = (url: string, label: string): Promise<boolean> =>
+    this.enqueueLoad(() => {
+      this.currentAvatarId = null;
+      this.adHocUrl = /^https?:\/\//.test(url) ? url : null;
+      this.app.dom.lipSaveBtn.disabled = true;
+      this.applyLipCfg(DEFAULT_LIP);
+      return this.loadAvatar(url, label);
+    });
 
   private readLipSliders(): typeof DEFAULT_LIP {
     const d = this.app.dom;

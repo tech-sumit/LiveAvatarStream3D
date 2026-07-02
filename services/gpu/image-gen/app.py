@@ -14,7 +14,11 @@ from fastapi import FastAPI
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from las_common import install_internal_auth
+
 app = FastAPI(title="las-image-gen")
+# Env-gated x-internal-token check (set INTERNAL_TOKEN to enable; /health exempt).
+install_internal_auth(app)
 
 MODEL = os.environ.get("IMAGE_GEN_MODEL", "stabilityai/stable-diffusion-xl-base-1.0")
 

@@ -10,6 +10,7 @@
 import { validateNewsReportDoc, validateScore, compileNewsReportToScore, newsReportAudio } from '@las/protocol';
 import type { Stage, AudioTimings, Score, NewsReportDoc, AudioCue } from '@las/protocol';
 import { SCREEN_STAND_POS } from '../scene/studio.js';
+import { r2Url } from '../storage/r2.js';
 import { cueId } from '../timeline/types.js';
 import type { StudioContext } from '../app/context.js';
 import type { Lighting } from '../app/lighting.js';
@@ -198,7 +199,13 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
           try {
             const doc = validateNewsReportDoc(params.doc);
             compileNewsReportToScore(doc); // prove it lowers to a Score
-            return { valid: true, kind: 'newsreport', title: doc.meta.title };
+            // Honest validation: the Score bridge path drops channels the legacy file-import
+            // applies (avatar, wall slides, look, …). Tell the caller UP FRONT what this doc
+            // authors that apply_newscast will not carry, instead of silently degrading output.
+            const warnings = scorePathLossWarnings(doc);
+            return warnings.length
+              ? { valid: true, kind: 'newsreport', title: doc.meta.title, warnings }
+              : { valid: true, kind: 'newsreport', title: doc.meta.title };
           } catch (newsErr) {
             // Report the error from the branch that matched the input shape: a near-valid
             // NewsReportDoc fails NewsReportDoc validation with a useful field-level message —
@@ -209,10 +216,12 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
         }
       }
       case 'patchNewscast': {
-        // Merge the patch over the last-applied doc and re-import through the Score runtime.
+        // Deep-merge the patch over the last-applied doc and re-import through the Score
+        // runtime. Deep (not shallow): a shallow spread deleted the SIBLINGS of any patched
+        // nested object — e.g. patching {defaults:{music:…}} silently wiped defaults.emotion.
         const base = (lastNewscast ?? {}) as Record<string, unknown>;
         const patch = (params.patch ?? {}) as Record<string, unknown>;
-        const merged = { ...base, ...patch };
+        const merged = deepMerge(base, patch) as Record<string, unknown>;
         const out = await applyScoreDoc(app, c, merged);
         lastNewscast = merged;
         return { applied: true, ...out };
@@ -486,6 +495,17 @@ async function applyScoreDoc(app: StudioContext, c: BridgeControllers, doc: unkn
     name: nr?.meta.title,
     voiceId: nr?.meta.anchors[0]?.voiceId,
   });
+  // Decode the imported audio cues' files so the LIVE preview actually plays them —
+  // scheduleAudioCues plays from decoded buffers, and without this only the export (which
+  // fetches per-cue itself) had the beds while the preview was silently music-less.
+  if (audio?.length) {
+    await c.timeline.loadAudioAssets(async (src) => {
+      const url = /^https?:\/\//.test(src) || src.startsWith('/') ? src : r2Url(src);
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`asset ${r.status}`);
+      return r.blob();
+    });
+  }
   const perf = await c.projects.importScore(score, stage, timings, audio);
   return { beats: perf.beats.length, lowered };
 }
@@ -493,6 +513,38 @@ async function applyScoreDoc(app: StudioContext, c: BridgeControllers, doc: unkn
 /** Sanitize a title into a project-name token (mirrors projectStore's sanitize). */
 function sanitizeName(n: string): string {
   return (n.trim() || 'untitled').replace(/[^\w.-]+/g, '_');
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** Deep-merge for patch_newscast: plain objects merge recursively; arrays and scalars replace. */
+function deepMerge(base: unknown, patch: unknown): unknown {
+  if (!isPlainObject(base) || !isPlainObject(patch)) return patch;
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(patch)) out[k] = deepMerge(out[k], v);
+  return out;
+}
+
+/**
+ * What THIS doc authors that the Score bridge path (apply_newscast → compileNewsReportToScore)
+ * does not carry — the channels the legacy file-import (importNewsReport → applyProject) applies
+ * but Score has no grammar for yet. Surfaced by validate_newscast so automation callers learn
+ * about the degradation up-front. Remove entries as the compile-path unification lands them.
+ */
+function scorePathLossWarnings(doc: NewsReportDoc): string[] {
+  const w: string[] = [];
+  const a0 = doc.meta.anchors[0];
+  if (a0?.avatarUrl) w.push('avatar selection (meta.anchors[].avatarUrl) is NOT applied by apply_newscast — call set_avatar separately');
+  if (a0 && (a0.rate !== 1 || a0.pitch !== 1)) w.push('anchor voice rate/pitch are NOT applied — call set_voice separately');
+  if (doc.look) w.push('look/lighting (doc.look) is NOT applied');
+  if (doc.rundown.some((s) => s.headline || s.ticker || s.graphic || s.bullets.length > 0))
+    w.push('wall slides (section headline/bullets/ticker/graphic) are NOT rendered — call set_headline / set_backscreen_media separately');
+  if (doc.rundown.some((s) => s.set?.backScreen)) w.push('section backScreen media is NOT applied');
+  if (doc.defaults?.camera?.preset || doc.rundown.some((s) => s.cameraDefault?.preset || s.beats.some((b) => b.camera?.preset)))
+    w.push('camera shot presets (camera.preset) lower to a plain shot bucket on this path');
+  return w;
 }
 
 /**
@@ -558,5 +610,8 @@ function populateStudioFromScore(
     }
   }
   const total = timings.beats.at(-1)?.endSec ?? 0;
-  c.timeline.setNarrationCues(cues, total);
+  // Clean-slate import (NOT setNarrationCues, whose keep-audio/graphics merge is meant for a
+  // live TTS re-take): repeated apply_newscast/patch_newscast used to accumulate duplicate
+  // audio beds and keep the previous project's stale graphics/camera cues.
+  c.timeline.importCues(cues, total);
 }

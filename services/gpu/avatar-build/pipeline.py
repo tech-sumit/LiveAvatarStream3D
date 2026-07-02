@@ -220,7 +220,14 @@ def _generate_still(prompt: str, work: str) -> str:
 
     base = os.environ.get("IMAGE_GEN_URL", "http://localhost:8001")
     out = os.path.join(work, "gen.png")
-    with httpx.stream("POST", f"{base}/generate", json={"prompt": prompt}, timeout=120.0) as resp:
+    # image-gen enforces the same x-internal-token gate as this service (las_common.auth);
+    # this GPU→GPU sibling call must present the shared token or every 'generated'-source
+    # build 401s the moment INTERNAL_TOKEN hardening is enabled.
+    token = os.environ.get("INTERNAL_TOKEN", "")
+    headers = {"x-internal-token": token} if token else {}
+    with httpx.stream(
+        "POST", f"{base}/generate", json={"prompt": prompt}, headers=headers, timeout=120.0
+    ) as resp:
         resp.raise_for_status()
         with open(out, "wb") as f:
             for chunk in resp.iter_bytes():

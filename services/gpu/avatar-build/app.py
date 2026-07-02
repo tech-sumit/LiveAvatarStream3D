@@ -9,9 +9,12 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from las_common import install_internal_auth
 from pipeline import build_profile, BuildResult, QualityError
 
 app = FastAPI(title="las-avatar-build")
+# Env-gated x-internal-token check (set INTERNAL_TOKEN to enable; /health exempt).
+install_internal_auth(app)
 
 
 class BuildBody(BaseModel):

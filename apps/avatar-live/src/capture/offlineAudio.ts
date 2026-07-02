@@ -1,4 +1,5 @@
 import type { AudioCue } from '@las/protocol';
+import { r2Url } from '../storage/r2.js';
 
 /** A scheduled non-narration clip (music bed / sfx) for the mixdown. */
 export interface AudioClip {
@@ -7,6 +8,9 @@ export interface AudioClip {
   volume: number; // 0..1
   fadeIn: number; // seconds
   fadeOut: number; // seconds
+  /** Play only the first N seconds of the buffer (a timeline cue shorter than its file —
+   *  mirrors the live scheduler's `min(buffer.duration, cue.duration)` clamp). Default: whole buffer. */
+  durationSec?: number;
 }
 
 export interface MixdownOpts {
@@ -23,7 +27,7 @@ export async function renderMixdown(opts: MixdownOpts): Promise<AudioBuffer> {
   const ctx = new OfflineAudioContext({ numberOfChannels: 2, length, sampleRate });
 
   schedule(ctx, opts.narration, 0, 1, 0, 0);
-  for (const c of opts.cues) schedule(ctx, c.buffer, c.start, c.volume, c.fadeIn, c.fadeOut);
+  for (const c of opts.cues) schedule(ctx, c.buffer, c.start, c.volume, c.fadeIn, c.fadeOut, c.durationSec);
 
   return ctx.startRendering();
 }
@@ -35,11 +39,13 @@ function schedule(
   volume: number,
   fadeIn: number,
   fadeOut: number,
+  durationSec?: number,
 ): void {
   const src = ctx.createBufferSource();
   src.buffer = buffer; // resampled to ctx.sampleRate automatically if rates differ
   const g = ctx.createGain();
-  const end = startSec + buffer.duration;
+  const playLen = Math.min(buffer.duration, durationSec ?? buffer.duration);
+  const end = startSec + playLen;
   if (fadeIn > 0) {
     g.gain.setValueAtTime(0, startSec);
     g.gain.linearRampToValueAtTime(volume, startSec + fadeIn);
@@ -51,7 +57,7 @@ function schedule(
     g.gain.linearRampToValueAtTime(0, end);
   }
   src.connect(g).connect(ctx.destination);
-  src.start(startSec);
+  src.start(startSec, 0, playLen);
 }
 
 /**
@@ -61,12 +67,29 @@ function schedule(
  * unit-testable without an AudioContext.
  */
 export function clipFromCue(cue: AudioCue, buffer: AudioBuffer): AudioClip {
-  return { buffer, start: cue.start, volume: cue.volume, fadeIn: cue.fadeIn, fadeOut: cue.fadeOut };
+  return {
+    buffer,
+    start: cue.start,
+    volume: cue.volume,
+    fadeIn: cue.fadeIn,
+    fadeOut: cue.fadeOut,
+    // AudioCue.duration defaults to 0 = "unspecified" → play the whole buffer (clamping to 0
+    // would render the clip silent). A positive duration clamps like the live scheduler.
+    ...(cue.duration > 0 ? { durationSec: cue.duration } : {}),
+  };
+}
+
+/** An AudioCue.src may be a bare R2 key (authored newscasts store keys, not URLs) — resolve it
+ *  the same way projectStore.assetUrl does; absolute/rooted URLs pass through untouched. */
+function resolveAudioSrc(src: string): string {
+  return /^https?:\/\//.test(src) || src.startsWith('/') || src.startsWith('blob:') || src.startsWith('data:')
+    ? src
+    : r2Url(src);
 }
 
 /** Fetch + decode one cue source into an AudioBuffer. No retries — failures surface loudly. */
 async function fetchDecodeAudio(src: string, ctx: BaseAudioContext): Promise<AudioBuffer> {
-  const res = await fetch(src);
+  const res = await fetch(resolveAudioSrc(src));
   if (!res.ok) throw new Error(`offlineAudio: fetch ${res.status} ${res.statusText} for ${src}`);
   const data = await res.arrayBuffer();
   return ctx.decodeAudioData(data);

@@ -1,0 +1,29 @@
+# Minimal CI: typecheck + unit tests on every PR / push to main.
+# Mirrors the repo's documented validation exactly (CLAUDE.md: "Validate with
+# npm run typecheck, the protocol tests, and a studio smoke test") — no build
+# artifacts, no deploys. `npm ci` runs @las/performer-core's `prepare`, which
+# emits its gitignored dist/ that the other workspaces' typechecks depend on.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # @las/protocol has no prepare script, so a fresh checkout has no protocol dist —
+      # and @las/newsroom-mcp's typecheck (plain tsc) imports it. Build it once up front
+      # (this also builds @las/performer-core via protocol's build script).
+      - run: npm run build --workspace @las/protocol
+      - run: npm run typecheck
+      - run: npm test

@@ -18,6 +18,16 @@ function apiBase(): string {
 }
 
 /**
+ * Auth for the deployed Worker: when `VITE_API_TOKEN` is set it must match the
+ * Worker's `API_TOKEN` secret and rides along as a bearer header; unset keeps
+ * the open-API dev behavior (see vite-env.d.ts).
+ */
+function authHeaders(): Record<string, string> {
+  const token = import.meta.env.VITE_API_TOKEN;
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+
+/**
  * Retry is offered for any clone that isn't `ready` (failed / stuck `cloning` /
  * `pending`). The server still 400s if the row has no sample on file — surfaced
  * via the loud error path, never swallowed.
@@ -83,7 +93,9 @@ export class VoiceManager {
     this.confirmingId = null;
     this.renderMessage('Loading cloned voices…');
     try {
-      const r = await fetch(`${base}/voices?userId=${encodeURIComponent(USER_ID)}`);
+      const r = await fetch(`${base}/voices?userId=${encodeURIComponent(USER_ID)}`, {
+        headers: authHeaders(),
+      });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       this.voices = (await r.json()) as VoiceProfile[];
       this.render();
@@ -99,6 +111,7 @@ export class VoiceManager {
     try {
       const r = await fetch(`${base}/voices/${encodeURIComponent(id)}?userId=${encodeURIComponent(USER_ID)}`, {
         method: 'DELETE',
+        headers: authHeaders(),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const body = (await r.json()) as { deletedObjects?: number };
@@ -116,6 +129,7 @@ export class VoiceManager {
     try {
       const r = await fetch(`${base}/voices/${encodeURIComponent(id)}/retry?userId=${encodeURIComponent(USER_ID)}`, {
         method: 'POST',
+        headers: authHeaders(),
       });
       if (!r.ok) {
         const detail = await r.text().catch(() => '');

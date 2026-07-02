@@ -249,6 +249,10 @@ export class ProjectStore {
 
   private async applyProject(doc: ProjectDoc): Promise<void> {
     const { app, c } = this;
+    // Single choke point for every load path (saved list, file drop, sample, newscast import):
+    // applying a project mid-take swaps the avatar, replaces timeline cues, and re-decodes audio
+    // under a running render — the same guard the avatar selectors already enforce.
+    if (app.isBusy()) throw new Error('busy — finish the current take before loading a project.');
     const d = app.dom;
     d.scriptEl.value = doc.script ?? d.scriptEl.value;
     // Refresh the overlay highlighter / validity badge for the loaded script.

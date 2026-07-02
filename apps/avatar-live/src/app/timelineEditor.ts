@@ -210,6 +210,50 @@ export class TimelineEditor {
     for (const id of [...this.audioBlobs.keys()]) if (!ids.has(id)) this.audioBlobs.delete(id);
   }
 
+  /**
+   * The audio-track cues as offline-mixdown clips, from the SAME decoded buffers the live
+   * scheduler plays — so the exported MP4 carries the music/SFX the preview played (the legacy
+   * project/newscast path, where perf.audio is empty). Normalization (default volume, fade
+   * scaling, duration clamp) mirrors scheduleAudioCues exactly. Cues whose file was never
+   * loaded this session surface loudly instead of silently missing from the MP4.
+   */
+  exportAudioClips(): { buffer: AudioBuffer; start: number; volume: number; fadeIn: number; fadeOut: number; durationSec: number }[] {
+    const clips: { buffer: AudioBuffer; start: number; volume: number; fadeIn: number; fadeOut: number; durationSec: number }[] = [];
+    for (const c of this.timeline.cues) {
+      if (c.track !== 'audio') continue;
+      const buf = this.audioBuffers.get(c.id);
+      if (!buf) {
+        this.app.log(`export: audio cue "${c.label ?? c.src ?? c.id}" has no loaded file — it will be missing from the MP4.`);
+        continue;
+      }
+      const len = Math.min(buf.duration, c.duration);
+      let fi = Math.max(0, c.fadeIn ?? 0);
+      let fo = Math.max(0, c.fadeOut ?? 1);
+      if (fi + fo > len && fi + fo > 0) {
+        const s = len / (fi + fo);
+        fi *= s;
+        fo *= s;
+      }
+      clips.push({ buffer: buf, start: c.start, volume: c.volume ?? 0.8, fadeIn: fi, fadeOut: fo, durationSec: len });
+    }
+    return clips;
+  }
+
+  /**
+   * Clean-slate cue import for a bridge apply_newscast/patch_newscast: REPLACES the whole cue
+   * set (not setNarrationCues' merge, which keeps existing audio/graphics cues — correct for a
+   * live TTS re-take, but on a repeated bridge import it accumulated duplicate audio beds and
+   * kept the previous project's stale graphics/camera cues).
+   */
+  importCues(cues: Cue[], totalSec: number): void {
+    this.timeline.cues = [...cues];
+    const cueEnd = this.timeline.cues.reduce((m, c) => Math.max(m, Math.ceil(c.start + c.duration)), 0);
+    this.timeline.duration = Math.max(Math.ceil(totalSec) + 1, cueEnd);
+    this.pruneAudioMaps();
+    this.player.load(this.timeline);
+    this.ui?.reload();
+  }
+
   scheduleAudioCues(ctx: AudioContext, startAt: number): void {
     for (const c of this.timeline.cues) {
       if (c.track !== 'audio') continue;
