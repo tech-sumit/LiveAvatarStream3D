@@ -109,11 +109,24 @@ describe('compileScore (golden)', () => {
     expect(cam0.followSubjects).toEqual([{ bind: 'face' }, { pos: [-3, 2, -2] }]);
   });
 
-  it('emits a relative move camera keyframe (no absolute pose)', () => {
-    const move = perf.camera.find((c) => c.move === 'dolly')!;
+  it('resolves a relative move to an absolute pose against the preceding keyframe', () => {
+    // The dolly at t=3 is compile-time-resolved against camera[0]'s compile-time pose — no
+    // `{pos:[0,0,0]}` sentinel survives to the runtime (scoreDrive has no move branch and used
+    // to apply the sentinel verbatim, teleporting the camera to the origin).
+    const move = perf.camera[1]!;
     expect(move.tSec).toBe(3);
-    expect(move.moveAmount).toBe(-0.5);
+    expect(move.move).toBeUndefined(); // resolved, not a sentinel
     expect(move.ease).toBe('ease_in_out');
+    expect(move.follow).toBe(false);
+    const base = perf.camera[0]!;
+    // dolly amount -0.5 → 0.5 m FARTHER from the target along the same axis (fov preserved).
+    const len = (p: readonly number[], t: readonly number[]) =>
+      Math.hypot(p[0]! - t[0]!, p[1]! - t[1]!, p[2]! - t[2]!);
+    expect(len(move.pos, move.target)).toBeCloseTo(len(base.pos, base.target) + 0.5, 6);
+    expect(move.target).toEqual(base.target);
+    expect(move.fov).toBe(base.fov);
+    // No unresolved sentinel anywhere in the channel.
+    expect(perf.camera.every((c) => c.move === undefined)).toBe(true);
   });
 
   it('emits a savedShot camera keyframe verbatim', () => {

@@ -15,10 +15,12 @@ from fastapi import FastAPI
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from las_common import R2Client
+from las_common import R2Client, install_internal_auth
 from synth import synth_script
 
 app = FastAPI(title="las-voice")
+# Env-gated x-internal-token check (set INTERNAL_TOKEN to enable; /health exempt).
+install_internal_auth(app)
 
 ASSETS_BUCKET = os.environ.get("R2_ASSETS_BUCKET", "las-assets")
 VOICES_BUCKET = os.environ.get("R2_VOICES_BUCKET", "las-voices")

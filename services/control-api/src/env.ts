@@ -1,4 +1,4 @@
-/** Cloudflare bindings for the control plane. No auth bindings yet (internal tool). */
+/** Cloudflare bindings for the control plane. Auth is optional/env-gated (POC). */
 export interface Env {
   // Storage
   DB: D1Database;
@@ -21,4 +21,10 @@ export interface Env {
   DIRECTOR_LLM_MODEL: string;
   ANTHROPIC_API_KEY: string;
   R2_PUBLIC_BASE?: string;
+
+  // Optional hardening — both unset keeps the open POC behavior.
+  /** Secret; when set, /api/* requires `Authorization: Bearer <API_TOKEN>` (lib/auth.ts). */
+  API_TOKEN?: string;
+  /** Comma-separated origins; when set, CORS is restricted to these (index.ts). */
+  ALLOWED_ORIGINS?: string;
 }

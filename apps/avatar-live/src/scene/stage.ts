@@ -340,11 +340,41 @@ export class Stage {
    * <video> clock can't keep up while the main thread is busy encoding, so without this
    * the wall appears frozen on an early frame. Loops via the video's duration.
    */
+  // True while the offline export frame-steps the wall video (setScreenScrub). The export
+  // clock advances at ENCODE speed, so the element must be paused + exactly seeked per frame.
+  private screenScrub = false;
+  private screenWasPlaying = false;
+
+  /** Enter/leave export scrub mode: pause the wall video for frame-exact seeking (its element
+   *  clock must not self-advance between encode-speed frames), restoring playback after. */
+  setScreenScrub(on: boolean): void {
+    this.screenScrub = on;
+    const v = this.screenVideo;
+    if (!v) return;
+    if (on) {
+      this.screenWasPlaying = !v.paused;
+      v.pause();
+    } else if (this.screenWasPlaying) {
+      this.screenWasPlaying = false;
+      void v.play().catch(() => undefined); // autoplay policy may refuse; wall just holds the frame
+    }
+  }
+
   seekScreen(t: number): void {
     const v = this.screenVideo;
     if (!v || !v.duration || !isFinite(v.duration)) return;
     try {
-      v.currentTime = t % v.duration;
+      const want = t % v.duration;
+      // Live preview: the video is PLAYING natively — assigning currentTime every rAF frame
+      // (~60x/s) forces a continuous decoder seek (stutter + CPU). Only correct real drift.
+      // The offline export (screenScrub, which also pauses the element) needs the exact seek
+      // every frame — its clock advances at encode speed, not the element's wall clock.
+      if (!this.screenScrub && !v.paused) {
+        const drift = Math.abs(v.currentTime - want);
+        // 0.35s tolerance; also handle the wrap-around (end vs start of the loop).
+        if (drift < 0.35 || drift > v.duration - 0.35) return;
+      }
+      v.currentTime = want;
     } catch {
       /* not seekable yet */
     }

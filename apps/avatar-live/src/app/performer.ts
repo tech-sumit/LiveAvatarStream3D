@@ -58,6 +58,10 @@ export class Performer {
   // script-derived take.
   private authoredPerf: Performance | null = null;
   private exporting = false;
+  // True ONLY while the offline frame loop is actually rendering (a subset of `exporting`,
+  // which also spans the TTS-synthesis prep). tick() keys off THIS so the avatar keeps its
+  // idle motion during the multi-second prep and is only hands-off while score.drive owns it.
+  private renderingOffline = false;
   private performing = false; // guards re-entry while synthesizing / playing
   private session: RealtimeSession;
 
@@ -230,8 +234,10 @@ export class Performer {
       app.log('finish the current take before exporting.');
       return;
     }
-    const prep = await this.prepareForExport();
-    if (!prep) return; // buildNarration already logged why
+    // Decide the webm fallback BEFORE any narration prep (canExportMp4 is a cheap codec
+    // probe) so all TTS synthesis happens inside exportMp4ToBlob's synchronous latch — a
+    // pre-latch prepareForExport here would reopen the exact double-click / preview-during-
+    // synthesis window the latch exists to close.
     const fmt = deps.recording.currentFormat();
     if (!(await canExportMp4(fmt.w, fmt.h))) {
       app.log('MP4/WebCodecs unavailable here — falling back to the webm quick preview.');
@@ -253,6 +259,22 @@ export class Performer {
       app.log('finish the current take before exporting.');
       return null;
     }
+    // Latch SYNCHRONOUSLY, before the first await: prepareForExport runs seconds of TTS
+    // synthesis, and during that window a concurrent perform()/export used to slip past the
+    // guard above (this.exporting was only set after the awaits). UI disables for the same span.
+    this.exporting = true;
+    deps.recording.setExportUi(true);
+    try {
+      return await this.runExport();
+    } finally {
+      this.exporting = false;
+      deps.recording.setExportUi(false);
+    }
+  };
+
+  /** The export body — runs under exportMp4ToBlob's re-entrancy latch. */
+  private runExport = async (): Promise<Blob | null> => {
+    const { app, deps } = this;
     const prep = await this.prepareForExport();
     if (!prep) return null; // buildNarration already logged why
     const fmt = deps.recording.currentFormat();
@@ -261,8 +283,6 @@ export class Performer {
       app.log('MP4/WebCodecs unavailable here — can’t produce an MP4 blob.');
       return null;
     }
-    this.exporting = true;
-    deps.recording.setExportUi(true);
     app.log(`export: rendering ${prep.durationSec.toFixed(1)}s @ ${fmt.w}×${fmt.h} ${codec.toUpperCase()} …`);
     try {
       // ONE Performance feeds the export — the SAME builder/shape the live narration tick
@@ -286,10 +306,20 @@ export class Performer {
       // image just falls back to the gradient. live == export: the slides drive identically.
       await app.studio.preloadSlideImages(deps.timeline.slideImageUrls());
       deps.timeline.beginNarration(); // take the camera (authored framing cues) for the export loop
-      // Mux the Performance's audio beds/SFX into the MP4 alongside the narration. Authored
-      // newscasts carry them on perf.audio (threaded through importScore's { audio } channel);
-      // script-derived takes have none. Decoded here; any failure surfaces loudly (no retries).
-      const audioCues = perf.audio.length ? await audioCuesToClips(perf.audio, app.audio()) : [];
+      // Frame-stepped rendering starts here: pause the wall video so its element clock can't
+      // self-advance between exact seeks (a PLAYING video would drift at wall-clock speed
+      // between the export's encode-speed frames), and stop tick() driving the avatar.
+      this.renderingOffline = true;
+      app.stage.setScreenScrub(true);
+      // Mux the audio beds/SFX into the MP4 alongside the narration. Bridge-authored newscasts
+      // carry them on perf.audio (threaded through importScore's { audio } channel) — decoded
+      // here, failures surface loudly (no retries). On the legacy path (UI newscast drop /
+      // saved project) perf.audio is empty but the TIMELINE holds the audio cues the live
+      // preview just played — use its already-decoded buffers so preview and MP4 agree
+      // (this path used to ship a silent-music MP4 after a preview WITH music).
+      const audioCues = perf.audio.length
+        ? await audioCuesToClips(perf.audio, app.audio())
+        : deps.timeline.exportAudioClips();
       const blob = await exportMp4Offline({
         stage: app.stage,
         narration: prep.buffer,
@@ -308,8 +338,9 @@ export class Performer {
       app.log(`export failed: ${String(err)}`);
       return null;
     } finally {
-      this.exporting = false;
-      deps.recording.setExportUi(false);
+      // (exporting flag + export UI are released by exportMp4ToBlob's outer latch.)
+      this.renderingOffline = false;
+      app.stage.setScreenScrub(false); // resume the wall video if it was playing
       deps.recording.setExportProgress(0, 0);
       // Release the camera back to OrbitControls + clear any screen cut, then rest to idle
       // (the offline loop left the avatar on the last beat's gesture).
@@ -331,7 +362,12 @@ export class Performer {
 
   perform = async (record: boolean): Promise<void> => {
     const { app, deps } = this;
-    if (this.performing) return;
+    // Guard on exporting too: a preview starting while the offline export renders would fight
+    // it for the camera/avatar/audio graph (the export latch is set before its first await).
+    if (this.performing || this.exporting) {
+      if (this.exporting) app.log('an export is rendering — wait for it to finish.');
+      return;
+    }
     this.performing = true;
     this.session.stop();
     if (!this.narrationAudio) {
@@ -462,7 +498,7 @@ export class Performer {
 
   /** The synced per-frame loop (registered on stage.onFrame). */
   private tick = (dt: number): void => {
-    if (this.exporting) return; // offline export drives the avatar; don't double-step
+    if (this.renderingOffline) return; // the offline frame loop drives the avatar; don't double-step
     const { app, deps } = this;
     const { avatar, stage } = app;
     // Idle auto-align ONLY: keep the anchor + screen in shot (presenter beside the screen).
@@ -552,7 +588,10 @@ export class Performer {
     });
     d.rateEl.addEventListener('input', () => this.boundary.setRate(Number(d.rateEl.value)));
     d.scriptEl.addEventListener('input', () => {
-      this.narrationAudio = null;
+      // Full invalidation, not just the audio buffer: an edited script must also drop any
+      // landed authored Performance (the contract on `authoredPerf`) — otherwise the next
+      // take replays the stale authored direction over the new words.
+      this.invalidateNarration();
     });
     d.emotionSel.addEventListener('change', () => {
       app.avatar.setEmotion(d.emotionSel.value as EmotionName);

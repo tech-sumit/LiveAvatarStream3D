@@ -3,7 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-# No auth layer yet — access is gated by VPN / port-forward for demos.
+# Optional hardening (both unset = open POC behavior):
+#   API_TOKEN (secret) — when set, /api/* requires `Authorization: Bearer <API_TOKEN>`
+#     (health + /api/internal/* exempt; see src/lib/auth.ts).
+#   ALLOWED_ORIGINS ([vars], comma-separated origins) — when set, CORS is
+#     restricted to those origins instead of `*`.
 
 [vars]
 GPU_PROVIDER = "runpod"
@@ -12,7 +16,7 @@ DIRECTOR_LLM_PROVIDER = "openrouter"
 DIRECTOR_LLM_MODEL = "anthropic/claude-opus-4.8"
 
 # Secrets (set via `wrangler secret put`):
-#   INTERNAL_SERVICE_TOKEN, GPU_PROVIDER_TOKEN, ANTHROPIC_API_KEY
+#   INTERNAL_SERVICE_TOKEN, GPU_PROVIDER_TOKEN, ANTHROPIC_API_KEY, API_TOKEN (optional)
 
 [[d1_databases]]
 binding = "DB"
