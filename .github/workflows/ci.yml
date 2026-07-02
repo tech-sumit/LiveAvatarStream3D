@@ -21,5 +21,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # @las/protocol has no prepare script, so a fresh checkout has no protocol dist —
+      # and @las/newsroom-mcp's typecheck (plain tsc) imports it. Build it once up front
+      # (this also builds @las/performer-core via protocol's build script).
+      - run: npm run build --workspace @las/protocol
       - run: npm run typecheck
       - run: npm test
