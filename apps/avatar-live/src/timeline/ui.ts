@@ -459,6 +459,10 @@ export class TimelineUI {
       return;
     }
     if (typing) return;
+    // Dock-scoped: this window listener lives for the page lifetime (registered once in the
+    // constructor), so gate every shortcut on the timeline dock actually being OPEN —
+    // Space/C/M used to keep firing (and steal keys from walk mode) after the panel closed.
+    if (!this.root.closest('.tl-open')) return;
     // Only the timeline-area shortcuts below; guarded so they don't steal input focus.
     switch (e.key) {
       case ' ': // Space → toggle preview

@@ -1,11 +1,18 @@
 # LiveAvatarStream — progress & single source of truth
 
-> **Scene editor / WYSIWYG / three.js migration:** see [`docs/specs/README.md`](docs/specs/README.md)
-> (Jun 20, 2026). This file remains authoritative for GPU validation history.
+> **⚠️ Scope note (2026-06-26):** most of this file is a **historical validation log** of the
+> pre-consolidation multi-path product. The repo is now **3D-browser-only** (see
+> `ARCHITECTURE.md`'s scope note and `CLAUDE.md`): `engine-three` was removed, the 2D
+> (EchoMimicV3) + MuseTalk realtime paths moved to `../LiveAvatarStream`, and the validators
+> referenced below (`validate_offline.py`, `validate_engine_render.py`, `validate_musetalk.py`,
+> `npm run dev:editor`) **no longer exist in this repo**. Current validation is in
+> [How to verify](#how-to-verify); current status is in the dated sections at the bottom
+> (latest: [2026-07 system-review rounds](#2026-07--system-review-rounds)).
 
-This document is the authoritative status of the GPU-plane real-model integration
-(plan: *GPU plane real models*). Where the original plan and the implementation
-diverged, **this document wins** — see [Plan-vs-implementation drift](#plan-vs-implementation-drift).
+This document is the authoritative status log. The GPU-plane sections record the
+real-model integration as validated in June 2026 (plan: *GPU plane real models*); where
+that original plan and the implementation diverged, **this document wins** — see
+[Plan-vs-implementation drift](#plan-vs-implementation-drift).
 
 ## TL;DR
 
@@ -173,41 +180,25 @@ curl -sS -X DELETE -H "$AUTH" "${REST}/pods/${POD_ID}"
 
 ## How to verify
 
-Run the cheap checks first (no GPU), then the live ones (need a pod + secrets).
+Current validation for the 3D-browser-only repo (matches `package.json` and
+`.github/workflows/ci.yml`; CI runs the first two on every PR / push to main):
 
 ```bash
-# 0) In-repo sanity (no GPU): TS typecheck + Python compiles.
-npm run typecheck
-python3 -m py_compile services/gpu/deploy/validate_offline.py services/gpu/deploy/validate_engine_render.py
+npm install          # rebuilds @las/performer-core's gitignored dist/ (prepare script)
+npm run typecheck    # all workspaces
+npm test             # vitest: @las/protocol (dsl/newsreport/director/score) + control-api
 
-# 1) Health round-trip — pod gateway AND deployed Worker.
-#    Needs GPU_PROVIDER_BASE_URL (+ optional GPU_PROVIDER_TOKEN) and CONTROL_API_URL.
-./scripts/gpu/health-roundtrip.sh            # both checks
-./scripts/gpu/health-roundtrip.sh --direct   # pod gateway only
-./scripts/gpu/health-roundtrip.sh --worker   # deployed Worker round-trip only
-
-# 2) Offline 1080p e2e — builds avatar "Urwashi" from demo_video.mp4 and asserts a
-#    real 1920x1080 mp4 comes back. Needs a live pod + deployed Worker.
-CONTROL_API_URL=https://las-control-api.<acct>.workers.dev \
-  python3 services/gpu/deploy/validate_offline.py \
-    --video demo_video.mp4 --out /tmp/urwashi_offline.mp4
-
-# 3) Realtime MuseTalk generation (on the pod, no SFU needed) — once an avatar +
-#    voice exist (use the ids printed by validate_offline.py):
-#    cd services/gpu/realtime && PYTHONPATH=../common python3 validate_musetalk.py \
-#      --avatar-prefix demo-user/<av_id> --voice-prefix demo-user/<vo_id> --out /workspace/mt.mp4
-
-# 4) 3D engine_render e2e (Three.js on H100 pod) — needs live pod + engine-three
-#    built via install_deps.sh §8 and Worker deployed with engine_render path.
-CONTROL_API_URL=https://las-control-api.<acct>.workers.dev \
-  python3 services/gpu/deploy/validate_engine_render.py \
-    --video demo_video.mp4 --out /tmp/engine_poc.mp4
-
-# Pod resume after stop (RunPod wipes container disk — see POD_SETUP.md):
-#   ./scripts/gpu/resume-pod.sh --print
+# Studio smoke — manual:
+npm run dev:avatar   # → http://localhost:5175; load a newscast, Generate, Export MP4
 ```
 
-### Remaining manual steps to reach 100% (require live infra / secrets)
+> The validators this section used to reference (`validate_offline.py`,
+> `validate_engine_render.py`, `validate_musetalk.py`) left the repo with the 2026-06-26
+> consolidation — the 2D/realtime paths live in `../LiveAvatarStream` now.
+> `scripts/gpu/health-roundtrip.sh` still exists for the remaining control-plane GPU
+> services (voice / avatar-build / image-gen) and needs a live pod + deployed Worker.
+
+### Remaining manual steps to reach 100% (historical — pre-consolidation checklist)
 
 1. `RUNPOD_API_KEY=… ./scripts/gpu/spawn-pod.sh` — provision the H100 pod + volume.
 2. On the pod (`POD_SETUP.md`): `install_deps.sh` → `seed_weights.sh` →
@@ -231,7 +222,7 @@ CONTROL_API_URL=https://las-control-api.<acct>.workers.dev \
    `validate_engine_render.py` → expect `PASS` with ≥1280×720 mp4.
 7. (Realtime) run `validate_musetalk.py` on the pod, then a live browser session.
 
-## Scene editor initiative (Jun 19–20, 2026)
+## Scene editor initiative (Jun 19–20, 2026 — historical; removed in the consolidation)
 
 **Full context:** [`docs/specs/2026-06-20-scene-editor-threejs.md`](docs/specs/2026-06-20-scene-editor-threejs.md)
 
@@ -244,7 +235,8 @@ CONTROL_API_URL=https://las-control-api.<acct>.workers.dev \
 | Pod WYSIWYG render (Lee bust, not placeholder) | **Blocked — pod sync pending** |
 | R2 scene CRUD, GPU preview, live stream | **TODO — see specs next-steps** |
 
-Run: `npm run dev:editor` → http://localhost:5174
+Run: ~~`npm run dev:editor` → http://localhost:5174~~ — script removed with the scene
+editor; the studio is `npm run dev:avatar` → http://localhost:5175.
 
 ## Plan-vs-implementation drift
 
@@ -298,3 +290,20 @@ The implementation intentionally diverged from the original plan; trust this fil
   stay `z.unknown()` (documented to carry `{ score, stage }`) — no envelope change. Back-compat is
   proven, not assumed, by Phase 3's NewsReport↔Score equivalence test. **engine-three re-adoption
   (spec §12.4) is N-A / deferred — engine-three is no longer in the workspace.**
+
+## 2026-07 — system-review rounds
+
+A full system review of the consolidated 3D-browser-only repo drove three PRs
+(newest first — `git log`):
+
+- **PR #65** (2026-07-03) — *Newscast compile-path unification (round 2).* Fixes the
+  three HIGH structural defects the review confirmed: the lossy `apply_newscast`
+  bridge path, the triple-clock mismatch, and the shot-preset drop on the Score
+  path — full chrome, one clock, presets. Spec:
+  `docs/specs/2026-07-03-newscast-path-unification-design.md`.
+- **PR #64** — *System-review round 1.* Control-plane hardening, studio correctness
+  fixes, and the repo's **first CI**: `.github/workflows/ci.yml` (GitHub Actions)
+  runs `npm run typecheck` + `npm test` on every PR / push to main.
+- **PR #63** — *Data-driven camera shot-preset catalog* (10 framings), replacing the
+  hardcoded close/medium/wide shots. Spec:
+  `docs/specs/2026-06-29-camera-shot-preset-catalog-design.md`.

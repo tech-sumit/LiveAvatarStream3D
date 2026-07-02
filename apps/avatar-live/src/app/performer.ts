@@ -68,6 +68,7 @@ export class Performer {
   // which also spans the TTS-synthesis prep). tick() keys off THIS so the avatar keeps its
   // idle motion during the multi-second prep and is only hands-off while score.drive owns it.
   private renderingOffline = false;
+  private exportAbort: AbortController | null = null; // live only while an export runs
   private performing = false; // guards re-entry while synthesizing / playing
   private session: RealtimeSession;
 
@@ -418,13 +419,22 @@ export class Performer {
     // synthesis, and during that window a concurrent perform()/export used to slip past the
     // guard above (this.exporting was only set after the awaits). UI disables for the same span.
     this.exporting = true;
+    this.exportAbort = new AbortController();
     deps.recording.setExportUi(true);
     try {
       return await this.runExport();
     } finally {
       this.exporting = false;
+      this.exportAbort = null;
       deps.recording.setExportUi(false);
     }
+  };
+
+  /** Abort the in-flight export (the Cancel button). No-op when nothing is exporting. */
+  cancelExport = (): void => {
+    if (!this.exportAbort) return;
+    this.app.log('export: cancelling…');
+    this.exportAbort.abort();
   };
 
   /** The export body — runs under exportMp4ToBlob's re-entrancy latch. */
@@ -432,6 +442,12 @@ export class Performer {
     const { app, deps } = this;
     const prep = await this.prepareForExport();
     if (!prep) return null; // buildNarration already logged why
+    // Cancel clicked during the (long) TTS-prep span: stop BEFORE spinning up the encoder —
+    // the in-flight synthesis can't be aborted mid-request, but nothing after it should run.
+    if (this.exportAbort?.signal.aborted) {
+      app.log('export cancelled — nothing rendered.');
+      return null;
+    }
     const fmt = deps.recording.currentFormat();
     const codec = deps.recording.currentCodec();
     if (!(await canExportMp4(fmt.w, fmt.h))) {
@@ -454,6 +470,7 @@ export class Performer {
           motionCues: deps.timeline.motionCues(),
           cameraCues: deps.timeline.cameraCues(),
           slideCues: deps.timeline.slideCues(),
+          audioCues: deps.timeline.perfAudioCues(),
         });
       this.score.load(perf, this.fallbackEmotion());
       // Preload the wall-slide backdrop images BEFORE the frame loop so each slide renders with
@@ -466,15 +483,11 @@ export class Performer {
       // between the export's encode-speed frames), and stop tick() driving the avatar.
       this.renderingOffline = true;
       app.stage.setScreenScrub(true);
-      // Mux the audio beds/SFX into the MP4 alongside the narration. Bridge-authored newscasts
-      // carry them on perf.audio (threaded through importScore's { audio } channel) — decoded
-      // here, failures surface loudly (no retries). On the legacy path (UI newscast drop /
-      // saved project) perf.audio is empty but the TIMELINE holds the audio cues the live
-      // preview just played — use its already-decoded buffers so preview and MP4 agree
-      // (this path used to ship a silent-music MP4 after a preview WITH music).
-      const audioCues = perf.audio.length
-        ? await audioCuesToClips(perf.audio, app.audio())
-        : deps.timeline.exportAudioClips();
+      // Mux the audio beds/SFX into the MP4 alongside the narration — from the SAME
+      // timeline-lane mapping the live take schedules (the single editable source; the
+      // bridge/Generate write that lane), resolved from the same decoded buffers with a
+      // fetch fallback. Failures surface loudly (no retries).
+      const audioCues = await audioCuesToClips(deps.timeline.perfAudioCues(), app.audio(), (id) => deps.timeline.decodedBuffer(id));
       const blob = await exportMp4Offline({
         stage: app.stage,
         narration: prep.buffer,
@@ -486,11 +499,16 @@ export class Performer {
         codec,
         driveFrame: (t, dt, mouth) => this.score.drive(t, dt, mouth),
         onProgress: (d, n) => deps.recording.setExportProgress(d, n),
+        signal: this.exportAbort?.signal,
       });
       app.log(`export ready · ${prep.durationSec.toFixed(1)}s ${fmt.w}×${fmt.h} mp4`);
       return blob;
     } catch (err) {
-      app.log(`export failed: ${String(err)}`);
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        app.log('export cancelled — encoder released, no file produced.');
+      } else {
+        app.log(`export failed: ${String(err)}`);
+      }
       return null;
     } finally {
       // (exporting flag + export UI are released by exportMp4ToBlob's outer latch.)
@@ -568,6 +586,7 @@ export class Performer {
         motionCues: deps.timeline.motionCues(),
         cameraCues: deps.timeline.cameraCues(),
         slideCues: deps.timeline.slideCues(),
+        audioCues: deps.timeline.perfAudioCues(),
       });
     this.score.load(perf, this.fallbackEmotion());
     // Preload the wall-slide images so the live take shows imagery identically to the export
@@ -597,7 +616,10 @@ export class Performer {
     // If anything in the start path throws, reset state so the busy guard can't wedge.
     try {
       deps.timeline.beginNarration(); // take the camera; motion/camera/screen cues flow via score.drive
-      deps.timeline.scheduleAudioCues(ctx, startAt); // background-music / SFX clips, mixed + captured
+      // Beds/SFX from the CURRENT timeline audio lane (the single EDITABLE source — an
+      // authored perf.audio is a compile-time snapshot that would silently ignore
+      // cue-inspector edits made after import).
+      deps.timeline.schedulePerfAudio(deps.timeline.perfAudioCues(), ctx, startAt);
       deps.timeline.setUiPlaying(!record);
       app.log(
         record
@@ -818,5 +840,6 @@ export class Performer {
     });
 
     d.exportMp4Btn.addEventListener('click', () => void this.exportMp4());
+    d.exportCancelBtn.addEventListener('click', this.cancelExport);
   }
 }

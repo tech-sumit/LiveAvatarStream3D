@@ -3,7 +3,7 @@
 // This module is ADDITIVE: every button here mirrors an existing right-panel
 // control and drives the SAME code path rather than re-implementing camera logic:
 //   • Close / Medium / Wide → set #shot's value + dispatch its `change`
-//     (the AvatarTransform `change` handler does the actual stage.frame()).
+//     (the AvatarTransform `change` handler applies the shared shot-preset catalog).
 //   • ⟲ Reset cam          → click #resetView   (AvatarTransform handler).
 //   • ⊕ Align              → click #alignFace    (AvatarTransform handler).
 // It also owns three small viewport conveniences that have no sidebar twin:

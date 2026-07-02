@@ -9,6 +9,12 @@ compatibility_flags = ["nodejs_compat"]
 #   ALLOWED_ORIGINS ([vars], comma-separated origins) — when set, CORS is
 #     restricted to those origins instead of `*`.
 
+# Stuck-row sweeper (src/orchestrator.ts sweepStuckJobs, via the scheduled()
+# handler): every 30 min, jobs/avatars/voices rows stuck non-terminal for > 2 h
+# are marked failed ('timed out').
+[triggers]
+crons = ["*/30 * * * *"]
+
 [vars]
 GPU_PROVIDER = "runpod"
 GPU_PROVIDER_BASE_URL = "https://s5jwghwjkwo96q-8080.proxy.runpod.net"

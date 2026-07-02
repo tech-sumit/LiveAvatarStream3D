@@ -74,11 +74,11 @@ interface AvatarBuildSpec {
  * Build an avatar on the GPU plane and flip its D1 row building -> ready/failed.
  * Runs in the queue consumer (not a request waitUntil) so it survives the full
  * build; with buffalo_l preseeded on the volume the build comfortably fits inside
- * the proxy window. Errors are captured onto the avatar row and swallowed so the
- * message is acked — a failed build must not trigger a retry storm that re-runs
- * the GPU work.
+ * the proxy window. Errors are captured onto the avatar row and returned (never
+ * thrown) so the message is acked — a failed build must not trigger a retry
+ * storm that re-runs the GPU work. Returns the error message, or null on success.
  */
-async function runAvatarBuild(env: Env, spec: AvatarBuildSpec): Promise<void> {
+async function runAvatarBuild(env: Env, spec: AvatarBuildSpec): Promise<string | null> {
   const provider = makeGpuProvider(env);
   try {
     const res = await provider.call<{ identityDim?: number; hasLora?: boolean; refDurationS?: number }>(
@@ -99,9 +99,12 @@ async function runAvatarBuild(env: Env, spec: AvatarBuildSpec): Promise<void> {
     await env.DB.prepare('UPDATE avatars SET status = ?, identity_dim = ?, has_lora = ?, ref_duration_s = ? WHERE id = ?')
       .bind('ready', res.identityDim ?? null, res.hasLora ? 1 : 0, res.refDurationS ?? null, spec.avatarId)
       .run();
+    return null;
   } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
     await env.DB.prepare('UPDATE avatars SET status = ? WHERE id = ?').bind('failed', spec.avatarId).run();
-    console.error('avatar build failed', spec.avatarId, e);
+    console.error('avatar build failed', spec.avatarId, msg);
+    return msg;
   }
 }
 
@@ -117,11 +120,12 @@ interface VoiceCloneSpec {
 /**
  * Clone a voice on the GPU plane and flip its D1 row cloning -> ready/failed.
  * Runs in the queue consumer (not a request waitUntil) so it survives the full
- * clone. Like runAvatarBuild, state lives on the voices table (not the jobs
- * table) and errors are captured onto the row then swallowed so the message is
- * acked — a failed clone must not trigger a retry storm that re-runs GPU work.
+ * clone. Like runAvatarBuild, errors are captured onto the voices row then
+ * returned (never thrown) so the message is acked — a failed clone must not
+ * trigger a retry storm that re-runs GPU work. Returns the error message, or
+ * null on success.
  */
-async function runVoiceClone(env: Env, spec: VoiceCloneSpec): Promise<void> {
+async function runVoiceClone(env: Env, spec: VoiceCloneSpec): Promise<string | null> {
   const provider = makeGpuProvider(env);
   try {
     await provider.call(
@@ -140,12 +144,14 @@ async function runVoiceClone(env: Env, spec: VoiceCloneSpec): Promise<void> {
     await env.DB.prepare('UPDATE voices SET status = ?, error = NULL WHERE id = ?')
       .bind('ready', spec.voiceId)
       .run();
+    return null;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await env.DB.prepare('UPDATE voices SET status = ?, error = ? WHERE id = ?')
       .bind('failed', msg, spec.voiceId)
       .run();
     console.error('voice clone failed', spec.voiceId, msg);
+    return msg;
   }
 }
 
@@ -169,16 +175,34 @@ export async function handleQueue(batch: MessageBatch, env: Env): Promise<void> 
           await setStatus(env, job.jobId, 'running', { progress: 0.02, message: 'Picked up' });
           await runHealthCheck(env, job.jobId);
           break;
-        case 'avatar_build':
-          // avatar_build tracks state on the avatars table, not the jobs table, and
-          // never throws out of runAvatarBuild — so it always acks (no retry storm).
-          await runAvatarBuild(env, job.spec as AvatarBuildSpec);
+        case 'avatar_build': {
+          // The avatars row mirrors state for the studio UI; the jobs row is the
+          // durable operator record. runAvatarBuild never throws, and the terminal
+          // write below must not throw into the retry path either — the GPU work
+          // is done and must not re-run; a lost write is repaired by the sweeper.
+          await setStatus(env, job.jobId, 'running', { progress: 0.02, message: 'Picked up' });
+          const err = await runAvatarBuild(env, job.spec as AvatarBuildSpec);
+          await setStatus(
+            env,
+            job.jobId,
+            err ? 'failed' : 'succeeded',
+            err ? { error: err } : { progress: 1, message: 'Avatar ready' },
+          ).catch(() => undefined);
           break;
-        case 'voice_clone':
-          // voice_clone tracks state on the voices table, not the jobs table, and
-          // never throws out of runVoiceClone — so it always acks (no retry storm).
-          await runVoiceClone(env, job.spec as VoiceCloneSpec);
+        }
+        case 'voice_clone': {
+          // Same shape as avatar_build: voices row for the UI, jobs row for the
+          // operator; runVoiceClone never throws, terminal write never retries.
+          await setStatus(env, job.jobId, 'running', { progress: 0.02, message: 'Picked up' });
+          const err = await runVoiceClone(env, job.spec as VoiceCloneSpec);
+          await setStatus(
+            env,
+            job.jobId,
+            err ? 'failed' : 'succeeded',
+            err ? { error: err } : { progress: 1, message: 'Voice ready' },
+          ).catch(() => undefined);
           break;
+        }
         default: {
           const _exhaustive: never = job.kind;
           throw new Error(`unhandled job kind ${_exhaustive as string}`);
@@ -186,9 +210,62 @@ export async function handleQueue(batch: MessageBatch, env: Env): Promise<void> 
       }
       msg.ack();
     } catch (e) {
-      // Only jobs-table-backed kinds reach here; avatar_build manages its own row.
+      // Only health_check can throw to here; the GPU kinds capture their own errors.
       await setStatus(env, job.jobId, 'failed', { error: String(e) }).catch(() => undefined);
       msg.retry();
     }
   }
+}
+
+/** Jobs sitting in a non-terminal status longer than this are considered dead. */
+export const STUCK_JOB_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+
+const TERMINAL_STATUSES: ReadonlySet<string> = new Set(['succeeded', 'failed']);
+
+/** True when a job row has sat in a non-terminal status past the stuck timeout. */
+export function isStuckJob(row: { status: string; updated_at: number }, nowMs: number): boolean {
+  return !TERMINAL_STATUSES.has(row.status) && nowMs - row.updated_at > STUCK_JOB_TIMEOUT_MS;
+}
+
+/**
+ * Cron sweeper (wrangler.toml [triggers]): fail job rows — and the avatar/voice
+ * rows the studio polls — that died mid-flight (e.g. a Worker eviction between
+ * queue pickup and the terminal status write), so nothing shows queued/running
+ * forever. Returns the number of job rows swept.
+ */
+export async function sweepStuckJobs(env: Env, nowMs = now()): Promise<number> {
+  const { results } = await env.DB.prepare(
+    "SELECT id, status, updated_at FROM jobs WHERE status NOT IN ('succeeded','failed')",
+  ).all<{ id: string; status: string; updated_at: number }>();
+  const stuck = results.filter((r) => isStuckJob(r, nowMs));
+  for (const row of stuck) {
+    await setStatus(env, row.id, 'failed', { error: 'timed out' });
+  }
+
+  // Asset rows carry no updated_at, so created_at is the staleness proxy — BUT an asset
+  // re-enqueued via POST /api/jobs/:id/retry more than 2 h after creation would look stale
+  // the moment it restarted. Exempt any asset with RECENT job activity (its jobs row —
+  // which does carry updated_at — touched within the window).
+  const cutoff = nowMs - STUCK_JOB_TIMEOUT_MS;
+  await env.DB.prepare(
+    `UPDATE avatars SET status = 'failed'
+     WHERE status IN ('pending','building','fine_tuning') AND created_at < ?1
+       AND id NOT IN (
+         SELECT json_extract(spec_json, '$.avatarId') FROM jobs
+         WHERE kind = 'avatar_build' AND updated_at >= ?1 AND json_extract(spec_json, '$.avatarId') IS NOT NULL
+       )`,
+  )
+    .bind(cutoff)
+    .run();
+  await env.DB.prepare(
+    `UPDATE voices SET status = 'failed', error = 'timed out'
+     WHERE status IN ('pending','cloning') AND created_at < ?1
+       AND id NOT IN (
+         SELECT json_extract(spec_json, '$.voiceId') FROM jobs
+         WHERE kind = 'voice_clone' AND updated_at >= ?1 AND json_extract(spec_json, '$.voiceId') IS NOT NULL
+       )`,
+  )
+    .bind(cutoff)
+    .run();
+  return stuck.length;
 }

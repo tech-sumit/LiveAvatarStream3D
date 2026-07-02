@@ -1,6 +1,6 @@
 import { validateNewsReportDoc, compileNewsReport, validateScore } from '@las/protocol';
 import type { Stage, AudioTimings, Performance, AudioCue, NewsReportDoc, SlideContent } from '@las/protocol';
-import { r2Available, r2GetJson, r2List, r2PutBlob, r2PutJson, r2Url } from '../storage/r2.js';
+import { r2Available, r2GetJson, r2List, r2PutBlob, r2PutJson, r2Url, resolveAssetUrl } from '../storage/r2.js';
 import type { Cue } from '../timeline/types.js';
 import type { StudioContext } from './context.js';
 import type { AvatarLibrary } from './avatarLibrary.js';
@@ -57,7 +57,7 @@ export class ProjectStore {
   ) {}
 
   private assetUrl(src: string): string {
-    return /^https?:\/\//.test(src) || src.startsWith('/') ? src : r2Url(src);
+    return resolveAssetUrl(src); // the ONE shared rule (blob:/data:/http/rooted pass through)
   }
   private async fetchAssetBlob(src: string): Promise<Blob> {
     const r = await fetch(this.assetUrl(src));
@@ -201,6 +201,19 @@ export class ProjectStore {
   /** Export the current project as a .json file to disk (separate from the R2 Save). */
   private exportProjectJson(): void {
     const name = sanitize(this.app.dom.projectNameEl.value);
+    // Unlike Save (which runs uploadAssets first), a plain JSON export can't carry
+    // session-only assets — audio cues whose file lives only in this tab's memory (no src)
+    // serialize as absent. Warn LOUDLY instead of silently shipping a project that will
+    // load without its audio.
+    const sessionOnly = this.c.timeline.timeline.cues.filter(
+      (c) => c.track === 'audio' && !c.src && this.c.timeline.blobs.has(c.id),
+    );
+    if (sessionOnly.length) {
+      this.app.log(
+        `⚠ export: ${sessionOnly.length} audio cue(s) exist only in this session (no cloud src) — ` +
+          `they will be MISSING when this JSON is loaded. Use 💾 Save (R2) to persist them first.`,
+      );
+    }
     this.downloadJson(`${name}.project.json`, this.serializeProject(name));
     this.app.log(`exported "${name}.project.json" to disk.`);
   }

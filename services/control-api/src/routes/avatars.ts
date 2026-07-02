@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { BuildAvatarRequest, type QueueMessage } from '@las/protocol';
 import type { Env } from '../env.js';
-import { ensureUser, rowToAvatar } from '../lib/db.js';
+import { ensureUser, insertJob, rowToAvatar } from '../lib/db.js';
 import { newId, now } from '../lib/ids.js';
 
 export const avatars = new Hono<{ Bindings: Env }>();
@@ -31,7 +31,8 @@ avatars.post('/api/avatars', async (c) => {
 
   // Build on the GPU plane via the job queue (not a request waitUntil, which the
   // Worker can evict mid-build and leave the row stuck 'building'). The queue
-  // consumer calls /avatar-build/build and flips the row to ready/failed.
+  // consumer calls /avatar-build/build and flips the row to ready/failed. The
+  // paired jobs row is the durable operator record (GET /api/jobs, retry).
   const spec = {
     avatarId: id,
     userId: body.userId,
@@ -42,7 +43,8 @@ avatars.post('/api/avatars', async (c) => {
     fineTune: body.fineTune,
     outPrefix: r2Prefix,
   };
-  await c.env.JOBS.send({ jobId: id, kind: 'avatar_build', userId: body.userId, spec } satisfies QueueMessage);
+  const jobId = await insertJob(c.env, body.userId, 'avatar_build', spec);
+  await c.env.JOBS.send({ jobId, kind: 'avatar_build', userId: body.userId, spec } satisfies QueueMessage);
 
   const row = await c.env.DB.prepare('SELECT * FROM avatars WHERE id = ?').bind(id).first();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

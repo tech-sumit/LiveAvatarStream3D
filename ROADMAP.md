@@ -1,5 +1,13 @@
 # LiveAvatarStream — Roadmap
 
+> **⚠️ Scope note (2026-06-26):** Historical — this roadmap describes the pre-2026-06-26
+> multi-path product; the repo is now **3D-browser-only** (see `ARCHITECTURE.md`'s scope note
+> and `CLAUDE.md`). Phases 2–5 below (GPU offline pipeline, eval/optimization tiers, realtime
+> SFU/warm-pool) belong to the relocated 2D/realtime product in `../LiveAvatarStream`. The
+> current direction is the Score/Stage redesign:
+> `docs/specs/2026-06-25-performance-score-dsl-design.md` and the specs index
+> `docs/specs/README.md`.
+
 End-to-end build sequence. Each phase has an explicit exit criterion. This is an internal tool, so auth/consent/hardening are deferred (see bottom).
 
 ```mermaid

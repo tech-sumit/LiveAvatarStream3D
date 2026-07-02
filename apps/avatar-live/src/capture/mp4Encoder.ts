@@ -64,6 +64,16 @@ export class Mp4Encoder {
     if (!buf) throw new Error('Mp4Encoder: encoder produced no output');
     return new Blob([buf], { type: 'video/mp4' });
   }
+
+  /** Abort an in-flight encode: releases the hardware VideoEncoder session and drops the
+   *  in-RAM BufferTarget (the partial MP4). Safe after finalize/cancel (no-op). */
+  async cancel(): Promise<void> {
+    try {
+      await this.output.cancel();
+    } catch {
+      /* already finalized or cancelled */
+    }
+  }
 }
 
 /**
