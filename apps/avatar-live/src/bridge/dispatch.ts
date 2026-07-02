@@ -7,10 +7,10 @@
 //
 // This module is self-contained and only imported when the bridge is enabled, so
 // it never runs in the default (bridge-off) studio.
-import { validateNewsReportDoc, validateScore, compileNewsReportToScore, newsReportAudio } from '@las/protocol';
-import type { Stage, AudioTimings, Score, NewsReportDoc, AudioCue } from '@las/protocol';
+import { validateNewsReportDoc, validateScore, compileNewsReport, compileNewsReportToScore, newsReportChrome } from '@las/protocol';
+import type { Stage, AudioTimings, Score, NewsReportDoc, AudioCue, SlideContent } from '@las/protocol';
 import { SCREEN_STAND_POS } from '../scene/studio.js';
-import { r2Url } from '../storage/r2.js';
+import { r2Url, resolveAssetUrl } from '../storage/r2.js';
 import { cueId } from '../timeline/types.js';
 import type { StudioContext } from '../app/context.js';
 import type { Lighting } from '../app/lighting.js';
@@ -199,13 +199,10 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
           try {
             const doc = validateNewsReportDoc(params.doc);
             compileNewsReportToScore(doc); // prove it lowers to a Score
-            // Honest validation: the Score bridge path drops channels the legacy file-import
-            // applies (avatar, wall slides, look, …). Tell the caller UP FRONT what this doc
-            // authors that apply_newscast will not carry, instead of silently degrading output.
-            const warnings = scorePathLossWarnings(doc);
-            return warnings.length
-              ? { valid: true, kind: 'newsreport', title: doc.meta.title, warnings }
-              : { valid: true, kind: 'newsreport', title: doc.meta.title };
+            // (The former loss warnings are gone: apply_newscast now carries the full chrome —
+            // avatar, look/lights, wall slides, backScreen, rate/pitch, camera presets — via
+            // the same compileNewsReport lowering the file import uses.)
+            return { valid: true, kind: 'newsreport', title: doc.meta.title };
           } catch (newsErr) {
             // Report the error from the branch that matched the input shape: a near-valid
             // NewsReportDoc fails NewsReportDoc validation with a useful field-level message —
@@ -464,6 +461,10 @@ function seekTimeline(c: BridgeControllers, seconds: number): void {
  * the legacy NewsReport import (applyProject) used to leave behind.
  */
 async function applyScoreDoc(app: StudioContext, c: BridgeControllers, doc: unknown): Promise<{ beats: number; lowered: boolean }> {
+  // Same guard as the file path (projectStore.applyProject): applying a newscast mid-take
+  // swaps the avatar/lights/look/timeline under a running render — an automation client
+  // issuing apply_newscast during an export must get a loud error, not a corrupted MP4.
+  if (app.isBusy()) throw new Error('busy — finish the current take/export before applying a newscast.');
   let score: Score;
   let lowered = false;
   let nr: NewsReportDoc | undefined;
@@ -480,34 +481,62 @@ async function applyScoreDoc(app: StudioContext, c: BridgeControllers, doc: unkn
     }
   }
   const stage = defaultStage(score.stage);
-  // Compute timings once: the per-beat clock drives both the music-bed total length and the
-  // word-anchor resolution, so the bed length matches the rendered take.
+  // The coarse pre-TTS clock (Generate recompiles everything against the REAL clock later —
+  // performer.buildAuthoredNarration). Beds/SFX/slides derive from the SAME timings via
+  // newsReportChrome, so even the provisional pass sits on one clock, not three.
   const timings = timingsFromScore(score);
-  const total = timings.beats.at(-1)?.endSec ?? 0;
-  // Recover a lowered NewsReportDoc's beds/SFX (Score itself carries no audio). A pure Score
-  // has no audio channel to recover, so audio stays undefined.
-  const audio = nr ? newsReportAudio(nr, total) : undefined;
+  const chrome = nr ? newsReportChrome(nr, timings) : undefined;
+  const audio = chrome?.audio.length ? chrome.audio : undefined;
+  // Resolve slide backdrop keys once so the Performance slides, the timeline graphics cues,
+  // and the studio's url-keyed image cache all agree.
+  const slides = chrome?.slides.map((s) => ({
+    tSec: s.tSec,
+    slide: { ...s.slide, ...(s.slide.image ? { image: resolveAssetUrl(s.slide.image) } : {}) },
+  }));
   // Repopulate the studio surface FIRST: it fires performer.invalidateNarration (which clears any
-  // prior authored Performance) BEFORE importScore lands the new one via performer.loadPerformance.
+  // prior authored Performance) BEFORE importScore lands the new one via performer.loadScore.
   // The order matters — otherwise the just-landed authored take would be immediately invalidated,
   // and preview/export would fall back to the script-derived rebuild.
   populateStudioFromScore(app, c, score, timings, audio, {
     name: nr?.meta.title,
     voiceId: nr?.meta.anchors[0]?.voiceId,
+    slides,
   });
+  // FULL chrome for a lowered NewsReportDoc — the SAME lowering + the SAME appliers the file
+  // import uses (compileNewsReport → applyProject's calls), so the bridge and the file path
+  // cannot drift: avatar, voice rate/pitch, look, lights/studio/idle/headline, backScreen.
+  if (nr) await applyNewsChrome(app, c, nr);
   // Decode the imported audio cues' files so the LIVE preview actually plays them —
   // scheduleAudioCues plays from decoded buffers, and without this only the export (which
   // fetches per-cue itself) had the beds while the preview was silently music-less.
   if (audio?.length) {
     await c.timeline.loadAudioAssets(async (src) => {
-      const url = /^https?:\/\//.test(src) || src.startsWith('/') ? src : r2Url(src);
-      const r = await fetch(url);
+      const r = await fetch(resolveAssetUrl(src));
       if (!r.ok) throw new Error(`asset ${r.status}`);
       return r.blob();
     });
   }
-  const perf = await c.projects.importScore(score, stage, timings, audio);
+  if (slides?.length) await app.studio.preloadSlideImages(slides.map((s) => s.slide.image).filter((u): u is string => !!u));
+  const perf = await c.projects.importScore(score, stage, timings, audio, { nr, slides });
   return { beats: perf.beats.length, lowered };
+}
+
+/**
+ * Apply a NewsReportDoc's non-performance chrome through the SAME appliers projectStore's
+ * applyProject uses — one lowering (compileNewsReport), two entry points, parity by
+ * construction. The performance itself (beats/camera/gestures/slides/audio) is owned by the
+ * Score pipeline; this handles only the studio-surface state the Score has no grammar for.
+ */
+async function applyNewsChrome(app: StudioContext, c: BridgeControllers, nr: NewsReportDoc): Promise<void> {
+  const { project } = compileNewsReport(nr);
+  const d = app.dom;
+  c.voices.apply(project); // voiceId + rate + pitch
+  d.emotionSel.value = project.emotion ?? 'neutral';
+  app.avatar.setEmotion(d.emotionSel.value as never);
+  c.lighting.apply(project); // studioOn / idleMotion / headline / lights
+  c.look.apply(project);
+  await c.library.apply(project); // avatarUrl (loads the anchor's avatar)
+  c.backScreen.apply(project, r2Url);
 }
 
 /** Sanitize a title into a project-name token (mirrors projectStore's sanitize). */
@@ -528,26 +557,6 @@ function deepMerge(base: unknown, patch: unknown): unknown {
 }
 
 /**
- * What THIS doc authors that the Score bridge path (apply_newscast → compileNewsReportToScore)
- * does not carry — the channels the legacy file-import (importNewsReport → applyProject) applies
- * but Score has no grammar for yet. Surfaced by validate_newscast so automation callers learn
- * about the degradation up-front. Remove entries as the compile-path unification lands them.
- */
-function scorePathLossWarnings(doc: NewsReportDoc): string[] {
-  const w: string[] = [];
-  const a0 = doc.meta.anchors[0];
-  if (a0?.avatarUrl) w.push('avatar selection (meta.anchors[].avatarUrl) is NOT applied by apply_newscast — call set_avatar separately');
-  if (a0 && (a0.rate !== 1 || a0.pitch !== 1)) w.push('anchor voice rate/pitch are NOT applied — call set_voice separately');
-  if (doc.look) w.push('look/lighting (doc.look) is NOT applied');
-  if (doc.rundown.some((s) => s.headline || s.ticker || s.graphic || s.bullets.length > 0))
-    w.push('wall slides (section headline/bullets/ticker/graphic) are NOT rendered — call set_headline / set_backscreen_media separately');
-  if (doc.rundown.some((s) => s.set?.backScreen)) w.push('section backScreen media is NOT applied');
-  if (doc.defaults?.camera?.preset || doc.rundown.some((s) => s.cameraDefault?.preset || s.beats.some((b) => b.camera?.preset)))
-    w.push('camera shot presets (camera.preset) lower to a plain shot bucket on this path');
-  return w;
-}
-
-/**
  * Repopulate the studio authoring surface from an imported Score so the newscast is
  * previewable/exportable: the script editor (joined beat text), the timeline narration cues
  * (laid out on the same per-beat clock) plus any recovered audio cues, the voice selector, and
@@ -559,7 +568,7 @@ function populateStudioFromScore(
   score: Score,
   timings: AudioTimings,
   audio: AudioCue[] | undefined,
-  opts: { name?: string; voiceId?: string },
+  opts: { name?: string; voiceId?: string; slides?: { tSec: number; slide: SlideContent }[] },
 ): void {
   const d = app.dom;
   // Script editor: the spoken text, one beat per sentence. Fire 'input' so the overlay
@@ -608,6 +617,11 @@ function populateStudioFromScore(
         label: a.label ?? a.kind,
       });
     }
+  }
+  // Wall slides → graphics cues so the editor shows the deck (the take itself is driven by
+  // Performance.slides — same payloads, same clock).
+  for (const s of opts.slides ?? []) {
+    cues.push({ id: cueId(), track: 'graphics', type: 'graphic.slide', start: s.tSec, duration: 0, slide: s.slide });
   }
   const total = timings.beats.at(-1)?.endSec ?? 0;
   // Clean-slate import (NOT setNarrationCues, whose keep-audio/graphics merge is meant for a

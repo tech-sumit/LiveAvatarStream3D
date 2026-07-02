@@ -1,5 +1,5 @@
-import { validateNewsReportDoc, compileNewsReport, validateScore, compileScore } from '@las/protocol';
-import type { Stage, AudioTimings, Performance, AudioCue } from '@las/protocol';
+import { validateNewsReportDoc, compileNewsReport, validateScore } from '@las/protocol';
+import type { Stage, AudioTimings, Performance, AudioCue, NewsReportDoc, SlideContent } from '@las/protocol';
 import { r2Available, r2GetJson, r2List, r2PutBlob, r2PutJson, r2Url } from '../storage/r2.js';
 import type { Cue } from '../timeline/types.js';
 import type { StudioContext } from './context.js';
@@ -229,10 +229,24 @@ export class ProjectStore {
    * and the offline export consume. This is the *defined consumer* of a compiled Performance
    * (the path the original plan left unwired). Returns the compiled `Performance`.
    */
-  async importScore(doc: unknown, stage: Stage, timings: AudioTimings, audio?: AudioCue[]): Promise<Performance> {
+  async importScore(
+    doc: unknown,
+    stage: Stage,
+    timings: AudioTimings,
+    audio?: AudioCue[],
+    extra?: { nr?: NewsReportDoc; slides?: { tSec: number; slide: SlideContent }[] },
+  ): Promise<Performance> {
     const score = validateScore(doc);
-    const perf = compileScore(stage, score, timings, undefined, audio && audio.length ? { audio } : undefined);
-    this.c.performer.loadPerformance(perf);
+    // performer.loadScore compiles the provisional Performance AND retains the Score, so
+    // Generate can recompile direction + chrome against the real TTS clock.
+    const perf = this.c.performer.loadScore({
+      score,
+      stage,
+      timings,
+      ...(extra?.nr ? { nr: extra.nr } : {}),
+      ...(audio?.length ? { audio } : {}),
+      ...(extra?.slides?.length ? { slides: extra.slides } : {}),
+    });
     this.app.log(`imported Score → ${perf.beats.length} beat(s) on stage "${stage.id}".`);
     return perf;
   }

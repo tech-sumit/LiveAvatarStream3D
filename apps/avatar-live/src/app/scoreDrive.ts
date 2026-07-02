@@ -1,7 +1,8 @@
 import type { Performance, SlideContent } from '@las/protocol';
 import { GESTURE_KIND_TO_CLIP, EMOTION_ENERGY } from '@las/protocol';
 import type { GestureKind } from '@las/protocol';
-import { resolveGesture } from '@las/performer-core';
+import { CAMERA_SHOTS, resolveGesture, sampleShot } from '@las/performer-core';
+import type { Pose as CorePose, Subject as CoreSubject } from '@las/performer-core';
 import type { MouthCue } from '../avatar/avatarController.js';
 import type { EmotionName } from '../avatar/emotion.js';
 import { selectTalkClip } from '../avatar/gestures.js';
@@ -126,6 +127,14 @@ export class ScoreDrive {
   private readonly _gazeScratch = { x: 0, y: 0, z: 0 };
   private readonly _camPos = { x: 0, y: 0, z: 0 };
   private readonly _camTgt = { x: 0, y: 0, z: 0 };
+  // Preset-keyframe resolution scratch (rule C — the per-frame camera path allocates nothing):
+  // two reusable Subjects and the three subject-list shapes sampleShot can take.
+  private readonly _presetAnchor: CoreSubject = { pos: [0, 0, 0], size: 1 };
+  private readonly _presetScreen: CoreSubject = { pos: [0, 0, 0], size: 1 };
+  private readonly _presetAnchorOnly: CoreSubject[] = [this._presetAnchor];
+  private readonly _presetScreenOnly: CoreSubject[] = [this._presetScreen];
+  private readonly _presetBoth: CoreSubject[] = [this._presetAnchor, this._presetScreen];
+  private readonly _presetPose: CorePose = { pos: [0, 0, 0], target: [0, 0, 0], fov: 0 };
 
   constructor(
     private stage: StageLike,
@@ -318,6 +327,42 @@ export class ScoreDrive {
     if (idx < 0) return;
     const kf = perf.camera[idx];
     if (!kf) return;
+
+    if (kf.preset) {
+      // Catalog shot-preset keyframe: resolve against the LIVE avatar every frame (the
+      // compile-time snapshot in pos/target/fov assumed a nominal head height). sampleShot
+      // handles the push-in progression from t − tSec, dutch roll, and — because we re-sample
+      // per frame — a walking anchor. Identical on the live and export clocks (live == export).
+      const shot = CAMERA_SHOTS[kf.preset];
+      if (shot) {
+        const hc = this.avatar.headCenter;
+        const root = this.avatar.group.position;
+        this._presetAnchor.pos[0] = hc.x + root.x;
+        this._presetAnchor.pos[1] = hc.y + root.y;
+        this._presetAnchor.pos[2] = hc.z + root.z;
+        this._presetAnchor.size = this.avatar.headHeight;
+        this._presetScreen.pos[0] = this.screenAnchor.screen.x;
+        this._presetScreen.pos[1] = this.screenAnchor.screen.y;
+        this._presetScreen.pos[2] = this.screenAnchor.screen.z;
+        const subjects =
+          shot.subject === 'both'
+            ? this._presetBoth
+            : shot.subject === 'screen'
+              ? this._presetScreenOnly
+              : this._presetAnchorOnly;
+        const pose = sampleShot(shot, subjects, Math.max(0, t - kf.tSec), this._presetPose);
+        this._camPos.x = pose.pos[0];
+        this._camPos.y = pose.pos[1];
+        this._camPos.z = pose.pos[2];
+        this._camTgt.x = pose.target[0];
+        this._camTgt.y = pose.target[1];
+        this._camTgt.z = pose.target[2];
+        this.cameraArmed = true;
+        this.stage.setCameraPose(this._camPos, this._camTgt, pose.fov, pose.roll ?? 0);
+        return;
+      }
+      // Unknown preset id (schema carries plain string): fall through to the snapshot pose.
+    }
 
     if (kf.follow) {
       // follow keyframe: re-frame the two-shot every frame against the live (walked) avatar

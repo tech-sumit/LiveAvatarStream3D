@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { resolveGesture } from '@las/performer-core';
 import { Stage } from './stage.js';
-import { Score, AudioTimings, GestureKind } from './score.js';
+import { Score, AudioTimings, GestureKind, validateScore } from './score.js';
 import { Performance } from './performance.js';
-import { compileScore, compileNewsReportToScore, newsReportAudio } from './scoreCompile.js';
+import { compileScore, compileNewsReportToScore, newsReportAudio, newsReportChrome } from './scoreCompile.js';
 import { GESTURE_KIND_TO_CLIP } from './presets.js';
 import * as presets from './presets.js';
 import { NewsReportDoc } from './newsreport.js';
@@ -514,5 +514,87 @@ describe('g1: CAMERA_SIZE_PRESET removed; composeShot is the single source for s
     expect(kf.pos).toEqual([expected.pos[0], expected.pos[1], expected.pos[2]]);
     expect(kf.target).toEqual([expected.target[0], expected.target[1], expected.target[2]]);
     expect(kf.fov).toBe(expected.fov);
+  });
+});
+
+// ── round-2 unification: one clock + presets + slides ───────────────────────────
+describe('newsReportChrome — beds/SFX/slides on the SUPPLIED clock', () => {
+  const doc = NewsReportDoc.parse({
+    version: 2,
+    meta: { title: 'Ed', anchors: [{ id: 'a', name: 'A', avatarUrl: 'u', voiceId: 'v' }] },
+    defaults: { music: { src: 'bed.mp3', volume: 0.3, fadeIn: 1, fadeOut: 2 } },
+    rundown: [
+      { id: 's1', slug: 'one', headline: 'H1', beats: [{ id: 'b1', text: 'First beat.' }, { id: 'b2', text: 'Second beat.' }] },
+      { id: 's2', slug: 'two', headline: 'H2', beats: [{ id: 'b3', text: 'Third beat.' }], audio: [{ id: 'x', kind: 'sfx', src: 's.mp3', start: 0.5 }] },
+    ],
+  });
+  // A deliberately non-uniform clock (like real TTS): beats of 2.0s, 4.5s, 3.0s with gaps.
+  const timings = {
+    beats: [
+      { startSec: 0, endSec: 2.0, words: [] },
+      { startSec: 2.2, endSec: 6.7, words: [] },
+      { startSec: 7.0, endSec: 10.0, words: [] },
+    ],
+  };
+
+  it('section slides start at their first beat startSec from the supplied timings', () => {
+    const { slides } = newsReportChrome(doc, timings);
+    expect(slides.map((s) => s.tSec)).toEqual([0, 7.0]); // s2 starts at beat 3's real start
+    expect(slides[0]!.slide.headline).toBe('H1');
+    expect(slides[1]!.slide.headline).toBe('H2');
+  });
+
+  it('section SFX re-base on the same clock; the music bed spans the real total', () => {
+    const { audio } = newsReportChrome(doc, timings);
+    const sfx = audio.find((a) => a.id === 'x')!;
+    expect(sfx.start).toBeCloseTo(7.5, 6); // section-2 real start (7.0) + authored 0.5
+    const bed = audio.find((a) => a.id === 'music-bed')!;
+    expect(bed.duration).toBeCloseTo(10.0, 6); // last beat endSec — not a WPM estimate
+  });
+});
+
+describe('compileNewsReportToScore — camera presets carried (not dropped to medium)', () => {
+  it('lowers beat.camera.preset to a Score preset cue with no spurious frame cue', () => {
+    const doc = NewsReportDoc.parse({
+      version: 2,
+      meta: { title: 'T', anchors: [{ id: 'a', name: 'A', avatarUrl: 'u', voiceId: 'v' }] },
+      rundown: [{ id: 's', slug: 's', beats: [
+        { id: 'b1', text: 'One.', camera: { preset: 'dutch' } },
+        { id: 'b2', text: 'Two.' }, // carried forward — no re-emit
+        { id: 'b3', text: 'Three.', camera: { preset: 'push-in' } },
+      ] }],
+    });
+    const score = compileNewsReportToScore(doc);
+    const cams = score.beats.flatMap((b) => b.cues.filter((q) => 'camera' in q)) as { camera: Record<string, unknown> }[];
+    expect(cams.length).toBe(2); // dutch at b1, push-in at b3 (b2 carries forward)
+    expect(cams[0]!.camera.preset).toBe('dutch');
+    expect(cams[1]!.camera.preset).toBe('push-in');
+    expect(cams.some((q) => 'frame' in q.camera)).toBe(false);
+  });
+
+  it('a preset keyframe compiles with the preset id + a finite snapshot pose', () => {
+    const score = validateScore({
+      stage: 'newsroom',
+      beats: [{ text: 'Hello there.', cues: [{ camera: { preset: 'hero-low' } }] }],
+    });
+    const stage = Stage.parse({ id: 'newsroom', marks: [], targets: [], savedShots: [], cameras: [], lights: [], props: [] });
+    const perf = compileScore(stage, score, { beats: [{ startSec: 0, endSec: 2, words: [] }] });
+    const kf = perf.camera.find((k) => k.preset === 'hero-low')!;
+    expect(kf).toBeTruthy();
+    for (const n of [...kf.pos, ...kf.target, kf.fov]) expect(Number.isFinite(n)).toBe(true);
+    expect(kf.fov).toBeGreaterThan(0);
+  });
+});
+
+describe('compileScore — extra.slides land on Performance.slides (was hardcoded [])', () => {
+  it('threads + sorts the slides channel', () => {
+    const score = validateScore({ stage: 'newsroom', beats: [{ text: 'Hi.', cues: [] }] });
+    const stage = Stage.parse({ id: 'newsroom', marks: [], targets: [], savedShots: [], cameras: [], lights: [], props: [] });
+    const slides = [
+      { tSec: 5, slide: { kicker: 'LIVE', headline: 'B', bullets: [], ticker: 't' } },
+      { tSec: 0, slide: { kicker: 'LIVE', headline: 'A', bullets: [], ticker: 't' } },
+    ];
+    const perf = compileScore(stage, score, { beats: [{ startSec: 0, endSec: 1, words: [] }] }, undefined, { slides });
+    expect(perf.slides.map((s) => s.slide.headline)).toEqual(['A', 'B']); // sorted by tSec
   });
 });

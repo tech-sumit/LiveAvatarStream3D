@@ -54,9 +54,18 @@ function makeApp(voices: string[] = ['voice-xyz']) {
     scriptEl: inputStub(),
     voiceSel: selectStub(voices),
     projectNameEl: inputStub(),
+    emotionSel: selectStub(['neutral', 'warm']),
   };
   const logs: string[] = [];
-  return { app: { dom, log: (m: string) => logs.push(m) } as unknown as Parameters<typeof createDispatcher>[0], dom, logs };
+  let busy = false;
+  const app = {
+    dom,
+    log: (m: string) => logs.push(m),
+    avatar: { setEmotion: () => undefined },
+    studio: { preloadSlideImages: async () => undefined },
+    isBusy: () => busy,
+  } as unknown as Parameters<typeof createDispatcher>[0];
+  return { app, dom, logs, setBusy: (v: boolean) => (busy = v) };
 }
 
 interface ImportCall {
@@ -64,6 +73,7 @@ interface ImportCall {
   stage: Stage;
   timings: AudioTimings;
   audio?: AudioCue[];
+  slides?: { tSec: number; slide: unknown }[];
 }
 interface NarrationCall {
   cues: { track: string; text?: string; src?: string; label?: string }[];
@@ -92,9 +102,19 @@ function makeControllers() {
     // Mirror the REAL importScore: thread `audio` into compileScore's { audio } extra so the
     // assertion proves the bed/SFX actually survive onto the compiled Performance, and call
     // performer.loadPerformance (as projectStore.importScore does) so the order is observable.
-    async importScore(score: unknown, stage: Stage, timings: AudioTimings, audio?: AudioCue[]): Promise<Performance> {
-      importCalls.push({ score, stage, timings, audio });
-      const perf = compileScore(stage, validateScore(score), timings, undefined, audio && audio.length ? { audio } : undefined);
+    async importScore(
+      score: unknown,
+      stage: Stage,
+      timings: AudioTimings,
+      audio?: AudioCue[],
+      extra?: { slides?: { tSec: number; slide: unknown }[] },
+    ): Promise<Performance> {
+      importCalls.push({ score, stage, timings, audio, slides: extra?.slides });
+      // Mirror the REAL importScore → performer.loadScore compile (audio + slides threaded).
+      const perf = compileScore(stage, validateScore(score), timings, undefined, {
+        ...(audio && audio.length ? { audio } : {}),
+        ...(extra?.slides?.length ? { slides: extra.slides as never } : {}),
+      });
       performer.loadPerformance();
       return perf;
     },
@@ -108,8 +128,15 @@ function makeControllers() {
     // Decodes imported audio-cue files for the live preview; a stub no-op here.
     async loadAudioAssets() {},
   };
-  const c = { projects, timeline, performer } as unknown as BridgeControllers;
-  return { c, importCalls, narrationCalls, getInvalidated: () => invalidated, getOrder: () => order };
+  // Chrome appliers (the applyNewsChrome parity surface) — each records what it received.
+  const chrome: Record<string, unknown[]> = { voices: [], lighting: [], look: [], library: [], backScreen: [] };
+  const voices = { apply: (doc: unknown) => chrome.voices!.push(doc) };
+  const lighting = { apply: (doc: unknown) => chrome.lighting!.push(doc) };
+  const look = { apply: (doc: unknown) => chrome.look!.push(doc) };
+  const library = { apply: async (doc: unknown) => void chrome.library!.push(doc) };
+  const backScreen = { apply: (doc: unknown) => chrome.backScreen!.push(doc) };
+  const c = { projects, timeline, performer, voices, lighting, look, library, backScreen } as unknown as BridgeControllers;
+  return { c, importCalls, narrationCalls, chrome, getInvalidated: () => invalidated, getOrder: () => order };
 }
 
 // ── [0] music bed + SFX survive onto Performance.audio ──────────────────────────
@@ -257,5 +284,129 @@ describe('applyNewscast lands the authored Performance after invalidating the pr
     // authoredPerf would be cleared and export would rebuild from the script.
     expect(order.indexOf('invalidate')).toBeLessThan(order.indexOf('load'));
     expect(order.lastIndexOf('invalidate')).toBeLessThan(order.indexOf('load'));
+  });
+});
+
+// ── round-2 unification: bridge chrome parity + slides + one clock ───────────────
+describe('applyNewscast carries FULL chrome (parity with the file-import path)', () => {
+  // A chrome-rich doc: look, section slides (headline/bullets/ticker/graphic), backScreen,
+  // rate/pitch, and a camera preset — everything the Score path used to drop.
+  const RICH = {
+    ...NEWSCAST,
+    look: { preset: 'noir', contrast: 0.3 },
+    meta: {
+      title: 'Evening Edition',
+      anchors: [{ id: 'a1', name: 'Ava', avatarUrl: 'avaturn-model', voiceId: 'voice-xyz', rate: 1.1, pitch: 0.9 }],
+    },
+    rundown: [
+      {
+        id: 's1',
+        slug: 'intro',
+        headline: 'Top Story Tonight',
+        bullets: ['point one'],
+        ticker: 'BREAKING · MARKETS UP',
+        set: { mode: 'virtual', backScreen: { kind: 'url', src: 'https://example.com/wall.mp4' } },
+        beats: [{ id: 'b1', text: 'Good evening and welcome to the broadcast.', camera: { preset: 'hero-low' } }],
+      },
+      {
+        id: 's2',
+        slug: 'markets',
+        headline: 'Markets Rally',
+        graphic: { kind: 'r2', src: 'assets/markets.png' },
+        beats: [{ id: 'b2', text: 'Markets rose today across the board.' }],
+        audio: [{ id: 'sfx1', kind: 'sfx', src: '/sfx/whoosh.mp3', start: 0.5, duration: 1 }],
+      },
+    ],
+  };
+
+  it('applies avatar, voice rate/pitch, look, lighting, and backScreen via the shared appliers', async () => {
+    const { app } = makeApp();
+    const { c, chrome } = makeControllers();
+    const dispatch = createDispatcher(app, c);
+    await dispatch('applyNewscast', { doc: RICH });
+
+    // The SAME values compileNewsReport lowers for the file path (parity by construction).
+    const { compileNewsReport, validateNewsReportDoc: v } = await import('@las/protocol');
+    const { project } = compileNewsReport(v(RICH));
+
+    const voicesCall = chrome.voices!.at(-1) as { voiceId: string; rate: number; pitch: number };
+    expect(voicesCall.voiceId).toBe('voice-xyz');
+    expect(voicesCall.rate).toBeCloseTo(1.1, 6);
+    expect(voicesCall.pitch).toBeCloseTo(0.9, 6);
+
+    const libraryCall = chrome.library!.at(-1) as { avatarUrl: string };
+    expect(libraryCall.avatarUrl).toBe('avaturn-model');
+
+    const lightingCall = chrome.lighting!.at(-1) as { studioOn?: boolean; headline?: string };
+    expect(lightingCall.studioOn).toBe(project.studioOn);
+    expect(lightingCall.headline).toBe(project.headline);
+
+    const lookCall = chrome.look!.at(-1) as { look?: { preset?: string } };
+    expect(lookCall.look?.preset).toBe('noir');
+
+    const backScreenCall = chrome.backScreen!.at(-1) as { backScreen?: { src: string } | null };
+    expect(backScreenCall.backScreen?.src).toBe('https://example.com/wall.mp4');
+  });
+
+  it('threads wall slides into Performance.slides AND the timeline graphics cues, on one clock', async () => {
+    const { app } = makeApp();
+    const { c, importCalls, narrationCalls } = makeControllers();
+    const dispatch = createDispatcher(app, c);
+    await dispatch('applyNewscast', { doc: RICH });
+
+    const call = importCalls.at(-1)!;
+    expect(call.slides?.length).toBe(2); // one per section
+    const slide0 = call.slides![0]!.slide as { headline: string; ticker: string; bullets: string[] };
+    expect(slide0.headline).toBe('Top Story Tonight');
+    expect(slide0.ticker).toBe('BREAKING · MARKETS UP');
+    expect(slide0.bullets).toEqual(['point one']);
+    // The R2 graphic key resolves to the proxy url shape for the image cache.
+    const slide1 = call.slides![1]!.slide as { image?: string };
+    expect(slide1.image).toBe('/r2/o/assets/markets.png');
+
+    // Section 2's slide starts at its first beat's startSec on the SAME timings clock.
+    expect(call.slides![1]!.tSec).toBeCloseTo(call.timings.beats[1]!.startSec, 1);
+
+    // The compiled Performance carries them (compileScore extra.slides — was hardcoded []).
+    const perf = compileScore(call.stage, validateScore(call.score), call.timings, undefined, {
+      slides: call.slides as never,
+    });
+    expect(perf.slides.length).toBe(2);
+
+    // The editor sees them too: graphics cues in the clean-slate import.
+    const cues = narrationCalls.at(-1)!.cues;
+    expect(cues.filter((x) => x.track === 'graphics').length).toBe(2);
+  });
+
+  it('lowers a camera preset into the Score (no spurious medium frame cue)', async () => {
+    const { app } = makeApp();
+    const { c, importCalls } = makeControllers();
+    const dispatch = createDispatcher(app, c);
+    await dispatch('applyNewscast', { doc: RICH });
+
+    const score = validateScore(importCalls.at(-1)!.score);
+    const camCues = score.beats.flatMap((b) => b.cues.filter((q) => 'camera' in q)) as { camera: unknown }[];
+    expect(camCues.some((q) => (q.camera as { preset?: string }).preset === 'hero-low')).toBe(true);
+    // No shot-bucket frame cue emitted alongside the preset.
+    expect(camCues.some((q) => 'frame' in (q.camera as object))).toBe(false);
+
+    // …and the compiled keyframe carries the preset for the runtime resolver.
+    const call = importCalls.at(-1)!;
+    const perf = compileScore(call.stage, score, call.timings);
+    expect(perf.camera.some((k) => k.preset === 'hero-low')).toBe(true);
+  });
+});
+
+// ── busy guard: apply_newscast must refuse to run under a take/export ────────────
+describe('applyNewscast busy guard (parity with applyProject)', () => {
+  it('rejects while the studio is busy — no chrome/timeline mutation lands mid-export', async () => {
+    const { app, setBusy } = makeApp();
+    const { c, importCalls, narrationCalls, chrome } = makeControllers();
+    const dispatch = createDispatcher(app, c);
+    setBusy(true);
+    await expect(dispatch('applyNewscast', { doc: NEWSCAST })).rejects.toThrow(/busy/i);
+    expect(importCalls.length).toBe(0);
+    expect(narrationCalls.length).toBe(0);
+    expect(chrome.library!.length).toBe(0);
   });
 });

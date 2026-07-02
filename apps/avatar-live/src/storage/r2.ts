@@ -61,3 +61,12 @@ export async function r2GetBlob(key: string): Promise<Blob> {
 export function r2Url(key: string): string {
   return `/r2/o/${encodePath(key)}`;
 }
+
+/** Resolve an asset `src` that may be a bare R2 key: absolute/rooted/blob/data URLs pass
+ *  through untouched; anything else is treated as an R2 key (the shape authored newscasts
+ *  store). One shared rule so the audio, slide, and project paths can't drift. */
+export function resolveAssetUrl(src: string): string {
+  return /^https?:\/\//.test(src) || src.startsWith('/') || src.startsWith('blob:') || src.startsWith('data:')
+    ? src
+    : r2Url(src);
+}
