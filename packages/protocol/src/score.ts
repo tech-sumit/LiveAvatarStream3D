@@ -46,7 +46,7 @@ export const CameraDirective = z.union([
       size: ShotSize.optional(),
       height: z.number().optional(),
       balance: z.number().optional(),
-      lens: z.number().optional(),
+      lens: z.number().positive().finite().optional(), // composeShot divides by tan(lens/2)
     }),
     follow: z.boolean().optional(),
   }),
@@ -66,7 +66,7 @@ export const CameraDirective = z.union([
 export const Cue = z.union([
   z.object({
     at: WordAnchor.optional(),
-    move: z.object({ to: Ref, gait: Gait.optional(), speed: z.number().optional() }),
+    move: z.object({ to: Ref, gait: Gait.optional(), speed: z.number().positive().finite().optional() }),
   }),
   z.object({ at: WordAnchor.optional(), turn: z.object({ to: z.union([Ref, z.number()]) }) }),
   z.object({
@@ -75,8 +75,8 @@ export const Cue = z.union([
       kind: GestureKind,
       target: Ref.optional(),
       hand: z.enum(['auto', 'left', 'right']).optional(),
-      count: z.number().optional(),
-      hold: z.number().optional(),
+      count: z.number().int().min(1).max(10).optional(),
+      hold: z.number().min(0).max(60).optional(),
       amount: z.number().optional(),
     }),
   }),

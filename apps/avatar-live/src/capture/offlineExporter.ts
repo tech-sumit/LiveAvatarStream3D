@@ -16,9 +16,23 @@ export interface OfflineExportOpts {
   /** Per-frame avatar drive (camera/emotion/clip/mouth/step). Caller supplies it. */
   driveFrame: (t: number, dt: number, mouth: MouthCue) => void;
   onProgress?: (done: number, total: number) => void;
+  /** Abort the export (the Cancel button). Rejects with an AbortError DOMException. */
+  signal?: AbortSignal;
 }
 
 const SILENT: MouthCue = { jawOpen: 0, mouthWide: 0, mouthRound: 0, mouthClose: 0 };
+
+// Task-queue yield that is NOT timer-throttled: setTimeout(0) clamps to ~1 s in a backgrounded
+// tab, turning a 60 s export into ~30 extra minutes — and exporting from a hidden tab is a
+// supported flow (the offline loop is exactly what still works there). MessageChannel posts
+// are exempt from background timer throttling.
+const yieldChannel = new MessageChannel();
+function yieldToUi(): Promise<void> {
+  return new Promise((r) => {
+    yieldChannel.port1.onmessage = () => r();
+    yieldChannel.port2.postMessage(null);
+  });
+}
 
 /**
  * Frame-exact offline MP4 export. Drives the clock by frame index (t = i/fps), so
@@ -43,16 +57,26 @@ export async function exportMp4Offline(opts: OfflineExportOpts): Promise<Blob> {
   enc.addAudioTrack();
   await enc.start();
 
-  const dt = 1 / opts.fps;
-  for (let i = 0; i < total; i++) {
-    const t = i / opts.fps;
-    opts.driveFrame(t, dt, mouth[i] ?? SILENT);
-    opts.stage.renderOutputFrame();
-    await enc.addFrame(i);
-    if (opts.onProgress && (i % 5 === 0 || i === total - 1)) opts.onProgress(i + 1, total);
-    if (i % 30 === 0) await new Promise((r) => setTimeout(r, 0)); // let the UI breathe
-  }
+  // Any exit that isn't finish() MUST cancel the encoder — a thrown addFrame/addAudio (encoder
+  // OOM at 4K, HEVC failure) or a user abort would otherwise leak the hardware VideoEncoder
+  // session and pin the in-RAM partial MP4 for the page lifetime.
+  try {
+    const dt = 1 / opts.fps;
+    for (let i = 0; i < total; i++) {
+      if (opts.signal?.aborted) throw new DOMException('export cancelled', 'AbortError');
+      const t = i / opts.fps;
+      opts.driveFrame(t, dt, mouth[i] ?? SILENT);
+      opts.stage.renderOutputFrame();
+      await enc.addFrame(i);
+      if (opts.onProgress && (i % 5 === 0 || i === total - 1)) opts.onProgress(i + 1, total);
+      if (i % 30 === 0) await yieldToUi(); // let the UI breathe (throttle-proof, see yieldToUi)
+    }
 
-  await enc.addAudio(audio);
-  return enc.finish();
+    if (opts.signal?.aborted) throw new DOMException('export cancelled', 'AbortError');
+    await enc.addAudio(audio);
+    return await enc.finish();
+  } catch (err) {
+    await enc.cancel();
+    throw err;
+  }
 }

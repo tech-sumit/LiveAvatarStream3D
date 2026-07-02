@@ -209,7 +209,10 @@ export function applyMotion(type: string, avatar: AvatarController): string | nu
     case 'motion.nod':
       return 'idle_calm';
     case 'motion.explain':
-    default:
       return 'talk1';
+    default:
+      // Unknown motion type: play NOTHING (a typo'd cue silently mimicking 'explain' hid
+      // authoring mistakes). motionCueTurn above already ignored unknown types.
+      return null;
   }
 }

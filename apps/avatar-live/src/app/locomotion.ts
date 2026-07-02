@@ -42,6 +42,9 @@ export class Locomotion {
   private onKeyDown = (e: KeyboardEvent): void => {
     if (this.isTyping(e)) return;
     if (e.key === 'm' || e.key === 'M') {
+      // The open timeline dock owns M (Add-motion modal) — walk-mode toggle would otherwise
+      // ALSO fire on the same keypress (this capture-phase listener never stopped propagation).
+      if (document.querySelector('#app.tl-open')) return;
       this.toggle();
       return;
     }

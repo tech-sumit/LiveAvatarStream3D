@@ -1,5 +1,6 @@
 import type { Env } from '../env.js';
 import type { AvatarProfile, VoiceProfile, Job, JobEvent } from '@las/protocol';
+import { newId, now } from './ids.js';
 
 /** Mapping helpers between D1 rows (snake_case) and protocol types (camelCase). */
 
@@ -108,6 +109,23 @@ export function rowToJobEvent(r: JobEventRow): JobEvent {
     data: r.data_json ? JSON.parse(r.data_json) : undefined,
     at: r.at,
   };
+}
+
+/**
+ * Insert a queued `jobs` row for an enqueue and return its id. Every queue send
+ * must pair with one of these so an operator can always see what was dispatched,
+ * when, and how it ended (GET /api/jobs). `spec` carries the input refs
+ * (avatarId/voiceId/…) and is what a retry re-enqueues.
+ */
+export async function insertJob(env: Env, userId: string, kind: Job['kind'], spec: unknown): Promise<string> {
+  const id = newId('job');
+  const ts = now();
+  await env.DB.prepare(
+    'INSERT INTO jobs (id, user_id, kind, status, spec_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?)',
+  )
+    .bind(id, userId, kind, 'queued', JSON.stringify(spec ?? {}), ts, ts)
+    .run();
+  return id;
 }
 
 /** Ensure a user row exists (no auth; auto-provision the demo namespace). */

@@ -2,7 +2,7 @@ import { TimelinePlayer } from '../timeline/player.js';
 import { TimelineUI } from '../timeline/ui.js';
 import { CATALOG, poseToTuple, poseFor, tupleToPose } from '../timeline/catalog.js';
 import { cueId, type Cue, type PoseTuple, type Timeline } from '../timeline/types.js';
-import type { SlideContent } from '@las/protocol';
+import type { AudioCue as ProtocolAudioCue, SlideContent } from '@las/protocol';
 import type { StudioContext } from './context.js';
 import type { Performer } from './performer.js';
 
@@ -211,32 +211,34 @@ export class TimelineEditor {
   }
 
   /**
-   * The audio-track cues as offline-mixdown clips, from the SAME decoded buffers the live
-   * scheduler plays — so the exported MP4 carries the music/SFX the preview played (the legacy
-   * project/newscast path, where perf.audio is empty). Normalization (default volume, fade
-   * scaling, duration clamp) mirrors scheduleAudioCues exactly. Cues whose file was never
-   * loaded this session surface loudly instead of silently missing from the MP4.
+   * The audio-track cues as protocol AudioCues — folded into the script-derived Performance so
+   * `perf.audio` is the SINGLE audio channel both clocks consume (the bridge path authors its
+   * own via newsReportChrome). A session-only cue (a dropped file with no src) gets a
+   * `session:` pseudo-src: both consumers resolve by cue id from the decoded buffers FIRST,
+   * so src is only the export's fetch fallback — and a missing session asset fails loudly.
    */
-  exportAudioClips(): { buffer: AudioBuffer; start: number; volume: number; fadeIn: number; fadeOut: number; durationSec: number }[] {
-    const clips: { buffer: AudioBuffer; start: number; volume: number; fadeIn: number; fadeOut: number; durationSec: number }[] = [];
-    for (const c of this.timeline.cues) {
-      if (c.track !== 'audio') continue;
-      const buf = this.audioBuffers.get(c.id);
-      if (!buf) {
-        this.app.log(`export: audio cue "${c.label ?? c.src ?? c.id}" has no loaded file — it will be missing from the MP4.`);
-        continue;
-      }
-      const len = Math.min(buf.duration, c.duration);
-      let fi = Math.max(0, c.fadeIn ?? 0);
-      let fo = Math.max(0, c.fadeOut ?? 1);
-      if (fi + fo > len && fi + fo > 0) {
-        const s = len / (fi + fo);
-        fi *= s;
-        fo *= s;
-      }
-      clips.push({ buffer: buf, start: c.start, volume: c.volume ?? 0.8, fadeIn: fi, fadeOut: fo, durationSec: len });
-    }
-    return clips;
+  perfAudioCues(): ProtocolAudioCue[] {
+    return this.timeline.cues
+      .filter((c) => c.track === 'audio')
+      .map((c) => ({
+        id: c.id,
+        kind: 'bed' as const,
+        src: c.src ?? `session:${c.id}`,
+        start: c.start,
+        duration: c.duration,
+        volume: c.volume ?? 0.8,
+        fadeIn: c.fadeIn ?? 0,
+        // 1 s default fade-out (the old live scheduler's behavior) — baked into the MAPPING so
+        // live and export get the same gentle bed tail (the export used to hard-cut at 0).
+        fadeOut: c.fadeOut ?? 1,
+        ...(c.label ? { label: c.label } : {}),
+      }));
+  }
+
+  /** Decoded buffer for an audio cue id — the shared lookup both the live scheduler and the
+   *  export mixdown prefer over a network fetch. */
+  decodedBuffer(id: string): AudioBuffer | undefined {
+    return this.audioBuffers.get(id);
   }
 
   /**
@@ -269,17 +271,26 @@ export class TimelineEditor {
     this.ui?.reload();
   }
 
-  scheduleAudioCues(ctx: AudioContext, startAt: number): void {
-    for (const c of this.timeline.cues) {
-      if (c.track !== 'audio') continue;
+  /**
+   * Schedule a Performance's audio channel (beds/SFX) for the live take — `perf.audio` is the
+   * SINGLE audio source shared with the export mixdown, so the preview can never play different
+   * music than the MP4 ships. Buffers resolve by cue id (decoded at import/add time); a missing
+   * one is logged loudly (live can't block on a fetch mid-take). `duration ≤ 0` means "whole
+   * buffer" (the protocol AudioCue default) — matching clipFromCue's export clamp exactly.
+   */
+  schedulePerfAudio(cues: readonly ProtocolAudioCue[], ctx: AudioContext, startAt: number): void {
+    for (const c of cues) {
       const buf = this.audioBuffers.get(c.id);
-      if (!buf) continue; // file not loaded this session (e.g. after a reload)
+      if (!buf) {
+        this.app.log(`take: audio cue "${c.label ?? c.src}" has no decoded file — skipped in the live mix.`);
+        continue;
+      }
       const vol = c.volume ?? 0.8;
-      const len = Math.min(buf.duration, c.duration);
+      const len = Math.min(buf.duration, c.duration > 0 ? c.duration : buf.duration);
       const t0 = startAt + c.start;
       const tEnd = t0 + len;
       let fi = Math.max(0, c.fadeIn ?? 0);
-      let fo = Math.max(0, c.fadeOut ?? 1);
+      let fo = Math.max(0, c.fadeOut ?? 0);
       if (fi + fo > len && fi + fo > 0) {
         const s = len / (fi + fo);
         fi *= s;

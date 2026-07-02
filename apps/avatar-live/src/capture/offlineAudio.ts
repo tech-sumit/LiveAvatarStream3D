@@ -97,6 +97,15 @@ async function fetchDecodeAudio(src: string, ctx: BaseAudioContext): Promise<Aud
 export async function audioCuesToClips(
   cues: readonly AudioCue[],
   ctx: BaseAudioContext,
+  lookupBuffer?: (id: string) => AudioBuffer | undefined,
 ): Promise<AudioClip[]> {
-  return Promise.all(cues.map(async (cue) => clipFromCue(cue, await fetchDecodeAudio(cue.src, ctx))));
+  return Promise.all(
+    cues.map(async (cue) => {
+      // Prefer the timeline's already-decoded buffer (the SAME bytes the live take played);
+      // fetch by src only as the fallback. A `session:` pseudo-src with no decoded buffer
+      // fails loudly here — the asset genuinely no longer exists.
+      const cached = lookupBuffer?.(cue.id);
+      return clipFromCue(cue, cached ?? (await fetchDecodeAudio(cue.src, ctx)));
+    }),
+  );
 }

@@ -147,15 +147,6 @@ export class Stage {
     this.hideInOutput.push(obj);
   }
 
-  /** Aim the camera at the face (head center) at eye level; distance from the
-   *  head height + shot. Camera height is aligned to the face for every shot.
-   *
-   *  NOTE: the manual shot-selector framing is a DISTINCT system from the timeline-cue
-   *  presets (`catalog.poseFor` → composeShot): its medium (5.5 heads / 0.6 drop) and wide
-   *  (8.0 heads / 1.1 drop) differ from the cue presets (anchor is absolute; cue-wide is 9.0
-   *  heads), and it deliberately never changes the camera fov. composeShot has no size that
-   *  reproduces those exact numbers, so routing this through it would change the DEFAULT
-   *  (medium) shot — unifying it into the spatial Score model is deferred (Score/Stage). */
   /** Restore a level horizon (world up). The dutch shot preset cants `camera.up` (a canted
    *  view axis) via setCameraPose; that up-vector is shared mutable state, so EVERY other
    *  framing op (and a fresh manual orbit) calls this first to clear a stale dutch tilt — only
@@ -164,20 +155,10 @@ export class Stage {
     this.camera.up.set(0, 1, 0);
   }
 
-  frame(headCenter: THREE.Vector3, headHeight: number, shot: Shot = 'medium', snap = true): void {
-    // News framing: eye-level camera; the look-at drops slightly toward the chest (more
-    // on wider shots) so the frame reveals neck + torso while keeping the FACE comfortably
-    // in the upper third — a head-and-shoulders anchor shot, not a torso crop.
-    this.levelUp();
-    const factor = shot === 'close' ? 4.0 : shot === 'medium' ? 5.5 : 8.0;
-    const drop = shot === 'close' ? 0.25 : shot === 'medium' ? 0.6 : 1.1;
-    const dist = headHeight * factor;
-    this.controls.target.set(headCenter.x, headCenter.y - headHeight * drop, headCenter.z);
-    if (snap) {
-      this.camera.position.set(headCenter.x, headCenter.y, headCenter.z + dist);
-    }
-    this.controls.update();
-  }
+  // (The old `frame()` shot-selector method is GONE: it was the second, differently-numbered
+  //  framing system the system review flagged — every caller now routes through applyShot →
+  //  the shared @las/performer-core shot-preset catalog, so close/medium/wide have ONE source
+  //  of truth and the fov follows the preset.)
 
   /** Snap the current free camera to look at the face at eye level, preserving
    *  the horizontal direction + distance (the one-shot "align to face").

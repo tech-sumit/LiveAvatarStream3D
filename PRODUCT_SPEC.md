@@ -1,5 +1,15 @@
 # LiveAvatarStream — Product Spec
 
+> **⚠️ Scope note (2026-06-26):** Historical — this spec describes the pre-2026-06-26
+> multi-path product (2D GPU talking-head generation + realtime streaming). The repo was
+> consolidated and is now a **browser-only 3D talking-avatar studio**: `apps/avatar-live`
+> renders a lip-synced Three.js avatar and exports MP4 client-side (WebCodecs); there is no
+> GPU render server. The 2D (EchoMimicV3) + MuseTalk realtime paths moved to
+> `../LiveAvatarStream`; the headless `engine-three` renderer was removed. The journeys below
+> that involve GPU talking-head rendering (J3 as described) or realtime streaming (J4) no
+> longer apply here. See `ARCHITECTURE.md` (scope note), `CLAUDE.md`, and
+> `docs/specs/2026-06-25-performance-score-dsl-design.md`.
+
 ## Vision
 
 An internal, self-hostable tool that turns a short **reference video** of a person plus a **voice sample** into a reusable digital avatar, then drives that avatar two ways:

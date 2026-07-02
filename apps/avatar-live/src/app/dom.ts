@@ -44,6 +44,7 @@ export function bindDom() {
     viewHintEl: $<HTMLDivElement>('viewHint'),
     captureFormatSel: $<HTMLSelectElement>('captureFormat'),
     exportMp4Btn: $<HTMLButtonElement>('exportMp4'),
+    exportCancelBtn: $<HTMLButtonElement>('exportCancel'),
     videoCodecSel: $<HTMLSelectElement>('videoCodec'),
     exportProgressEl: $<HTMLSpanElement>('exportProgress'),
     gateLabelEl: $<HTMLSpanElement>('gateLabel'),
