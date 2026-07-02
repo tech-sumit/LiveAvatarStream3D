@@ -51,8 +51,14 @@ locomotion.init();
 timeline.init();
 void voices.init();
 void voiceManager.init();
-void library.init();
-void projects.init();
+// SEQUENCED: projects.init ends with the autosave crash-restore, whose applyProject loads
+// the restored avatar + placement — that must run AFTER avatar discovery + the default
+// auto-load (library.init awaits both), or the restored avatar is dropped ("not found")
+// and the default load wipes the restored placement.
+void (async () => {
+  await library.init();
+  await projects.init();
+})();
 initScriptEditor();
 initCollapsibleSections();
 initSliderReadouts();

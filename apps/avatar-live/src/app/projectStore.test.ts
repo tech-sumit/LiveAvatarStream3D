@@ -45,9 +45,14 @@ function makeHarness() {
     isBusy: () => busy,
     avatar: {
       setEmotion: (e: string) => void emotions.push(e),
-      // Placement persistence reads group.position/quaternion and applies via setPosition.
+      // Placement persistence: serialized from the stage HOME (+ idle quaternion), applied
+      // via setPosition + setStageHome + setTurn (mirroring the real controller surface).
       group: { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() },
+      stageHomePos: [0, 0, 0] as [number, number, number],
+      isMoving: false,
       setPosition: (x: number, y: number, z: number) => void positions.push([x, y, z]),
+      setStageHome: () => undefined,
+      setTurn: () => undefined,
     },
     studio: { preloadSlideImages: async (urls: string[]) => void preloaded.push(urls) },
   } as unknown as StudioContext;

@@ -355,12 +355,7 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
         // (mcp/server.ts wires screenshotBlob directly). This dispatcher case remains only
         // for the __las.dispatch debug handle, where a download is the useful behavior.
         const { blob, width, height } = await screenshotBlob(app, c, params);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `studio-screenshot-${width}x${height}.png`;
-        a.click();
-        URL.revokeObjectURL(url);
+        triggerDownload(blob, `studio-screenshot-${width}x${height}.png`);
         return { downloaded: true, width, height, bytes: blob.size };
       }
 
@@ -373,12 +368,7 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
         // WS sink retired — WebMCP's `export_mp4` downloads in-browser (mcp/server.ts).
         // For the __las.dispatch debug handle, do the same.
         const blob = await exportBlob(c);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'studio-export.mp4';
-        a.click();
-        URL.revokeObjectURL(url);
+        triggerDownload(blob, 'studio-export.mp4');
         return { downloaded: true, bytes: blob.size };
       }
 
@@ -535,6 +525,19 @@ async function applyNewsChrome(app: StudioContext, c: BridgeControllers, nr: New
 /** Sanitize a title into a project-name token (mirrors projectStore's sanitize). */
 function sanitizeName(n: string): string {
   return (n.trim() || 'untitled').replace(/[^\w.-]+/g, '_');
+}
+
+/** Download a blob via a DOM-attached anchor; the object URL is revoked on a delay — a
+ *  synchronous revoke after click() can abort the download while still reporting success. */
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

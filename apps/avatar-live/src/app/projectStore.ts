@@ -137,14 +137,17 @@ export class ProjectStore {
   }
 
   /** The gizmo-placed avatar position/orientation — only when it isn't the origin/identity,
-   *  so untouched projects stay clean. */
+   *  so untouched projects stay clean. Position comes from the STAGE HOME (the hand-placed
+   *  spot walks return to), never the live group position — an autosave tick mid-walk must
+   *  not persist a transient. The orientation is likewise only captured while idle. */
   private serializeAvatarPlacement(): Pick<ProjectDoc, 'avatarPlacement'> {
-    const g = this.app.avatar.group;
-    const p = g.position;
-    const q = g.quaternion;
-    const identity = p.lengthSq() < 1e-8 && Math.abs(q.x) < 1e-6 && Math.abs(q.y) < 1e-6 && Math.abs(q.z) < 1e-6;
+    const avatar = this.app.avatar;
+    const [hx, hy, hz] = avatar.stageHomePos;
+    const q = avatar.isMoving ? { x: 0, y: 0, z: 0, w: 1 } : avatar.group.quaternion;
+    const identity =
+      hx * hx + hy * hy + hz * hz < 1e-8 && Math.abs(q.x) < 1e-6 && Math.abs(q.y) < 1e-6 && Math.abs(q.z) < 1e-6;
     if (identity) return {};
-    return { avatarPlacement: { pos: [p.x, p.y, p.z], quat: [q.x, q.y, q.z, q.w] } };
+    return { avatarPlacement: { pos: [hx, hy, hz], quat: [q.x, q.y, q.z, q.w] } };
   }
 
   // Upload session-only assets (audio clips, a back-screen file) to R2 and rewrite
@@ -310,12 +313,20 @@ export class ProjectStore {
     c.lighting.apply(doc);
     c.look.apply(doc);
     await c.library.apply(doc);
-    // AFTER the avatar load (which resets to origin/identity): restore the gizmo placement.
-    // setPosition also re-homes the anchor so walk-to-screen returns to the placed spot.
+    // AFTER the avatar load (which resets to origin/identity): restore the gizmo placement —
+    // mirroring the gizmo handler exactly: position + orientation + RE-HOME (setStageHome, so
+    // walk-to-screen returns to the placed spot instead of walking back to the origin) + the
+    // turn target (avatarController eases group.rotation.y toward turnTarget every frame; left
+    // at 0 it would silently unwind the restored yaw within a second).
     if (doc.avatarPlacement) {
       const { pos, quat } = doc.avatarPlacement;
       app.avatar.setPosition(pos[0], pos[1], pos[2]);
       app.avatar.group.quaternion.set(quat[0], quat[1], quat[2], quat[3]);
+      app.avatar.setStageHome(app.avatar.group.position);
+      let yaw = 2 * Math.atan2(quat[1], quat[3]); // yaw of the (Y-only gizmo) rotation
+      if (yaw > Math.PI) yaw -= 2 * Math.PI;
+      if (yaw < -Math.PI) yaw += 2 * Math.PI;
+      app.avatar.setTurn(yaw);
     }
     c.timeline.applyTimelineDoc(doc.timeline);
     await c.timeline.loadAudioAssets((src) => this.fetchAssetBlob(src));
@@ -333,6 +344,9 @@ export class ProjectStore {
     if (slideUrls.size) await app.studio.preloadSlideImages([...slideUrls]);
     c.backScreen.apply(doc, r2Url);
     app.log(`loaded project "${doc.name}" — ${c.timeline.timeline.cues.length} cue(s).`);
+    // Every load path funnels here: refresh the crash-restore snapshot so an immediate crash
+    // restores what was just applied (the restore log promises "Load a project to discard").
+    this.snapshotNow();
   }
 
   private async loadNamed(name: string): Promise<void> {
@@ -358,18 +372,37 @@ export class ProjectStore {
    *  serialize/quota failure is swallowed (autosave must never break the session it guards). */
   private lastAutosaveJson = '';
   private startAutosave(): void {
+    // Baseline = the untouched boot state: a fresh install that never changes anything never
+    // writes a snapshot (otherwise every boot would "restore" the pristine demo timeline).
+    try {
+      this.lastAutosaveJson = JSON.stringify(this.serializeProject(sanitize(this.app.dom.projectNameEl.value)));
+    } catch {
+      /* baseline is best-effort */
+    }
     window.setInterval(() => {
       if (this.app.isBusy()) return; // never serialize mid-take/export
       try {
         const doc = this.serializeProject(sanitize(this.app.dom.projectNameEl.value));
         const json = JSON.stringify(doc);
         if (json === this.lastAutosaveJson) return; // unchanged — skip the write
-        this.lastAutosaveJson = json;
         localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ ts: Date.now(), doc }));
+        this.lastAutosaveJson = json; // latch only AFTER a successful write (a quota failure retries)
       } catch {
         /* quota / serialize hiccup — try again next tick */
       }
     }, AUTOSAVE_EVERY_MS);
+  }
+
+  /** Refresh the crash-restore snapshot NOW (after an explicit load/import) so a crash inside
+   *  the next 15 s window restores what the user just loaded — not the previous session. */
+  private snapshotNow(): void {
+    try {
+      const doc = this.serializeProject(sanitize(this.app.dom.projectNameEl.value));
+      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ ts: Date.now(), doc }));
+      this.lastAutosaveJson = JSON.stringify(doc);
+    } catch {
+      /* best-effort */
+    }
   }
 
   private async restoreAutosave(): Promise<void> {
