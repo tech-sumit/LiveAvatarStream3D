@@ -1,5 +1,5 @@
 import type { AudioCue } from '@las/protocol';
-import { r2Url } from '../storage/r2.js';
+import { resolveAssetUrl } from '../storage/r2.js';
 
 /** A scheduled non-narration clip (music bed / sfx) for the mixdown. */
 export interface AudioClip {
@@ -79,17 +79,10 @@ export function clipFromCue(cue: AudioCue, buffer: AudioBuffer): AudioClip {
   };
 }
 
-/** An AudioCue.src may be a bare R2 key (authored newscasts store keys, not URLs) — resolve it
- *  the same way projectStore.assetUrl does; absolute/rooted URLs pass through untouched. */
-function resolveAudioSrc(src: string): string {
-  return /^https?:\/\//.test(src) || src.startsWith('/') || src.startsWith('blob:') || src.startsWith('data:')
-    ? src
-    : r2Url(src);
-}
-
-/** Fetch + decode one cue source into an AudioBuffer. No retries — failures surface loudly. */
+/** Fetch + decode one cue source into an AudioBuffer. No retries — failures surface loudly.
+ *  An AudioCue.src may be a bare R2 key (authored newscasts store keys) — resolveAssetUrl. */
 async function fetchDecodeAudio(src: string, ctx: BaseAudioContext): Promise<AudioBuffer> {
-  const res = await fetch(resolveAudioSrc(src));
+  const res = await fetch(resolveAssetUrl(src));
   if (!res.ok) throw new Error(`offlineAudio: fetch ${res.status} ${res.statusText} for ${src}`);
   const data = await res.arrayBuffer();
   return ctx.decodeAudioData(data);

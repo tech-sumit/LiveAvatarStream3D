@@ -10,8 +10,8 @@
 // counters. `self.*` refs are emitted as a late-bound BodyRef marker (NEVER baked) so score.drive
 // re-resolves them per-frame against the live GLB.
 
-import { composeShot, moveCamera, planPath, turnToward } from '@las/performer-core';
-import type { Vec3 as CoreVec3, Pose as CorePose, Subject } from '@las/performer-core';
+import { CAMERA_SHOTS, composeShot, moveCamera, planPath, sampleShot, turnToward } from '@las/performer-core';
+import type { CameraShotId, Vec3 as CoreVec3, Pose as CorePose, Subject } from '@las/performer-core';
 
 import type { Stage, Mark, Target, SavedShot, Vec3 } from './stage.js';
 import type {
@@ -27,10 +27,10 @@ import type {
 // BeatTiming's inferred element type (score.ts exports the zod value, not the type).
 type BeatTiming = AudioTimings['beats'][number];
 import { resolveGesture as resolveGestureCue } from '@las/performer-core';
-import type { Performance } from './performance.js';
+import type { Performance, SlideContent } from './performance.js';
 import type { Posture } from './dsl.js';
 import type { AudioCue, NewsReportDoc, DocDefaults } from './newsreport.js';
-import { estDuration, round1 } from './newsreportCompile.js';
+import { estDuration, round1, sectionSlide } from './newsreportCompile.js';
 import { EMOTION_ENERGY } from './presets.js';
 
 // ── Resolved-ref shapes (mirror performance.ts ResolvedTargetRef without importing the zod value) ──
@@ -47,6 +47,7 @@ type CameraKeyframe = {
   ease?: 'linear' | 'ease_in' | 'ease_out' | 'ease_in_out';
   move?: 'dolly' | 'orbit' | 'pan' | 'truck' | 'pedestal';
   moveAmount?: number;
+  preset?: string; // catalog shot-preset id — the runtime resolves it against the live avatar
 };
 type MotionPath = {
   startSec: number;
@@ -173,7 +174,7 @@ export function compileScore(
   score: Score,
   timings: AudioTimings,
   body?: { face?: Vec3; chest?: Vec3; root?: Vec3 },
-  extra?: { audio?: AudioCue[]; screen?: ScreenCut[] },
+  extra?: { audio?: AudioCue[]; screen?: ScreenCut[]; slides?: { tSec: number; slide: SlideContent }[] },
 ): Performance {
   warnedWordAnchor = false;
   warnedNodeCompilePos = false;
@@ -409,7 +410,11 @@ export function compileScore(
     looks,
     emotes,
     screen,
-    slides: [], // the Score path authors no wall slides yet (newscasts emit them via compileNewsReport)
+    // A pure Score authors no wall slides yet; a lowered NewsReportDoc threads its section
+    // slides here via `extra` (newsReportChrome), on the SAME clock as the beats — so the
+    // wall deck advances during Score-path takes/exports (advanceSlide always worked; only
+    // this channel was hardcoded empty).
+    slides: [...(extra?.slides ?? [])].sort((a, b) => a.tSec - b.tSec),
     audio,
   };
 }
@@ -485,6 +490,29 @@ function compileCamera(
       fov: dir.pose.fov,
       follow: false,
     };
+  }
+  if ('preset' in dir) {
+    // Catalog shot-preset: carried by NAME on the keyframe — the runtime (scoreDrive) resolves
+    // it against the LIVE avatar per frame (head-height-correct, push-in progression from
+    // t − tSec, dutch roll). pos/target/fov hold a compile-time snapshot against the default
+    // face position so preset-less consumers of the Performance still frame sanely.
+    const shot = CAMERA_SHOTS[dir.preset];
+    if (!shot) {
+      console.warn(`[compileScore] unknown camera preset '${dir.preset}' — ignored.`);
+      return undefined;
+    }
+    const face = refPos('self.face');
+    // 0.42 = nominal head height (the repo's reference avatar) — snapshot only; runtime resolves live.
+    const pose = sampleShot(shot, [{ pos: face as CoreVec3, size: 0.42 }], 0);
+    const kf: CameraKeyframe = {
+      tSec,
+      pos: [pose.pos[0], pose.pos[1], pose.pos[2]],
+      target: [pose.target[0], pose.target[1], pose.target[2]],
+      fov: pose.fov,
+      follow: false,
+      preset: dir.preset,
+    };
+    return kf;
   }
   if ('move' in dir) {
     // Relative move: no absolute pose; the runtime applies moveCamera against the prior keyframe.
@@ -569,29 +597,47 @@ export function compileNewsReportToScore(doc: NewsReportDoc): Score {
   let prevSize: ShotSize | null = null;
   let prevGesture: GestureKind | null = null;
   let curSize: ShotSize = defShot;
+  // Catalog shot-presets carry by NAME (replace + carry-forward, like the shot bucket). A
+  // preset outranks the descriptive shot field on the same cue — mirroring the legacy path's
+  // cameraTypeFor — and no spurious `medium` frame cue is emitted for a preset-only cue.
+  let curPreset: CameraShotId | null = d.camera?.preset ?? null;
+  let prevPreset: CameraShotId | null = null;
 
   for (const section of doc.rundown) {
-    if (section.cameraDefault) curSize = newsShotSize(section.cameraDefault.shot);
+    if (section.cameraDefault) {
+      curSize = newsShotSize(section.cameraDefault.shot);
+      curPreset = section.cameraDefault.preset ?? null;
+    }
     let curEmotion: EmotionPreset = defEmotion; // re-seed each section
     let sectionStart = true;
 
     for (const beat of section.beats) {
       if (beat.emotion) curEmotion = beat.emotion as EmotionPreset;
-      if (beat.camera) curSize = newsShotSize(beat.camera.shot);
+      if (beat.camera) {
+        curSize = newsShotSize(beat.camera.shot);
+        curPreset = beat.camera.preset ?? null;
+      }
       const rawGesture = beat.gesture ?? d.gesture ?? 'none';
       const kind = NEWS_GESTURE_TO_KIND[rawGesture] ?? 'none';
 
       const cues: Cue[] = [];
-      // Camera: an authored pose (DATA) wins and is emitted once; otherwise replace +
-      // carry-forward the shot-bucket preset frame cue only when the bucket changes.
+      // Camera: an authored pose (DATA) wins and is emitted once; else a catalog preset (by
+      // name, runtime-resolved); else replace + carry-forward the shot-bucket frame cue.
       if (cameraPose) {
         if (!poseEmitted) {
           cues.push({ camera: { pose: cameraPose } });
           poseEmitted = true;
         }
+      } else if (curPreset) {
+        if (curPreset !== prevPreset) {
+          cues.push({ camera: { preset: curPreset } });
+          prevPreset = curPreset;
+          prevSize = null; // a later shot-bucket change must re-emit its frame cue
+        }
       } else if (curSize !== prevSize) {
         cues.push({ camera: { frame: { subjects: ['self.face'], size: curSize } } });
         prevSize = curSize;
+        prevPreset = null; // a later preset change must re-emit
       }
       // Gesture: per-beat, emitted on change (mirrors compileNewsReport's motion cue gate).
       if (kind !== 'none' && kind !== prevGesture) {
@@ -624,6 +670,48 @@ export function compileNewsReportToScore(doc: NewsReportDoc): Score {
  * two audio paths stay byte-identical; `defaults.music` becomes a full-timeline bed.
  * Pass the result as `compileScore(stage, score, timings, body, { audio })`.
  */
+/**
+ * The Score-path chrome channels for a lowered NewsReportDoc, timed on the SUPPLIED clock:
+ * per-section audio (SFX/natpops) and wall slides start at the section's first beat's
+ * `startSec` from `timings` — the SAME AudioTimings the Performance is compiled against, so
+ * beds/SFX/slides and direction can never sit on different clocks (the old `newsReportAudio`
+ * re-based sections on its own WPM estimate — a third clock). The music bed spans the real
+ * total. Beat iteration order mirrors compileNewsReportToScore exactly (one Score beat per
+ * doc beat), which is what makes the beat-index → section-start mapping sound.
+ */
+export function newsReportChrome(
+  doc: NewsReportDoc,
+  timings: AudioTimings,
+): { audio: AudioCue[]; slides: { tSec: number; slide: SlideContent }[] } {
+  const audio: AudioCue[] = [];
+  const slides: { tSec: number; slide: SlideContent }[] = [];
+  const total = timings.beats.at(-1)?.endSec ?? 0;
+  let beatIdx = 0;
+  for (const section of doc.rundown) {
+    const sectionStart = timings.beats[beatIdx]?.startSec ?? 0;
+    beatIdx += section.beats.length;
+    slides.push({ tSec: round1(sectionStart), slide: sectionSlide(section, doc) });
+    for (const a of section.audio) {
+      audio.push({ ...a, start: round1(sectionStart + a.start) });
+    }
+  }
+  const music = doc.defaults?.music;
+  if (music) {
+    audio.push({
+      id: 'music-bed',
+      kind: 'bed',
+      src: music.src,
+      start: 0,
+      duration: total,
+      volume: music.volume,
+      fadeIn: music.fadeIn,
+      fadeOut: music.fadeOut,
+      label: 'music bed',
+    });
+  }
+  return { audio, slides };
+}
+
 export function newsReportAudio(doc: NewsReportDoc, totalDuration: number): AudioCue[] {
   const out: AudioCue[] = [];
   // Mirror compileNewsReport's absolute timeline clock: t advances per beat by the estimated

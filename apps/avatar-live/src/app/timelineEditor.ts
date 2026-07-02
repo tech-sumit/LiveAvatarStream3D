@@ -254,6 +254,21 @@ export class TimelineEditor {
     this.ui?.reload();
   }
 
+  /**
+   * Replace ONE track's cues (others untouched). Used by the authored-Score narration build to
+   * re-lay the audio/graphics tracks on the real TTS clock after recompiling — audio cue ids are
+   * stable (doc-authored), so their decoded buffers survive the prune and the live scheduler
+   * plays the re-timed cues without a re-fetch.
+   */
+  replaceTrackCues(track: Cue['track'], cues: Cue[]): void {
+    this.timeline.cues = this.timeline.cues.filter((c) => c.track !== track).concat(cues);
+    const cueEnd = this.timeline.cues.reduce((m, c) => Math.max(m, Math.ceil(c.start + c.duration)), 0);
+    this.timeline.duration = Math.max(this.timeline.duration, cueEnd);
+    this.pruneAudioMaps();
+    this.player.load(this.timeline);
+    this.ui?.reload();
+  }
+
   scheduleAudioCues(ctx: AudioContext, startAt: number): void {
     for (const c of this.timeline.cues) {
       if (c.track !== 'audio') continue;
