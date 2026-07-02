@@ -59,7 +59,11 @@ export async function exportMp4Offline(opts: OfflineExportOpts): Promise<Blob> {
 
   // Any exit that isn't finish() MUST cancel the encoder — a thrown addFrame/addAudio (encoder
   // OOM at 4K, HEVC failure) or a user abort would otherwise leak the hardware VideoEncoder
-  // session and pin the in-RAM partial MP4 for the page lifetime.
+  // session and pin the in-RAM partial MP4 for the page lifetime. The abort listener cancels
+  // the output IMMEDIATELY so even a wedged in-flight addFrame await rejects (the per-frame
+  // poll alone couldn't interrupt a hung encoder).
+  const onAbort = (): void => void enc.cancel();
+  opts.signal?.addEventListener('abort', onAbort, { once: true });
   try {
     const dt = 1 / opts.fps;
     for (let i = 0; i < total; i++) {
@@ -77,6 +81,13 @@ export async function exportMp4Offline(opts: OfflineExportOpts): Promise<Blob> {
     return await enc.finish();
   } catch (err) {
     await enc.cancel();
+    // A cancel-induced encoder rejection should surface as the user's abort, not a cryptic
+    // mediabunny error.
+    if (opts.signal?.aborted && !(err instanceof DOMException && err.name === 'AbortError')) {
+      throw new DOMException('export cancelled', 'AbortError');
+    }
     throw err;
+  } finally {
+    opts.signal?.removeEventListener('abort', onAbort);
   }
 }

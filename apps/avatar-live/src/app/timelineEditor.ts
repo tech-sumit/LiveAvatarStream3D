@@ -3,6 +3,7 @@ import { TimelineUI } from '../timeline/ui.js';
 import { CATALOG, poseToTuple, poseFor, tupleToPose } from '../timeline/catalog.js';
 import { cueId, type Cue, type PoseTuple, type Timeline } from '../timeline/types.js';
 import type { AudioCue as ProtocolAudioCue, SlideContent } from '@las/protocol';
+import { normalizedFades } from '../capture/offlineAudio.js';
 import type { StudioContext } from './context.js';
 import type { Performer } from './performer.js';
 
@@ -289,13 +290,9 @@ export class TimelineEditor {
       const len = Math.min(buf.duration, c.duration > 0 ? c.duration : buf.duration);
       const t0 = startAt + c.start;
       const tEnd = t0 + len;
-      let fi = Math.max(0, c.fadeIn ?? 0);
-      let fo = Math.max(0, c.fadeOut ?? 0);
-      if (fi + fo > len && fi + fo > 0) {
-        const s = len / (fi + fo);
-        fi *= s;
-        fo *= s;
-      }
+      // The SAME fade normalization the export's clipFromCue applies (one implementation —
+      // the two clocks must render identical envelopes).
+      const { fadeIn: fi, fadeOut: fo } = normalizedFades(len, c.fadeIn ?? 0, c.fadeOut ?? 0);
       const src = ctx.createBufferSource();
       src.buffer = buf;
       const gain = ctx.createGain();

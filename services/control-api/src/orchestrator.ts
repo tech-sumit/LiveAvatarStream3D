@@ -242,16 +242,28 @@ export async function sweepStuckJobs(env: Env, nowMs = now()): Promise<number> {
     await setStatus(env, row.id, 'failed', { error: 'timed out' });
   }
 
-  // Asset rows carry no updated_at; created_at is a safe proxy at a 2 h horizon
-  // (builds/clones finish in minutes).
+  // Asset rows carry no updated_at, so created_at is the staleness proxy — BUT an asset
+  // re-enqueued via POST /api/jobs/:id/retry more than 2 h after creation would look stale
+  // the moment it restarted. Exempt any asset with RECENT job activity (its jobs row —
+  // which does carry updated_at — touched within the window).
   const cutoff = nowMs - STUCK_JOB_TIMEOUT_MS;
   await env.DB.prepare(
-    "UPDATE avatars SET status = 'failed' WHERE status IN ('pending','building','fine_tuning') AND created_at < ?",
+    `UPDATE avatars SET status = 'failed'
+     WHERE status IN ('pending','building','fine_tuning') AND created_at < ?1
+       AND id NOT IN (
+         SELECT json_extract(spec_json, '$.avatarId') FROM jobs
+         WHERE kind = 'avatar_build' AND updated_at >= ?1 AND json_extract(spec_json, '$.avatarId') IS NOT NULL
+       )`,
   )
     .bind(cutoff)
     .run();
   await env.DB.prepare(
-    "UPDATE voices SET status = 'failed', error = 'timed out' WHERE status IN ('pending','cloning') AND created_at < ?",
+    `UPDATE voices SET status = 'failed', error = 'timed out'
+     WHERE status IN ('pending','cloning') AND created_at < ?1
+       AND id NOT IN (
+         SELECT json_extract(spec_json, '$.voiceId') FROM jobs
+         WHERE kind = 'voice_clone' AND updated_at >= ?1 AND json_extract(spec_json, '$.voiceId') IS NOT NULL
+       )`,
   )
     .bind(cutoff)
     .run();

@@ -442,6 +442,12 @@ export class Performer {
     const { app, deps } = this;
     const prep = await this.prepareForExport();
     if (!prep) return null; // buildNarration already logged why
+    // Cancel clicked during the (long) TTS-prep span: stop BEFORE spinning up the encoder —
+    // the in-flight synthesis can't be aborted mid-request, but nothing after it should run.
+    if (this.exportAbort?.signal.aborted) {
+      app.log('export cancelled — nothing rendered.');
+      return null;
+    }
     const fmt = deps.recording.currentFormat();
     const codec = deps.recording.currentCodec();
     if (!(await canExportMp4(fmt.w, fmt.h))) {
@@ -477,11 +483,11 @@ export class Performer {
       // between the export's encode-speed frames), and stop tick() driving the avatar.
       this.renderingOffline = true;
       app.stage.setScreenScrub(true);
-      // Mux the audio beds/SFX into the MP4 alongside the narration. perf.audio is the ONE
-      // audio channel (bridge newscasts author it; the script-derived rebuild folds the
-      // timeline's audio cues in), resolved from the same decoded buffers the live take
-      // played, with a fetch fallback. Failures surface loudly (no retries).
-      const audioCues = await audioCuesToClips(perf.audio, app.audio(), (id) => deps.timeline.decodedBuffer(id));
+      // Mux the audio beds/SFX into the MP4 alongside the narration — from the SAME
+      // timeline-lane mapping the live take schedules (the single editable source; the
+      // bridge/Generate write that lane), resolved from the same decoded buffers with a
+      // fetch fallback. Failures surface loudly (no retries).
+      const audioCues = await audioCuesToClips(deps.timeline.perfAudioCues(), app.audio(), (id) => deps.timeline.decodedBuffer(id));
       const blob = await exportMp4Offline({
         stage: app.stage,
         narration: prep.buffer,
@@ -610,7 +616,10 @@ export class Performer {
     // If anything in the start path throws, reset state so the busy guard can't wedge.
     try {
       deps.timeline.beginNarration(); // take the camera; motion/camera/screen cues flow via score.drive
-      deps.timeline.schedulePerfAudio(perf.audio, ctx, startAt); // beds/SFX from the ONE perf.audio channel
+      // Beds/SFX from the CURRENT timeline audio lane (the single EDITABLE source — an
+      // authored perf.audio is a compile-time snapshot that would silently ignore
+      // cue-inspector edits made after import).
+      deps.timeline.schedulePerfAudio(deps.timeline.perfAudioCues(), ctx, startAt);
       deps.timeline.setUiPlaying(!record);
       app.log(
         record
