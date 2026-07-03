@@ -436,10 +436,27 @@ export class TimelineEditor {
     });
   };
 
-  /** Enable/disable the timeline's own Generate button (created by TimelineUI). */
+  private genLabel: string | null = null;
+
+  /** Enable/disable the timeline's own Generate button (created by TimelineUI), showing a
+   *  busy caption while narration synthesizes and restoring the label when done. */
   setGenerateBusy(on: boolean): void {
     const gen = document.getElementById('tlGen') as HTMLButtonElement | null;
-    if (gen) gen.disabled = on;
+    if (!gen) return;
+    gen.disabled = on;
+    if (on) {
+      if (this.genLabel === null) this.genLabel = gen.textContent;
+      gen.textContent = '⏳ synthesizing…';
+    } else if (this.genLabel !== null) {
+      gen.textContent = this.genLabel;
+      this.genLabel = null;
+    }
+  }
+
+  /** Update the Generate button with per-sentence synthesis progress (k/N). */
+  setGenerateProgress(done: number, total: number): void {
+    const gen = document.getElementById('tlGen') as HTMLButtonElement | null;
+    if (gen && this.genLabel !== null) gen.textContent = `⏳ audio ${done}/${total}`;
   }
 
   serialize(): { timeline: { duration: number; cues: Cue[] } } {

@@ -189,17 +189,17 @@ export class Performer {
     return out;
   }
 
-  buildNarration = async (): Promise<boolean> => {
+  buildNarration = async (onProgress?: (done: number, total: number) => void): Promise<boolean> => {
     const { app, deps } = this;
     const activeTts = deps.voices.activeTts;
     if (!activeTts.synthesize) {
-      app.log('narration needs ElevenLabs — add ELEVENLABS_API_KEY to apps/avatar-live/.env.');
+      app.log('narration needs a real TTS (Kokoro or ElevenLabs) — pick a provider in the Voice panel.');
       return false;
     }
     // An authored Score owns its own narration build: per-BEAT synthesis (not the re-split
     // textarea), authored pauses honored, and the whole Performance + chrome recompiled
     // against the measured clock.
-    if (this.authoredScore) return this.buildAuthoredNarration(this.authoredScore);
+    if (this.authoredScore) return this.buildAuthoredNarration(this.authoredScore, onProgress);
     const lines = app.dom.scriptEl.value
       .replace(/\s+/g, ' ')
       .split(/(?<=[.!?])\s+/)
@@ -215,7 +215,16 @@ export class Performer {
     app.log(`narration: synthesizing ${segs.length} sentence(s)…`);
     let buffers: AudioBuffer[];
     try {
-      buffers = await Promise.all(segs.map((s) => activeTts.synthesize!(s.text, deps.voices.ttsOpts())));
+      let done = 0;
+      onProgress?.(0, segs.length);
+      buffers = await Promise.all(
+        segs.map((s) =>
+          activeTts.synthesize!(s.text, deps.voices.ttsOpts()).then((b) => {
+            onProgress?.(++done, segs.length);
+            return b;
+          }),
+        ),
+      );
     } catch (err) {
       app.log(`narration failed (TTS): ${String(err)}`);
       return false;
@@ -260,11 +269,14 @@ export class Performer {
    * RECOMPILE the Score against that clock — direction, beds/SFX, and wall slides all land on
    * the audio they will actually play against. Replaces the provisional 3 s/beat Performance.
    */
-  private buildAuthoredNarration = async (authored: {
-    score: Score;
-    stage: Stage;
-    nr?: NewsReportDoc;
-  }): Promise<boolean> => {
+  private buildAuthoredNarration = async (
+    authored: {
+      score: Score;
+      stage: Stage;
+      nr?: NewsReportDoc;
+    },
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<boolean> => {
     const { app, deps } = this;
     const activeTts = deps.voices.activeTts;
     const beats = authored.score.beats;
@@ -273,8 +285,15 @@ export class Performer {
     app.log(`narration: synthesizing ${beats.length} beat(s) from the authored score…`);
     let buffers: (AudioBuffer | null)[];
     try {
+      let done = 0;
+      onProgress?.(0, beats.length);
       buffers = await Promise.all(
-        beats.map((b) => (b.text.trim() ? activeTts.synthesize!(b.text, deps.voices.ttsOpts()) : Promise.resolve(null))),
+        beats.map((b) =>
+          (b.text.trim() ? activeTts.synthesize!(b.text, deps.voices.ttsOpts()) : Promise.resolve(null)).then((buf) => {
+            onProgress?.(++done, beats.length);
+            return buf;
+          }),
+        ),
       );
     } catch (err) {
       app.log(`narration failed (TTS): ${String(err)}`);
@@ -553,7 +572,7 @@ export class Performer {
   generateNarration = async (): Promise<void> => {
     this.deps.timeline.setGenerateBusy(true);
     try {
-      await this.buildNarration();
+      await this.buildNarration((done, total) => this.deps.timeline.setGenerateProgress(done, total));
     } finally {
       this.deps.timeline.setGenerateBusy(false);
     }

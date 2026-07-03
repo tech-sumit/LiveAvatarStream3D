@@ -855,6 +855,17 @@ select {
   flex: 1 1 auto;
   height: 8px;
 }
+/* Kokoro download-consent box: shown when the user picks Kokoro from the Provider list. */
+.kokoro-consent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 8px;
+  border: 1px solid var(--line, #333);
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.08);
+}
 /* A labelled control: caption stacked above its input/select. */
 .field {
   display: flex;
