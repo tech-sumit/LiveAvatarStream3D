@@ -46,6 +46,12 @@
         <section class="grp">
           <h2>Voice</h2>
           <select id="voice"></select>
+          <!-- Static hosting only (no dev-server /eleven proxy): bring-your-own ElevenLabs
+               key for real TTS + MP4 narration. Stored in localStorage, never leaves this browser. -->
+          <div id="elevenKeyRow" class="grid2" hidden>
+            <input id="elevenKey" type="password" placeholder="ElevenLabs API key…" autocomplete="off" />
+            <button id="elevenKeySave" type="button">Use key</button>
+          </div>
           <div class="grid2">
             <label class="mini">Rate <input id="rate" type="range" min="0.6" max="1.4" step="0.05" value="1" /></label>
             <label class="mini">Pitch <input id="pitch" type="range" min="0.6" max="1.4" step="0.05" value="1" /></label>

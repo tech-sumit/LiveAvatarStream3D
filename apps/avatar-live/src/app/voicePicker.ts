@@ -77,8 +77,45 @@ export class VoicePicker {
       this._activeTts = new ElevenLabsTts('/eleven', this.app.audio, () => this.app.recordDest);
       this.app.log('voice: ElevenLabs (real TTS) — lip-sync from the actual waveform');
     } else {
-      this.app.log('voice: browser (Web Speech). Add ELEVENLABS_API_KEY to apps/avatar-live/.env for ElevenLabs.');
+      // No dev-server proxy (static hosting, e.g. the pages.dev demo): offer
+      // bring-your-own-key. The key lives in this browser's localStorage only.
+      this.app.dom.elevenKeyRow.hidden = false;
+      this.app.dom.elevenKeySaveBtn.onclick = () => void this.applyDirectKey(this.app.dom.elevenKeyEl.value.trim());
+      const stored = localStorage.getItem(VoicePicker.KEY_LS) ?? '';
+      if (stored && (await ElevenLabsTts.available(ElevenLabsTts.DIRECT_BASE, stored))) {
+        this.useDirectKey(stored);
+      } else {
+        this.app.log('voice: browser (Web Speech). Paste an ElevenLabs key in the Voice panel (or add ELEVENLABS_API_KEY to apps/avatar-live/.env locally) for real TTS + MP4 narration.');
+      }
     }
+    await this.populateVoices();
+  }
+
+  private static readonly KEY_LS = 'las.elevenLabsKey';
+
+  private useDirectKey(key: string): void {
+    this._activeTts = new ElevenLabsTts(ElevenLabsTts.DIRECT_BASE, this.app.audio, () => this.app.recordDest, key);
+    this.app.dom.elevenKeyEl.value = '';
+    this.app.dom.elevenKeyEl.placeholder = 'ElevenLabs key active ✓ (blank + Use key to forget)';
+    this.app.log('voice: ElevenLabs via your key — calls go straight from this browser to the API');
+  }
+
+  /** "Use key" click: validate + persist, or (blank) forget and drop back to Web Speech. */
+  private async applyDirectKey(key: string): Promise<void> {
+    if (!key) {
+      localStorage.removeItem(VoicePicker.KEY_LS);
+      this._activeTts = new WebSpeechTts();
+      this.app.dom.elevenKeyEl.placeholder = 'ElevenLabs API key…';
+      this.app.log('voice: ElevenLabs key forgotten — back to browser Web Speech');
+      await this.populateVoices();
+      return;
+    }
+    if (!(await ElevenLabsTts.available(ElevenLabsTts.DIRECT_BASE, key))) {
+      this.app.log('voice: that ElevenLabs key was rejected by the API — not saved');
+      return;
+    }
+    localStorage.setItem(VoicePicker.KEY_LS, key);
+    this.useDirectKey(key);
     await this.populateVoices();
   }
 }
