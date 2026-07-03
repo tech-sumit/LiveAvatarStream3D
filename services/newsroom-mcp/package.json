@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Newsroom MCP server: a stdio MCP that drives an avatar-live studio over the Studio Bridge WS protocol.",
+  "description": "Newsroom MCP server: a stdio MCP that generates newscast assets (graphics, montages, music, post production, external media). Studio control lives in the studio's in-browser WebMCP server.",
   "bin": {
     "newsroom-mcp": "dist/server.js"
   },
@@ -14,16 +14,12 @@
     "smoke": "node dist/scripts/smoke.js"
   },
   "dependencies": {
-    "@las/protocol": "*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "canvas": "^3.2.3",
-    "playwright": "^1.49.0",
-    "ws": "^8.18.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
-    "@types/ws": "^8.5.13",
     "typescript": "^5.6.2"
   }
 }

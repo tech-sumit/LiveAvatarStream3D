@@ -477,6 +477,15 @@ export class AvatarController {
     this.moving = false;
   }
 
+  /** The persistable hand-placement (the stage home — walks return here). NEVER a mid-walk
+   *  transient, unlike group.position. */
+  get stageHomePos(): [number, number, number] {
+    return [this.moveHome[0], this.moveHome[1], this.moveHome[2]];
+  }
+  get isMoving(): boolean {
+    return this.moving;
+  }
+
   /**
    * Drive the anchor toward its `move` target each frame. While more than MOVE_ARRIVE from
    * the target it walks toward it (faces the travel direction via performer-core turnToward,

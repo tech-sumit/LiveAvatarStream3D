@@ -1,220 +1,82 @@
 /**
- * Newsroom MCP — end-to-end smoke test (task NM-6).
+ * Newsroom MCP — smoke test.
  *
- * Drives the full path WITHOUT the MCP stdio layer: start the transport, connect
- * a headless studio (Playwright Chromium → avatar-live on :5175 with ?bridge),
- * apply a small Fable/Mythos NewsReportDoc, screenshot the output, export an mp4,
- * then `ffprobe` the uploaded mp4 and print PASS/FAIL.
- *
- * DEGRADES GRACEFULLY: if Playwright/Chromium or a running studio (:5175) or
- * ffprobe is unavailable, it prints "skipped: <reason>" and exits 0 (so it can
- * run in CI / on machines without a browser without failing the build). It exits
- * non-zero only on an outright FAIL (the pipeline ran but produced a bad mp4).
+ * Spawns the built server (dist/server.js) over stdio with a real MCP client,
+ * lists its tools and resources, and PASSes only if the tool surface is exactly
+ * the asset-generation set (no studio-control tools — those live in the
+ * studio's in-browser WebMCP server now) and the generated-assets resource is
+ * present and readable.
  *
  * Run: `npm run build --workspace @las/newsroom-mcp && npm run smoke --workspace @las/newsroom-mcp`
- * Needs the avatar-live dev server up (`npm run dev:avatar` → http://localhost:5175).
  */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { validateNewsReportDoc } from '@las/protocol';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-import { startTransport, stopTransport, callBridge, uploadedPath } from '../transport.js';
-import { connectStudio, disconnectStudio } from '../studio.js';
+const here = dirname(fileURLToPath(import.meta.url));
+const serverEntry = join(here, '..', 'server.js'); // dist/server.js
 
-const execFileAsync = promisify(execFile);
+/** The complete expected tool surface: asset generation only. */
+const EXPECTED_TOOLS = [
+  'build_backscreen_montage',
+  'generate_audio',
+  'generate_backscreen_cards',
+  'generate_graphics',
+  'generate_image',
+  'generate_music',
+  'post_produce',
+].sort();
 
-const STUDIO_URL = process.env.SMOKE_STUDIO_URL ?? 'http://localhost:5175';
-const CONNECT_TIMEOUT_MS = Number(process.env.SMOKE_CONNECT_TIMEOUT_MS ?? 60_000);
-
-/** A small, valid Fable/Mythos newscast — one anchor, one section, two beats. */
-const SAMPLE_DOC = {
-  version: 2,
-  meta: {
-    title: 'Mythos Nightly — Smoke Test',
-    anchors: [
-      {
-        id: 'fable',
-        name: 'Fable',
-        avatarUrl: 'avaturn-model',
-        voiceId: 'browser:default',
-      },
-    ],
-    language: 'en',
-    fps: 30,
-    aspect: '16:9',
-  },
-  rundown: [
-    {
-      id: 'sec_open',
-      slug: 'cold-open',
-      storyForm: 'READER',
-      headline: 'A myth, retold',
-      beats: [
-        {
-          id: 'b1',
-          text: 'Good evening. From the halls of Mythos, this is Fable with the nightly retelling.',
-          emotion: 'warm',
-          gesture: 'open_palms',
-        },
-        {
-          id: 'b2',
-          text: 'Tonight: how an old story finds new life in the studio. Stay with us.',
-          emotion: 'confident',
-          pause_ms_after: 200,
-        },
-      ],
-    },
-  ],
-} as const;
-
-function skip(reason: string): never {
-  process.stdout.write(`SMOKE skipped: ${reason}\n`);
-  process.exit(0);
-}
-
-function isConnectivityError(err: unknown): boolean {
-  const msg = String(err).toLowerCase();
-  return (
-    msg.includes('executable doesn') || // Chromium not installed
-    msg.includes('playwright') ||
-    msg.includes('browsertype.launch') ||
-    msg.includes('econnrefused') ||
-    msg.includes('err_connection_refused') ||
-    msg.includes('net::') ||
-    msg.includes('timed out') ||
-    msg.includes('timeout') ||
-    msg.includes('cannot find module') ||
-    msg.includes("can't be resolved")
-  );
-}
-
-async function ffprobeOk(path: string): Promise<{ ok: boolean; detail: string }> {
-  try {
-    const { stdout } = await execFileAsync('ffprobe', [
-      '-v',
-      'error',
-      '-select_streams',
-      'v:0',
-      '-show_entries',
-      'stream=codec_name,width,height,nb_frames',
-      '-show_entries',
-      'format=duration,format_name',
-      '-of',
-      'json',
-      path,
-    ]);
-    const probe = JSON.parse(stdout) as {
-      streams?: Array<{ codec_name?: string; width?: number; height?: number }>;
-      format?: { duration?: string; format_name?: string };
-    };
-    const v = probe.streams?.[0];
-    if (!v || !v.codec_name) {
-      return { ok: false, detail: 'no video stream found' };
-    }
-    const duration = Number(probe.format?.duration ?? 0);
-    const detail =
-      `codec=${v.codec_name} ${v.width}x${v.height} ` +
-      `duration=${duration.toFixed(2)}s container=${probe.format?.format_name ?? '?'}`;
-    return { ok: duration > 0 && !!v.width && !!v.height, detail };
-  } catch (err) {
-    // ffprobe missing is a skip-worthy condition, surfaced to the caller.
-    const msg = String(err);
-    if (msg.includes('ENOENT')) {
-      throw new Error('ffprobe-missing');
-    }
-    return { ok: false, detail: `ffprobe error: ${msg}` };
-  }
-}
+const EXPECTED_RESOURCES = ['newsroom://assets/generated'];
 
 async function main(): Promise<void> {
-  // Validate the sample locally first — a bug here is a real FAIL, not a skip.
-  validateNewsReportDoc(SAMPLE_DOC);
-  process.stdout.write('SMOKE: sample NewsReportDoc validates OK.\n');
+  const client = new Client({ name: 'newsroom-smoke', version: '0.0.0' });
+  const transport = new StdioClientTransport({ command: process.execPath, args: [serverEntry] });
+  await client.connect(transport);
 
-  await startTransport();
-  process.stdout.write(`SMOKE: transport up. Connecting headless studio at ${STUDIO_URL} …\n`);
-
-  // 1) Connect a headless studio. Browser/studio unavailability → skip.
+  const failures: string[] = [];
   try {
-    const session = await connectStudio({
-      mode: 'headless',
-      studioUrl: STUDIO_URL,
-      timeoutMs: CONNECT_TIMEOUT_MS,
-    });
-    process.stdout.write(
-      `SMOKE: studio connected (id=${session.studioId}, caps=${session.capabilities.join(',') || 'none'}).\n`,
-    );
-  } catch (err) {
-    await stopTransport().catch(() => {});
-    if (isConnectivityError(err)) {
-      skip(
-        `could not connect a headless studio (${String(err)}). ` +
-          `Needs avatar-live on ${STUDIO_URL} + Playwright Chromium installed.`,
+    // 1) The tool list must be exactly the asset tools.
+    const tools = (await client.listTools()).tools.map((t) => t.name).sort();
+    if (JSON.stringify(tools) !== JSON.stringify(EXPECTED_TOOLS)) {
+      const extra = tools.filter((t) => !EXPECTED_TOOLS.includes(t));
+      const missing = EXPECTED_TOOLS.filter((t) => !tools.includes(t));
+      failures.push(
+        `tool surface mismatch — extra: [${extra.join(', ')}] missing: [${missing.join(', ')}]`,
       );
     }
-    throw err;
-  }
 
-  let exitCode = 0;
-  try {
-    // 2) Apply the newscast.
-    await callBridge('applyNewscast', { doc: SAMPLE_DOC });
-    process.stdout.write('SMOKE: applied newscast.\n');
-
-    // 3) Screenshot the output (best-effort; not asserted).
-    try {
-      const shot = (await callBridge('screenshot', { target: 'output' })) as { ref?: string };
-      const shotPath = shot?.ref ? uploadedPath(shot.ref) : undefined;
-      process.stdout.write(`SMOKE: screenshot → ${shotPath ?? '(no file)'}\n`);
-    } catch (err) {
-      process.stdout.write(`SMOKE: screenshot failed (non-fatal): ${String(err)}\n`);
-    }
-
-    // 4) Export mp4.
-    const exported = (await callBridge('exportMp4', {})) as { ref: string; bytes: number };
-    const mp4Path = uploadedPath(exported.ref);
-    if (!mp4Path) {
-      process.stdout.write(`SMOKE FAIL: export ref ${exported.ref} produced no local file.\n`);
-      exitCode = 1;
-    } else {
-      process.stdout.write(`SMOKE: exported mp4 (${exported.bytes} bytes) → ${mp4Path}\n`);
-
-      // 5) ffprobe the result.
-      let probe;
-      try {
-        probe = await ffprobeOk(mp4Path);
-      } catch (err) {
-        if (String(err).includes('ffprobe-missing')) {
-          await disconnectStudio().catch(() => {});
-          await stopTransport().catch(() => {});
-          skip('ffprobe not found on PATH (install ffmpeg to validate the mp4).');
-        }
-        throw err;
+    // 2) The generated-assets resource must exist and be readable JSON.
+    const resources = (await client.listResources()).resources.map((r) => r.uri).sort();
+    for (const uri of EXPECTED_RESOURCES) {
+      if (!resources.includes(uri)) {
+        failures.push(`missing resource ${uri} (got: ${resources.join(', ') || 'none'})`);
+        continue;
       }
-      if (probe.ok) {
-        process.stdout.write(`SMOKE PASS: valid mp4 — ${probe.detail}\n`);
-      } else {
-        process.stdout.write(`SMOKE FAIL: invalid mp4 — ${probe.detail}\n`);
-        exitCode = 1;
+      const read = await client.readResource({ uri });
+      const text = read.contents[0] && 'text' in read.contents[0] ? read.contents[0].text : '';
+      const parsed = JSON.parse(String(text)) as { workDir?: string; assets?: unknown[] };
+      if (!parsed.workDir || !Array.isArray(parsed.assets)) {
+        failures.push(`${uri} returned unexpected payload: ${String(text).slice(0, 200)}`);
       }
     }
   } finally {
-    await disconnectStudio().catch(() => {});
-    await stopTransport().catch(() => {});
+    await client.close();
   }
 
-  process.exit(exitCode);
+  if (failures.length) {
+    process.stderr.write(`SMOKE FAIL:\n  - ${failures.join('\n  - ')}\n`);
+    process.exit(1);
+  }
+  process.stderr.write(
+    `SMOKE PASS: ${EXPECTED_TOOLS.length} asset tools, ${EXPECTED_RESOURCES.length} resource(s).\n`,
+  );
 }
 
 main().catch((err) => {
-  // An unexpected error after the studio connected is a real failure. But if it
-  // smells like an environment/connectivity issue, treat it as a skip.
-  if (isConnectivityError(err)) {
-    process.stdout.write(`SMOKE skipped: ${String(err)}\n`);
-    process.exit(0);
-  }
-  process.stderr.write(`SMOKE error: ${String(err)}\n`);
+  process.stderr.write(`SMOKE FAIL: ${String(err)}\n`);
   process.exit(1);
 });

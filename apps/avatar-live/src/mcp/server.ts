@@ -3,12 +3,11 @@
 //
 // On load, registers the studio's tools with `navigator.modelContext` so ANY WebMCP-capable
 // AI app attached to the tab can drive the studio — no out-of-process stdio MCP, no WS bridge
-// relay. Each tool routes back through the SAME bridge dispatcher (`createDispatcher`) and
-// validates against the SAME protocol zod params (in `buildStudioTools`), so the two surfaces
-// share one command vocabulary. They are NOT byte-identical, though: the WebMCP adapter gates
-// the `execute_js` arbitrary-eval hatch behind `?webmcp=full`, whereas the WS `?bridge=` channel
-// (a 127.0.0.1-only dev relay) exposes it ungated. `execute_js` is the one capability that
-// differs between the surfaces.
+// relay. Each tool routes back through the bridge dispatcher (`createDispatcher`) and
+// validates against the protocol zod params (in `buildStudioTools`). This is now the ONLY
+// studio-control surface: the old WS `?bridge=` relay to the Newsroom MCP server was retired
+// (newsroom-mcp is a pure asset-generation server); `execute_js` stays gated behind
+// `?webmcp=full`.
 //
 // SECURITY: registering tools exposes studio-state mutation (set_script, apply_newscast,
 // set_avatar — which loads an arbitrary glTF URL, export_mp4 — which downloads a file) to

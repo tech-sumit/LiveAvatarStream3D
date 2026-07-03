@@ -1,12 +1,14 @@
 /**
- * Newsroom MCP — graphics tools (task NM-7, Phase 2).
+ * Newsroom MCP — graphics tools.
  *
- * Render broadcast back-wall cards with node-canvas and serve them to the
- * browser studio. `generate_graphics` renders an explicit list of card specs;
- * `generate_backscreen_cards` derives a standard breaking/what/why/numbers/
- * quote/developing set from a story's fields. Both write PNGs into the transport
+ * Render broadcast back-wall cards with node-canvas and serve them over the
+ * local asset server. `generate_graphics` renders an explicit list of card
+ * specs; `generate_backscreen_cards` derives a standard breaking/what/why/
+ * numbers/quote/developing set from a story's fields. Both write PNGs into the
  * work dir, register them as served assets, and return their asset URLs (ready
- * to feed `build_backscreen_montage` in NM-8) alongside the local paths.
+ * to feed `build_backscreen_montage`) alongside the local paths. Applying the
+ * results to the studio is the caller's job, via the studio's in-browser
+ * WebMCP tools.
  */
 
 import { writeFileSync } from 'node:fs';
@@ -14,7 +16,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { defineTool, type ToolDef } from '../server.js';
-import { assetUrl, registerAsset, workDir } from '../transport.js';
+import { assetUrl, registerAsset, workDir } from '../assets/serve.js';
 import { renderCard, type CardSpec } from '../assets/cards.js';
 
 // ---------------------------------------------------------------------------
@@ -57,7 +59,9 @@ const generateGraphics = defineTool({
   title: 'Render broadcast graphic cards',
   description:
     'Render a list of broadcast back-wall cards (1920x1080 PNGs, dark-navy theme) ' +
-    'and serve them to the studio. Returns each card\'s served asset URL and local path.',
+    "and serve them. Returns each card's served asset URL and local path. This tool " +
+    'does not touch the studio — feed the URLs to build_backscreen_montage, or apply ' +
+    "media in the studio via its WebMCP tools (e.g. set_backscreen_media).",
   inputSchema: {
     cards: z.array(cardSpecSchema).min(1).describe('The card specs to render'),
   },
@@ -155,7 +159,9 @@ const generateBackscreenCards = defineTool({
   description:
     'Derive and render a standard broadcast card set (breaking / what / why / numbers / ' +
     'quote / developing) from a story\'s fields, and serve them. Returns the ordered ' +
-    'served asset URLs (ready to feed build_backscreen_montage) and local paths.',
+    'served asset URLs (ready to feed build_backscreen_montage) and local paths. This ' +
+    'tool does not touch the studio — the caller applies media there via the studio\'s ' +
+    'WebMCP tools.',
   inputSchema: {
     headline: z.string().describe('The breaking headline'),
     what: z.string().describe('What happened (the story)'),

@@ -18,6 +18,9 @@ export interface OfflineExportOpts {
   onProgress?: (done: number, total: number) => void;
   /** Abort the export (the Cancel button). Rejects with an AbortError DOMException. */
   signal?: AbortSignal;
+  /** Precomputed mouth track @ `fps` (the performer caches one per narration so preview and
+   *  export share it); computed here when absent. */
+  mouth?: MouthCue[];
 }
 
 const SILENT: MouthCue = { jawOpen: 0, mouthWide: 0, mouthRound: 0, mouthClose: 0 };
@@ -45,7 +48,7 @@ export async function exportMp4Offline(opts: OfflineExportOpts): Promise<Blob> {
   if (!codec) throw new Error('No MP4 video codec available in this browser');
 
   const total = Math.max(1, Math.ceil(opts.durationSec * opts.fps));
-  const mouth = precomputeMouthTrack(opts.narration, opts.fps);
+  const mouth = opts.mouth ?? precomputeMouthTrack(opts.narration, opts.fps);
   const audio = await renderMixdown({
     narration: opts.narration,
     cues: opts.audioCues,

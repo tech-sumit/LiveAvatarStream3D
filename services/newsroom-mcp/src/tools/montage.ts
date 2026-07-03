@@ -1,15 +1,17 @@
 /**
- * Newsroom MCP — montage tools (task NM-8, Phase 2 / Tier 2).
+ * Newsroom MCP — montage tools.
  *
- * `build_backscreen_montage` ffmpegs a list of broadcast cards (from NM-7's
- * graphics tools) into a silent 1920x1080 crossfade montage MP4, serves it as an
- * asset, AND loads it onto the studio back-wall via `setBackscreenMedia` so it
- * plays live behind the anchor.
+ * `build_backscreen_montage` ffmpegs a list of broadcast cards (from the
+ * graphics tools) into a silent 1920x1080 crossfade montage MP4 and serves it
+ * as an asset. It does NOT load the studio wall itself — the caller applies the
+ * returned URL via the studio's in-browser WebMCP `set_backscreen_media` tool
+ * (the Studio Bridge push was retired; see
+ * docs/specs/2026-06-25-webmcp-studio-control-design.md).
  */
 
 import { z } from 'zod';
 import { defineTool, type ToolDef } from '../server.js';
-import { assetPath, assetUrl, callBridge, registerAsset } from '../transport.js';
+import { assetPath, assetUrl, registerAsset } from '../assets/serve.js';
 import { buildMontage } from '../assets/montage.js';
 
 /** Resolve a card ref (asset id, registered path, or bare local path) to a local path. */
@@ -28,12 +30,13 @@ function resolveCardPath(ref: string): string {
 
 const buildBackscreenMontage = defineTool({
   name: 'build_backscreen_montage',
-  title: 'Build a back-screen montage and load it on the studio wall',
+  title: 'Build a back-screen montage MP4',
   description:
     'Stitch the given broadcast cards (asset URLs / ids / local paths, e.g. the output ' +
-    'of generate_backscreen_cards) into a silent 1920x1080 crossfade montage MP4, serve ' +
-    'it, and load it onto the studio back-wall via setBackscreenMedia so it plays live ' +
-    'behind the anchor. Returns the montage asset URL + local path. Requires ffmpeg.',
+    'of generate_backscreen_cards) into a silent 1920x1080 crossfade montage MP4 and ' +
+    'serve it. Returns the montage asset URL + local path; this tool does not touch the ' +
+    "studio — apply the returned url yourself via the studio's WebMCP " +
+    'set_backscreen_media tool to play it on the back wall. Requires ffmpeg.',
   inputSchema: {
     cards: z
       .array(z.string().min(1))
@@ -56,22 +59,18 @@ const buildBackscreenMontage = defineTool({
       const mp4 = await buildMontage(paths, { perCardSeconds, crossfadeSeconds });
       registerAsset(mp4);
       const url = assetUrl(mp4);
-
-      let wallLoaded = false;
-      let wallNote = '';
-      try {
-        await callBridge('setBackscreenMedia', { url });
-        wallLoaded = true;
-        wallNote = 'Loaded live on the studio back-wall.';
-      } catch (err) {
-        wallNote = `Montage built but not loaded on the wall (no studio connected?): ${String(err)}`;
-      }
-
       return {
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({ ok: true, url, path: mp4, wallLoaded, note: wallNote }),
+            text: JSON.stringify({
+              ok: true,
+              url,
+              path: mp4,
+              note:
+                'Montage built and served. Apply it in the studio via the WebMCP ' +
+                `set_backscreen_media tool with this url: ${url}`,
+            }),
           },
         ],
       };

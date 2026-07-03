@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 /**
- * Newsroom MCP server (stdio).
+ * Newsroom MCP server (stdio) — asset generation only.
  *
- * A Model Context Protocol server that drives an avatar-live studio over the
- * Studio Bridge WS protocol (see `@las/protocol`'s `bridge.ts`). An MCP client
- * (Claude, etc.) calls tools here; the tools send {@link BridgeRequest}s to the
- * connected studio via {@link callBridge} and return the results.
+ * A Model Context Protocol server exposing the newsroom's ASSET-GENERATION
+ * tools: broadcast graphics (node-canvas), back-screen montages + post
+ * production (ffmpeg), a parametric music bed (python3 + numpy), and external
+ * provider media (Runway image / ElevenLabs audio). Generated files land in a
+ * work dir and are served read-only at http://127.0.0.1:9778/asset/<id> so the
+ * browser studio can load them.
  *
- * SKELETON SCOPE (task NM-3): this file wires up the stdio transport, the tool
- * registry, and the single end-to-end-ish `connect_studio` tool. The
- * document / timeline / lighting / capture tools (NM-4, NM-5, NM-6) plug into
- * the registry via {@link registerTool} + {@link TOOL_MODULES} — see the
- * extension points below.
+ * This server does NOT control the studio. The old Studio Bridge surface (the
+ * WS transport on 9777, connect_studio, set_* / cue / screenshot / export
+ * tools) was superseded by the studio's own in-browser WebMCP server — see
+ * docs/specs/2026-06-25-webmcp-studio-control-design.md. To apply a generated
+ * asset, take the `url` from a tool result and call the studio's WebMCP tools
+ * (e.g. `set_backscreen_media`) from your MCP client.
  *
  * MCP SDK: @modelcontextprotocol/sdk@1.29.0
  *   - { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -25,24 +28,16 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z, type ZodRawShape } from 'zod';
 
-import { connectStudio, type StudioMode } from './studio.js';
-import { documentTools } from './tools/document.js';
-import { performTools } from './tools/perform.js';
-import { timelineTools } from './tools/timeline.js';
-import { backscreenTools } from './tools/backscreen.js';
-import { feedbackTools } from './tools/feedback.js';
-import { renderTools } from './tools/render.js';
-import { escapeTools } from './tools/escape.js';
+import { startAssetServer, ASSET_HTTP_PORT } from './assets/serve.js';
 import { graphicsTools } from './tools/graphics.js';
 import { montageTools } from './tools/montage.js';
 import { musicTools } from './tools/music.js';
 import { postTools } from './tools/post.js';
 import { externalTools } from './tools/external.js';
-import { webmcpTools } from './tools/webmcp.js';
 import { registerResources } from './resources.js';
 
 // ---------------------------------------------------------------------------
-// Tool definition + registry (the extension point for NM-4/NM-5/NM-6).
+// Tool definition + registry.
 // ---------------------------------------------------------------------------
 
 /**
@@ -56,9 +51,9 @@ export interface ToolResult {
 }
 
 /**
- * A self-describing tool definition. Tool modules export one (or an array) of
- * these and add them to {@link TOOL_MODULES}; {@link registerAllTools} feeds
- * each one to {@link registerTool}.
+ * A self-describing tool definition. Tool modules export an array of these and
+ * add them to {@link TOOL_MODULES}; {@link registerAllTools} feeds each one to
+ * {@link registerTool}.
  *
  * `inputSchema` is a Zod *raw shape* (a plain object of Zod types), matching the
  * SDK's `registerTool` contract. The handler receives the parsed args typed by
@@ -102,75 +97,17 @@ export function registerTool<Shape extends ZodRawShape>(
   );
 }
 
-// ---------------------------------------------------------------------------
-// connect_studio — the one tool this skeleton ships.
-// ---------------------------------------------------------------------------
-
-const connectStudioTool = defineTool({
-  name: 'connect_studio',
-  title: 'Connect to an avatar-live studio',
-  description:
-    'Connect the newsroom to an avatar-live studio. In "attended" mode it waits ' +
-    'for a studio you have already opened (with ?bridge=9777) to register. In ' +
-    '"headless" mode it launches a Playwright Chromium pointed at the studio URL. ' +
-    'Returns once the studio is connected and ready to receive commands.',
-  inputSchema: {
-    mode: z.enum(['attended', 'headless']).describe('attended = wait for an open studio; headless = launch one'),
-    studioUrl: z
-      .string()
-      .url()
-      .optional()
-      .describe('Studio URL for headless mode (default http://localhost:5175)'),
-  },
-  async handler({ mode, studioUrl }) {
-    try {
-      const session = await connectStudio({ mode: mode as StudioMode, studioUrl });
-      const caps = session.capabilities.length ? session.capabilities.join(', ') : 'none reported';
-      return {
-        content: [
-          {
-            type: 'text',
-            text:
-              `Connected to studio "${session.studioId}" (${session.mode} mode). ` +
-              `Capabilities: ${caps}. Ready to receive newsroom commands.`,
-          },
-        ],
-      };
-    } catch (err) {
-      return {
-        content: [{ type: 'text', text: `Failed to connect studio: ${String(err)}` }],
-        isError: true,
-      };
-    }
-  },
-});
-
 /**
- * The registry of tool modules. NM-4/NM-5/NM-6 add their tool definitions here
- * (import the module's exported `ToolDef[]` and spread it in). Everything in
+ * The registry of tool modules — asset-generation tools only. Everything in
  * this array is registered at startup by {@link registerAllTools}.
- *
- * EXTENSION POINT: e.g.
- *   import { documentTools } from './tools/document.js';
- *   import { timelineTools } from './tools/timeline.js';
- *   export const TOOL_MODULES = [connectStudioTool, ...documentTools, ...timelineTools];
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const TOOL_MODULES: ToolDef<any>[] = [
-  connectStudioTool,
-  ...documentTools,
-  ...performTools,
-  ...timelineTools,
-  ...backscreenTools,
-  ...feedbackTools,
-  ...renderTools,
-  ...escapeTools,
   ...graphicsTools,
   ...montageTools,
   ...musicTools,
   ...postTools,
   ...externalTools,
-  ...webmcpTools,
 ];
 
 /** Register every tool in {@link TOOL_MODULES} on the server. */
@@ -181,7 +118,7 @@ export function registerAllTools(server: McpServer): void {
 }
 
 // ---------------------------------------------------------------------------
-// main — start the stdio MCP server.
+// main — start the stdio MCP server + the local asset server.
 // ---------------------------------------------------------------------------
 
 export function createServer(): McpServer {
@@ -195,12 +132,18 @@ export function createServer(): McpServer {
 }
 
 async function main(): Promise<void> {
+  // The asset server is this service's delivery mechanism — generated files
+  // are only useful to the browser studio via their served URLs, so bring it
+  // up before accepting tool calls. A bind failure (port in use) is fatal and
+  // surfaces loudly, per project policy.
+  await startAssetServer();
   const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // stdout is the MCP channel — log to stderr only.
   process.stderr.write(
-    `[newsroom-mcp] stdio server ready. Tools: ${TOOL_MODULES.map((t) => t.name).join(', ')}\n`,
+    `[newsroom-mcp] stdio server ready (assets on http://127.0.0.1:${ASSET_HTTP_PORT}/asset/…). ` +
+      `Tools: ${TOOL_MODULES.map((t) => t.name).join(', ')}\n`,
   );
 }
 

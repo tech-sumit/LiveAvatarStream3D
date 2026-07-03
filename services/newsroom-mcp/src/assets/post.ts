@@ -1,8 +1,8 @@
 /**
  * Newsroom MCP — post-production (task NM-8, Phase 2 / Tier 2).
  *
- * Take a rendered newscast MP4 (e.g. an `export_mp4` capture of the studio) and
- * finish it for broadcast by spawning `ffmpeg`:
+ * Take a rendered newscast MP4 (e.g. a studio WebMCP export) and finish it for
+ * broadcast by spawning `ffmpeg`:
  *
  *   - optional **intro title card**: a PNG held for a few seconds with a slow
  *     zoom (Ken-Burns), concatenated in front of the body;
@@ -19,7 +19,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { workDir } from '../transport.js';
+import { workDir } from './serve.js';
 
 const WIDTH = 1920;
 const HEIGHT = 1080;
