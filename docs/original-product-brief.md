@@ -1,0 +1,7 @@
+# Original product brief (June 2026)
+
+> Preserved from the original README. This is the founding prompt the project grew from;
+> the repo has since narrowed to the browser-3D studio (see `docs/history/ARCHITECTURE.md` scope note —
+> the 2D + realtime paths were relocated to the sibling `LiveAvatarStream` repo).
+
+I want to create a backend processor and webapp where webapp creates avatar by generated image or uploaded image, then using the avatar + script creates a animated avatar video like heygen does. then adds voice to the videos. step 2 and 3 can be done at once and voice can be created while creating avatar using audio cloning using uploaded voice sample or recording voice on the fly. backend does all the voice cloning, storing the cloned voice weights to cloudflare's bucket, generating audio+video using script input having all gesture, posture, emotion information to make avatar do what's there in video. this is supposed to be a opensource avatar video generation tool with ability to generate realtime stream of avatar talking with user in realtime with voice input and video going out at the same time. backend should be hosted on cloudflare. create product spec and technical architecture document and plan to get this built. we're okey to use opensource tech like deepfake, etc or other prominent techs or okey to train models as well. generation speed with highest quality is important here.

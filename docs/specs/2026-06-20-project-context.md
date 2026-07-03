@@ -39,7 +39,7 @@ flowchart TB
     API --> Q
   end
 
-  subgraph pod["H100 RunPod pod s5jwghwjkwo96q"]
+  subgraph pod["H100 RunPod pod <pod-id>"]
     NGX["nginx :8080 gateway"]
     TTS["voice / TTS"]
     ECHO["avatar-video EchoMimicV3"]
@@ -120,9 +120,9 @@ Uncommitted on `main`: three.js editor tree, `js/las/*`, `Sidebar.LAS.js`, `DELE
 | Resource | Value |
 |---|---|
 | Control API | `https://<your-worker>.workers.dev` |
-| Pod ID | `s5jwghwjkwo96q` |
+| Pod ID | `<pod-id>` |
 | Pod gateway | `https://<pod-id>-8080.proxy.runpod.net` |
-| Pod SSH | `root@<pod-ip>:11422` (key: `~/.ssh/las_runpod`) |
+| Pod SSH | `root@<pod-ip>:<port>` (key: `~/.ssh/las_runpod`) |
 | Pod LAS root | `/workspace/las` |
 | engine-three on pod | `/workspace/las/services/engine-three` |
 

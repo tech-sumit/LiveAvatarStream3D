@@ -13,7 +13,7 @@ These were identified in the Jun 19–20 debugging session: editor manifests are
 |---|---|---|
 | 1 | **Commit** three.js editor migration + LAS layer on `main` | git |
 | 2 | **Deploy** control-api (`DELETE /api/voices`, manifest prefix fix if not already live) | `wrangler deploy` |
-| 3 | **Sync** engine-three to pod | `POD_SSH=root@<pod-ip> POD_SSH_PORT=11422 ./scripts/gpu/sync-engine-three.sh` |
+| 3 | **Sync** engine-three to pod | `POD_SSH=root@<pod-ip> POD_SSH_PORT=<port> ./scripts/gpu/sync-engine-three.sh` |
 | 4 | **Verify** pod health | `curl …/engine-three/health` → `wysiwygScene: true`, `leePerrySmithLoaded: true` |
 | 5 | **Re-record** from editor; confirm MP4 matches viewport (Lee bust + camera rotation) | manual |
 | 6 | **Remove** debug instrumentation in `render.ts` / old React files if any remain on main | code cleanup |

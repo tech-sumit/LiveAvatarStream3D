@@ -13,3 +13,6 @@
 # synced custom-recorder script paired with its demo
 *.record.mjs
 !README.md
+# image inputs/outputs paired with local renders — same convention as the videos
+*.png
+*.jpg
