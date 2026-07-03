@@ -36,6 +36,9 @@ export interface ShotPreset {
 // the existing cue framings (cu/medium/wide) — unifying the live dropdown onto the same
 // numbers retires the second, hardcoded `stage.frame()` system. The angle/size numbers on
 // the new presets are starting points, tuned against real preview renders.
+// NOTE on numeric sizes: they multiply the avatar's REAL head height (~0.2 m for the
+// reference Avaturn rig, not the 0.42 test fixture) and the export crops to the capture
+// gate — both tighter than a viewport eyeball. Tuned against exported frames (2026-07-03).
 export const CAMERA_SHOTS: Record<string, ShotPreset> = {
   close: { id: 'close', label: 'Close-up', subject: 'anchor', composition: { size: 'cu' } },
   medium: { id: 'medium', label: 'Medium (anchor)', subject: 'anchor', composition: { size: 'medium' } },
@@ -50,16 +53,16 @@ export const CAMERA_SHOTS: Record<string, ShotPreset> = {
     // foreground (a true over-the-shoulder, not a bare wall card).
     composition: { size: 6.5, azimuth: -18, elevation: -2, lens: 46, balance: -1.4 },
   },
-  profile: { id: 'profile', label: 'Profile ¾', subject: 'anchor', composition: { size: 5.0, azimuth: 40, lens: 34 } },
-  'hero-low': { id: 'hero-low', label: 'Hero (low)', subject: 'anchor', composition: { size: 6.0, elevation: -12, lens: 30 } },
-  dutch: { id: 'dutch', label: 'Dutch tilt', subject: 'anchor', composition: { size: 5.0, azimuth: 8, roll: 6, lens: 36 } },
+  profile: { id: 'profile', label: 'Profile ¾', subject: 'anchor', composition: { size: 7.5, azimuth: 40, lens: 34 } },
+  'hero-low': { id: 'hero-low', label: 'Hero (low)', subject: 'anchor', composition: { size: 9.0, elevation: -12, lens: 30 } },
+  dutch: { id: 'dutch', label: 'Dutch tilt', subject: 'anchor', composition: { size: 7.5, azimuth: 8, roll: 6, lens: 36 } },
   establish: { id: 'establish', label: 'Establish', subject: 'both', composition: { lens: 50, azimuth: 25, elevation: 18 } },
   'push-in': {
     id: 'push-in',
     label: 'Push-in',
     subject: 'anchor',
-    composition: { size: 7.0, lens: 32 },
-    move: { kind: 'push-in', fromSize: 7.0, toSize: 4.2, durationSec: 3 },
+    composition: { size: 11.0, lens: 32 },
+    move: { kind: 'push-in', fromSize: 11.0, toSize: 6.5, durationSec: 3 },
   },
 };
 
