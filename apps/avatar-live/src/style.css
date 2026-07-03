@@ -844,6 +844,17 @@ select {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
 }
+/* Kokoro model-download progress row: full-width bar + a small caption. */
+.kokoro-prog {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.kokoro-prog progress {
+  flex: 1 1 auto;
+  height: 8px;
+}
 /* A labelled control: caption stacked above its input/select. */
 .field {
   display: flex;

@@ -26,7 +26,7 @@ export interface SpeakHandle {
 }
 
 export interface TtsSource {
-  readonly kind: 'web-speech' | 'server';
+  readonly kind: 'web-speech' | 'server' | 'kokoro';
   speak(text: string, opts: SpeakOpts, hooks: SpeakHooks): SpeakHandle;
   listVoices?(): Promise<{ id: string; label: string }[]>;
   /** Optional: synthesize to an AudioBuffer without playing (for synced render). */

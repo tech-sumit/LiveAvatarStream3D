@@ -240,6 +240,10 @@ export default defineConfig(({ mode }) => {
   const elevenKey = env.ELEVENLABS_API_KEY;
   return {
     plugins: [r2Plugin(env), avatarPlugin()],
+    // kokoro-js pulls in onnxruntime-web, which ships its own .wasm/.mjs artifacts and
+    // loads them at runtime — keep Vite from trying to pre-bundle/transform them.
+    // Single-thread WASM (no COOP/COEP) keeps cross-origin R2/GLB/ElevenLabs loads working.
+    optimizeDeps: { exclude: ['onnxruntime-web'] },
     // `vite preview` serves the built bundle (a few files) — far faster to load over a
     // high-latency tunnel than the dev server's hundreds of unbundled ES modules. Same
     // ALLOWED_HOSTS gate for a temporary tunnel host.
