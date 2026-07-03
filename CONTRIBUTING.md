@@ -30,6 +30,18 @@ Node ≥ 20. After every pull, run `npm install` again — `@las/performer-core`
 - **Stage & chrome styling** — lighting rigs, wall/ticker/slide themes.
 - **Docs** — anything that confused you is a doc bug; PR the fix.
 
+## The hosted demo
+
+[las3d-studio.pages.dev](https://las3d-studio.pages.dev/) is a static build of the studio (maintainer-deployed to Cloudflare Pages):
+
+```bash
+cd apps/avatar-live
+VITE_API_URL= VITE_A2F_URL= npm run build      # clean public env — no control-plane URL baked in
+rm -rf dist/generated                            # local renders never ship
+# drop any asset over Pages' 25 MB file cap (and remove it from dist/avatars.json)
+npx wrangler pages deploy dist --project-name las3d-studio --branch main
+```
+
 ## Reporting bugs
 
 Open an issue with: what you did, what you expected, what happened, browser + OS, and console output if there is any. A short screen capture is gold.
