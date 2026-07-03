@@ -105,7 +105,9 @@ Ten camera framings ship as data (a [catalog table](packages/performer-core/src/
 
 ## Agents can run the whole studio
 
-The studio registers its controls on `navigator.modelContext` (the emerging [WebMCP](https://github.com/webmachinelearning/webmcp) standard) — including on the [hosted demo](https://las3d-studio.pages.dev/). Open it in a WebMCP-capable Chrome (146+) and any in-browser LLM or MCP bridge — e.g. [`@tech-sumit/mcp-webmcp`](https://www.npmjs.com/package/@tech-sumit/mcp-webmcp) — can set the newscast, restyle the wall, and export the MP4, hands-free. The demo videos in this README were produced exactly that way, by Claude Code.
+The studio registers its controls on the page's model context (the emerging [WebMCP](https://github.com/webmachinelearning/webmcp) standard) — including on the [hosted demo](https://las3d-studio.pages.dev/). Open it in a WebMCP-capable Chrome (146+) and any in-browser LLM or MCP bridge — e.g. [`@tech-sumit/mcp-webmcp`](https://www.npmjs.com/package/@tech-sumit/mcp-webmcp) — can set the newscast, restyle the wall, and export the MP4, hands-free. The demo videos in this README were produced exactly that way, by Claude Code.
+
+**→ [How to connect an agent + the 23-tool catalog](docs/webmcp.md)**
 
 ## How it works
 

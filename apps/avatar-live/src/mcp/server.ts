@@ -1,7 +1,8 @@
 // StudioMcpServer — the in-page WebMCP server (design:
 // docs/specs/2026-06-25-webmcp-studio-control-design.md).
 //
-// On load, registers the studio's tools with `navigator.modelContext` so ANY WebMCP-capable
+// On load, registers the studio's tools with the page's WebMCP registry
+// (`document.modelContext`, falling back to the older `navigator.modelContext`) so ANY WebMCP-capable
 // AI app attached to the tab can drive the studio — no out-of-process stdio MCP, no WS bridge
 // relay. Each tool routes back through the bridge dispatcher (`createDispatcher`) and
 // validates against the protocol zod params (in `buildStudioTools`). This is now the ONLY
@@ -95,11 +96,12 @@ function exportFilename(app: StudioContext): string {
 export function initWebMcp(app: StudioContext, controllers: BridgeControllers): void {
   const { enabled, allowExecuteJs } = resolveMode();
   if (!enabled) return;
-  const mc = getModelContext();
-  if (!mc) {
+  const found = getModelContext();
+  if (!found) {
     // Not an error — most browsers don't ship WebMCP yet. Leave a breadcrumb only in dev.
     return;
   }
+  const { mc, surface } = found;
 
   const dispatch = createDispatcher(app, controllers);
 
@@ -121,5 +123,5 @@ export function initWebMcp(app: StudioContext, controllers: BridgeControllers): 
   });
 
   for (const tool of tools) mc.registerTool(tool);
-  app.log(`webmcp: registered ${tools.length} studio tools on navigator.modelContext${allowExecuteJs ? ' (execute_js enabled)' : ''}`);
+  app.log(`webmcp: registered ${tools.length} studio tools on ${surface}.modelContext${allowExecuteJs ? ' (execute_js enabled)' : ''}`);
 }
