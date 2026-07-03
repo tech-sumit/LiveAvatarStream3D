@@ -9,7 +9,7 @@
 
 import { z } from 'zod';
 import { defineTool, type ToolDef } from '../server.js';
-import { assetPath, assetUrl, registerAsset } from '../transport.js';
+import { assetPath, assetUrl, registerAsset } from '../assets/serve.js';
 import { postProduce, type LowerThird } from '../assets/post.js';
 
 /** Resolve a media ref (asset id, registered path, /asset/<id> URL, or local path). */

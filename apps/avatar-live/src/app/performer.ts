@@ -3,6 +3,8 @@ import { AudioAnalyserLipsync } from '../lipsync/audioLipsync.js';
 import { RealtimeSession } from '../session/realtimeSession.js';
 import { parseScriptLine, type Gesture } from '../avatar/gestures.js';
 import { exportMp4Offline } from '../capture/offlineExporter.js';
+import { precomputeMouthTrack } from '../capture/offlineLipsync.js';
+import type { MouthCue } from '../avatar/avatarController.js';
 import { audioCuesToClips } from '../capture/offlineAudio.js';
 import { canExportMp4 } from '../capture/mp4Encoder.js';
 import { cueId, type Cue } from '../timeline/types.js';
@@ -22,8 +24,16 @@ import type { AvatarTransform } from './avatarTransform.js';
 interface RenderState {
   ctx: AudioContext;
   start: number;
-  analyser: AudioAnalyserLipsync;
+  // The narration mouth track, precomputed by the SAME offline analysis the export uses
+  // (precomputeMouthTrack @ 30 fps) — the live take samples it by clock time, so the lips
+  // are IDENTICAL live and exported (the old live analyser used a different FFT scaling
+  // and frame-rate-dependent smoothing).
+  mouth: MouthCue[];
+  fps: number;
 }
+
+const SILENT_MOUTH: MouthCue = { jawOpen: 0, mouthWide: 0, mouthRound: 0, mouthClose: 0 };
+const MOUTH_FPS = 30; // one track @30fps shared by the live take (sampled by time) and the export
 
 export interface PerformerDeps {
   voices: VoicePicker;
@@ -69,6 +79,9 @@ export class Performer {
   // idle motion during the multi-second prep and is only hands-off while score.drive owns it.
   private renderingOffline = false;
   private exportAbort: AbortController | null = null; // live only while an export runs
+  // Memoized narration mouth track (the FFT pass is ~200 ms/3 min of audio on the main
+  // thread — compute once per narration+calibration, shared by preview AND export).
+  private mouthCache: { buf: AudioBuffer; smoothing: number; track: MouthCue[] } | null = null;
   private performing = false; // guards re-entry while synthesizing / playing
   private session: RealtimeSession;
 
@@ -147,6 +160,18 @@ export class Performer {
     this.narrationAudio = null;
     this.authoredPerf = null; // a script change supersedes any landed authored Performance
     this.authoredScore = null; // …and the Score behind it (no stale recompiles over new words)
+    this.mouthCache = null;
+  }
+
+  /** The narration's precomputed mouth track (memoized per buffer + lip-smoothing value). */
+  private narrationMouth(buf: AudioBuffer): MouthCue[] {
+    const smoothing = this.deps.library.lip.smoothing;
+    if (this.mouthCache && this.mouthCache.buf === buf && this.mouthCache.smoothing === smoothing) {
+      return this.mouthCache.track;
+    }
+    const track = precomputeMouthTrack(buf, MOUTH_FPS, smoothing);
+    this.mouthCache = { buf, smoothing, track };
+    return track;
   }
 
   private setSpeakingUi(on: boolean): void {
@@ -500,6 +525,7 @@ export class Performer {
         driveFrame: (t, dt, mouth) => this.score.drive(t, dt, mouth),
         onProgress: (d, n) => deps.recording.setExportProgress(d, n),
         signal: this.exportAbort?.signal,
+        mouth: this.narrationMouth(prep.buffer),
       });
       app.log(`export ready · ${prep.durationSec.toFixed(1)}s ${fmt.w}×${fmt.h} mp4`);
       return blob;
@@ -559,7 +585,8 @@ export class Performer {
     srcNode.connect(gain);
     gain.connect(ctx.destination);
     if (app.recordDest) gain.connect(app.recordDest);
-    const ana = new AudioAnalyserLipsync(ctx, gain, deps.library.lip.smoothing);
+    // Mouth: the same precomputed track the export renders (no live analyser divergence).
+    const mouthTrack = this.narrationMouth(out);
 
     if (record) {
       try {
@@ -575,7 +602,7 @@ export class Performer {
 
     const startAt = ctx.currentTime + 0.12;
     this.renderSrc = srcNode;
-    this.render = { ctx, start: startAt, analyser: ana };
+    this.render = { ctx, start: startAt, mouth: mouthTrack, fps: MOUTH_FPS };
     // ONE Performance feeds the live narration tick — the SAME shape the export loads, so the
     // two clocks drive identical camera/gesture/emotion/screen commands (the live/export
     // divergence is closed here). An authored Score Performance owns the take when present;
@@ -726,9 +753,9 @@ export class Performer {
       if (t >= 0) {
         deps.timeline.setUiPlayhead(t);
         // ONE drive path: live narration and export both call score.drive(t, dt, mouth)
-        // on the same loaded Performance. The mouth is the ONLY injected difference
-        // (live analyser sample vs the export's precomputed track).
-        this.score.drive(t, dt, this.render.analyser.sample());
+        // on the same loaded Performance — and now the same precomputed mouth track too
+        // (sampled by clock time here; by frame index in the export).
+        this.score.drive(t, dt, this.render.mouth[Math.floor(t * this.render.fps)] ?? SILENT_MOUTH);
       } else {
         avatar.update(dt);
       }

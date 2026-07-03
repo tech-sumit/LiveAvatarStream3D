@@ -18,7 +18,6 @@ import { initCollapsibleSections } from './app/collapsible.js';
 import { initSliderReadouts } from './app/sliderReadout.js';
 import { initScriptEditor } from './app/scriptEditor.js';
 import { initCameraQuickAccess } from './app/cameraQuickAccess.js';
-import { initBridge } from './bridge/index.js';
 import { createDispatcher } from './bridge/dispatch.js';
 import { initWebMcp } from './mcp/server.js';
 
@@ -52,8 +51,14 @@ locomotion.init();
 timeline.init();
 void voices.init();
 void voiceManager.init();
-void library.init();
-void projects.init();
+// SEQUENCED: projects.init ends with the autosave crash-restore, whose applyProject loads
+// the restored avatar + placement — that must run AFTER avatar discovery + the default
+// auto-load (library.init awaits both), or the restored avatar is dropped ("not found")
+// and the default load wipes the restored placement.
+void (async () => {
+  await library.init();
+  await projects.init();
+})();
 initScriptEditor();
 initCollapsibleSections();
 initSliderReadouts();
@@ -63,10 +68,10 @@ initCameraQuickAccess(app.dom);
 
 app.log(`ready · avatar: ${app.avatar.description}`);
 
-// Studio Bridge — no-op unless enabled via ?bridge=<port> or VITE_BRIDGE. When
-// enabled, a reconnecting WS client lets the Newsroom MCP server drive this studio.
+// The bridge-command controllers: consumed by the in-page WebMCP server (below) and the
+// __las.dispatch debug handle. (The old WS bridge client to the Newsroom MCP server is
+// RETIRED — WebMCP supersedes it; newsroom-mcp is now a pure asset-generation server.)
 const bridgeControllers = { lighting, look, recording, backScreen, transform, voices, library, timeline, performer, projects };
-initBridge(app, bridgeControllers);
 
 // Debug handle for inspecting the scene/camera from the console. `dispatch` exposes the SAME
 // bridge-command surface WebMCP registers (one dispatcher vocabulary), so a plain browser

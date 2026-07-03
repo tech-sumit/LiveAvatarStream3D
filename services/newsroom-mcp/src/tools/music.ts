@@ -8,7 +8,7 @@
 
 import { z } from 'zod';
 import { defineTool, type ToolDef } from '../server.js';
-import { assetUrl, registerAsset } from '../transport.js';
+import { assetUrl, registerAsset } from '../assets/serve.js';
 import { synthMusic } from '../assets/music.js';
 
 const generateMusic = defineTool({

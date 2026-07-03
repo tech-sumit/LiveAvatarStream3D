@@ -4,13 +4,18 @@ import type { MouthCue } from '../avatar/avatarController.js';
 // mouth shapes offline from PCM, so the offline export looks like the realtime preview.
 const FFT = 1024;
 
-/** One MouthCue per output frame (length = ceil(buffer.duration * fps)). */
-export function precomputeMouthTrack(buffer: AudioBuffer, fps: number): MouthCue[] {
+/** One MouthCue per output frame (length = ceil(buffer.duration * fps)).
+ *  `smoothing` mirrors the live analyser's smoothingTimeConstant (the per-avatar lip
+ *  calibration): WebAudio EMAs the FREQUENCY data (the vowel-color centroid) by it while
+ *  leaving the time-domain RMS raw — reproduced exactly here so the calibration keeps
+ *  working now that narration takes use this track instead of the analyser. */
+export function precomputeMouthTrack(buffer: AudioBuffer, fps: number, smoothing = 0.2): MouthCue[] {
   const sr = buffer.sampleRate;
   const pcm = toMono(buffer);
   const frames = Math.max(1, Math.ceil(buffer.duration * fps));
   const re = new Float32Array(FFT);
   const im = new Float32Array(FFT);
+  const smMag = new Float32Array(FFT / 2); // EMA'd magnitude spectrum (analyser parity)
   const out: MouthCue[] = [];
   let jaw = 0;
   for (let f = 0; f < frames; f++) {
@@ -45,8 +50,9 @@ export function precomputeMouthTrack(buffer: AudioBuffer, fps: number): MouthCue
     const half = FFT / 2;
     for (let i = 0; i < half; i++) {
       const mag = Math.hypot(re[i], im[i]);
-      cnum += i * mag;
-      cden += mag;
+      smMag[i] = smoothing * smMag[i] + (1 - smoothing) * mag; // analyser's spectral EMA
+      cnum += i * smMag[i];
+      cden += smMag[i];
     }
     const centroid = cden > 0 ? cnum / cden / half : 0; // 0..1
     const wide = clamp01((centroid - 0.35) * 2.2) * jaw;

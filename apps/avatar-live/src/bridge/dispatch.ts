@@ -39,8 +39,6 @@ export interface BridgeControllers {
   projects: ProjectStore;
 }
 
-/** Where a screenshot/export blob is POSTed so the MCP server can read it back. */
-const SINK_BASE = 'http://127.0.0.1:9778/upload';
 
 /** Capture-format <select> option index per bridge resolution preset. */
 const RESOLUTION_INDEX: Record<string, number> = {
@@ -152,17 +150,6 @@ export async function exportBlob(c: BridgeControllers): Promise<Blob> {
   return blob;
 }
 
-/** POST a binary result to the MCP HTTP sink; returns the saved ref descriptor. */
-async function uploadBlob(kind: 'png' | 'mp4', id: string, blob: Blob): Promise<{ ref: string; bytes: number }> {
-  const ref = `${kind}/${id}`;
-  const r = await fetch(`${SINK_BASE}/${ref}`, {
-    method: 'POST',
-    headers: { 'content-type': blob.type || (kind === 'png' ? 'image/png' : 'video/mp4') },
-    body: blob,
-  });
-  if (!r.ok) throw new Error(`sink upload failed (${r.status})`);
-  return { ref, bytes: blob.size };
-}
 
 /**
  * Build the command dispatcher bound to a studio. `dispatch(cmd, params)` returns
@@ -364,9 +351,12 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
         return snapshotState(app, c);
 
       case 'screenshot': {
+        // The WS sink is retired — WebMCP's `screenshot` tool returns the image INLINE
+        // (mcp/server.ts wires screenshotBlob directly). This dispatcher case remains only
+        // for the __las.dispatch debug handle, where a download is the useful behavior.
         const { blob, width, height } = await screenshotBlob(app, c, params);
-        const saved = await uploadBlob('png', currentReqId(), blob);
-        return { ...saved, width, height };
+        triggerDownload(blob, `studio-screenshot-${width}x${height}.png`);
+        return { downloaded: true, width, height, bytes: blob.size };
       }
 
       case 'preview': {
@@ -375,8 +365,11 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
       }
 
       case 'exportMp4': {
-        const saved = await uploadBlob('mp4', currentReqId(), await exportBlob(c));
-        return saved;
+        // WS sink retired — WebMCP's `export_mp4` downloads in-browser (mcp/server.ts).
+        // For the __las.dispatch debug handle, do the same.
+        const blob = await exportBlob(c);
+        triggerDownload(blob, 'studio-export.mp4');
+        return { downloaded: true, bytes: blob.size };
       }
 
       // ── Escape hatch ───────────────────────────────────────────────────────
@@ -430,16 +423,6 @@ export function createDispatcher(app: StudioContext, c: BridgeControllers) {
       voiceCatalog: [...d.voiceSel.options].map((o) => ({ id: o.value, label: o.textContent })),
     };
   }
-}
-
-// The active request id, set by the WS client per inbound request so screenshot /
-// export uploads can name their sink ref after the correlation id.
-let activeReqId = '';
-export function setActiveReqId(id: string): void {
-  activeReqId = id;
-}
-function currentReqId(): string {
-  return activeReqId || `req_${Date.now()}`;
 }
 
 function seekTimeline(c: BridgeControllers, seconds: number): void {
@@ -542,6 +525,19 @@ async function applyNewsChrome(app: StudioContext, c: BridgeControllers, nr: New
 /** Sanitize a title into a project-name token (mirrors projectStore's sanitize). */
 function sanitizeName(n: string): string {
   return (n.trim() || 'untitled').replace(/[^\w.-]+/g, '_');
+}
+
+/** Download a blob via a DOM-attached anchor; the object URL is revoked on a delay — a
+ *  synchronous revoke after click() can abort the download while still reporting success. */
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

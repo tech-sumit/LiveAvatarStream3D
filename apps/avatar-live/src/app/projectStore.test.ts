@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import * as THREE from 'three';
 import { ProjectStore, type ProjectStoreDeps } from './projectStore.js';
 import type { StudioContext } from './context.js';
 import type { Cue, Timeline } from '../timeline/types.js';
@@ -36,12 +37,23 @@ function makeHarness() {
   const logs: string[] = [];
   const preloaded: string[][] = [];
   const emotions: string[] = [];
+  const positions: [number, number, number][] = [];
   let busy = false;
   const app = {
     dom,
     log: (m: string) => void logs.push(m),
     isBusy: () => busy,
-    avatar: { setEmotion: (e: string) => void emotions.push(e) },
+    avatar: {
+      setEmotion: (e: string) => void emotions.push(e),
+      // Placement persistence: serialized from the stage HOME (+ idle quaternion), applied
+      // via setPosition + setStageHome + setTurn (mirroring the real controller surface).
+      group: { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() },
+      stageHomePos: [0, 0, 0] as [number, number, number],
+      isMoving: false,
+      setPosition: (x: number, y: number, z: number) => void positions.push([x, y, z]),
+      setStageHome: () => undefined,
+      setTurn: () => undefined,
+    },
     studio: { preloadSlideImages: async (urls: string[]) => void preloaded.push(urls) },
   } as unknown as StudioContext;
 

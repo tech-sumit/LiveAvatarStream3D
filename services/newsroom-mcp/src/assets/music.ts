@@ -15,7 +15,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { workDir } from '../transport.js';
+import { workDir } from './serve.js';
 
 export type MusicMood = 'breaking' | 'tense' | 'calm' | 'upbeat';
 
