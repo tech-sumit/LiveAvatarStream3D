@@ -13,7 +13,7 @@
 
 ### [▶ **Try it live** — las3d-studio.pages.dev](https://las3d-studio.pages.dev/)
 
-*No install, no keys: the hosted studio runs the full live preview with free browser voices (Chrome/Edge recommended).*
+*No install, no keys: the hosted studio runs the full live preview with free browser voices (Chrome/Edge recommended). Paste your own ElevenLabs key in the Voice panel (it stays in your browser) to unlock real voices and MP4 export right in the demo.*
 
 ![LiveAvatarStream3D product demo](docs/media/product-demo.gif)
 
@@ -105,7 +105,7 @@ Ten camera framings ship as data (a [catalog table](packages/performer-core/src/
 
 ## Agents can run the whole studio
 
-The studio registers its controls on `navigator.modelContext` (the emerging [WebMCP](https://github.com/webmachinelearning/webmcp) standard). Point an MCP bridge at the tab — e.g. [`@tech-sumit/mcp-webmcp`](https://www.npmjs.com/package/@tech-sumit/mcp-webmcp) — and an agent can set the newscast, restyle the wall, generate graphics, and export the MP4, hands-free. The demo videos in this README were produced exactly that way, by Claude Code.
+The studio registers its controls on `navigator.modelContext` (the emerging [WebMCP](https://github.com/webmachinelearning/webmcp) standard) — including on the [hosted demo](https://las3d-studio.pages.dev/). Open it in a WebMCP-capable Chrome (146+) and any in-browser LLM or MCP bridge — e.g. [`@tech-sumit/mcp-webmcp`](https://www.npmjs.com/package/@tech-sumit/mcp-webmcp) — can set the newscast, restyle the wall, and export the MP4, hands-free. The demo videos in this README were produced exactly that way, by Claude Code.
 
 ## How it works
 
