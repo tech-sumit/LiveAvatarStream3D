@@ -16,6 +16,7 @@
   "dependencies": {
     "@las/performer-core": "*",
     "@las/protocol": "*",
+    "kokoro-js": "^1.2.1",
     "mediabunny": "^1.49.0",
     "postprocessing": "6.35.6",
     "three": "0.152.2"

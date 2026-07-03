@@ -45,9 +45,19 @@
 
         <section class="grp">
           <h2>Voice</h2>
+          <label class="mini" for="ttsProvider">Provider</label>
+          <select id="ttsProvider">
+            <option value="kokoro">Kokoro — free, in-browser</option>
+            <option value="elevenlabs">ElevenLabs — cloned voices</option>
+          </select>
           <select id="voice"></select>
-          <!-- Static hosting only (no dev-server /eleven proxy): bring-your-own ElevenLabs
-               key for real TTS + MP4 narration. Stored in localStorage, never leaves this browser. -->
+          <!-- Kokoro model download progress (first use, ~90 MB, then cached). -->
+          <div id="kokoroProgRow" class="kokoro-prog" hidden>
+            <progress id="kokoroProg" max="100" value="0"></progress>
+            <span id="kokoroProgLabel" class="mini"></span>
+          </div>
+          <!-- ElevenLabs key: needed only when the ElevenLabs provider is picked on static
+               hosting (no dev-server /eleven proxy). Stored in localStorage, never leaves this browser. -->
           <div id="elevenKeyRow" class="grid2" hidden>
             <input id="elevenKey" type="password" placeholder="ElevenLabs API key…" autocomplete="off" />
             <button id="elevenKeySave" type="button">Use key</button>
