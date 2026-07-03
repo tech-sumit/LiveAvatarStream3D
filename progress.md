@@ -2,7 +2,7 @@
 
 > **⚠️ Scope note (2026-06-26):** most of this file is a **historical validation log** of the
 > pre-consolidation multi-path product. The repo is now **3D-browser-only** (see
-> `ARCHITECTURE.md`'s scope note and `CLAUDE.md`): `engine-three` was removed, the 2D
+> `docs/history/ARCHITECTURE.md`'s scope note and `CLAUDE.md`): `engine-three` was removed, the 2D
 > (EchoMimicV3) + MuseTalk realtime paths moved to `../LiveAvatarStream`, and the validators
 > referenced below (`validate_offline.py`, `validate_engine_render.py`, `validate_musetalk.py`,
 > `npm run dev:editor`) **no longer exist in this repo**. Current validation is in
@@ -16,12 +16,12 @@ that original plan and the implementation diverged, **this document wins** — s
 
 ## TL;DR
 
-- ✅ **VALIDATED on a live H100 (Jun 18, 2026):** the offline 1080p **"Urwashi"**
+- ✅ **VALIDATED on a live H100 (Jun 18, 2026):** the offline 1080p **demo reference avatar ("demo-ref")**
   render produced a real **1920×1080 mp4** in R2, and **both health legs**
   (direct pod gateway + deployed-Worker round-trip) were green. See
   [Live validation](#live-validation-jun-18-2026).
 - The **offline render path is fully implemented and wired** end to end: upload →
-  build avatar **"Urwashi"** → clone voice → `voice/tts` → `avatar-video/render`
+  build avatar **"demo-ref"** → clone voice → `voice/tts` → `avatar-video/render`
   (EchoMimicV3) → `finishing` (GFPGAN + Real-ESRGAN + RIFE) → **1920×1080 mp4** in R2.
 - The **realtime path is implemented** (MuseTalk worker + XTTS-v2 streaming +
   Cloudflare SFU wiring) but is **gated on Cloudflare Realtime secrets** and a
@@ -34,8 +34,8 @@ that original plan and the implementation diverged, **this document wins** — s
   round-trip). See [How to verify](#how-to-verify).
 - **3D engine path (Jun 2026):** ✅ **VALIDATED on live H100 (Jun 19, 2026):**
   `engine_render` → `services/engine-three` produced a real **1920×1080 mp4** in R2
-  (`validate_engine_render.py` PASS). Pod `s5jwghwjkwo96q`, gateway
-  `https://s5jwghwjkwo96q-8080.proxy.runpod.net`. Requires Xvfb + headless `gl`.
+  (`validate_engine_render.py` PASS). Pod `<pod-id>`, gateway
+  `https://<pod-id>-8080.proxy.runpod.net`. Requires Xvfb + headless `gl`.
   Spec: `docs/specs/2026-06-20-project-context.md`.
 
 ## Phase status
@@ -60,8 +60,8 @@ flowchart TD
 | 1 | Weights seed (`deploy/seed_weights.sh`, `WEIGHTS.md`) | **Done (code)** | Populates `/workspace` volume; must run once on the pod. |
 | 2 | Provision pod + volume (`scripts/gpu/spawn-pod.sh`) | **Validated (live, Jun 18)** | Idempotent RunPod REST provisioner; H100 pod brought up and ran the offline e2e. |
 | 2 | Pod bring-up (`deploy/install_deps.sh`, `POD_SETUP.md`) | **Validated (live, Jun 18)** | Reproducible interpreter/venv layout. **Resume note:** container disk is wiped + env not re-injected on resume, so `install_deps.sh` must re-run — see `POD_SETUP.md` → *Resuming a stopped pod*. |
-| 3 | Wire Worker (`wrangler.toml` `GPU_PROVIDER_BASE_URL`) | **Validated (live, Jun 18–19)** | Round-trip green; pod reprovisioned Jun 19 (`s5jwghwjkwo96q`). |
-| 3 | Offline e2e (`deploy/validate_offline.py`) | **Validated (live, Jun 18)** | Produced a real 1920×1080 "Urwashi" mp4 in R2. |
+| 3 | Wire Worker (`wrangler.toml` `GPU_PROVIDER_BASE_URL`) | **Validated (live, Jun 18–19)** | Round-trip green; pod reprovisioned Jun 19. |
+| 3 | Offline e2e (`deploy/validate_offline.py`) | **Validated (live, Jun 18)** | Produced a real 1920×1080 "demo-ref" mp4 in R2. |
 | 4 | Cloudflare SFU realtime (`realtime.ts`) | **Code present, gated** | App id/TURN key id in `wrangler.toml`; **needs `CF_REALTIME_APP_SECRET` + `CF_TURN_KEY_API_TOKEN`**. |
 | 4 | MuseTalk realtime (`realtime/`, `deploy/setup_musetalk.sh`) | **Done (code)** | Validate with `realtime/validate_musetalk.py` on the pod. |
 | 5 | Finalize (this `progress.md` + verify scripts) | **Done** | — |
@@ -77,11 +77,11 @@ flowchart TD
 
 **Needs a live H100 pod + secrets (cannot be faked):**
 - Any actual avatar build, voice clone, render, or realtime session.
-- The 1080p "Urwashi" mp4 (only produced by a real EchoMimicV3 + finishing run).
+- The 1080p "demo-ref" mp4 (only produced by a real EchoMimicV3 + finishing run).
 - The Worker→pod health round-trip (requires the deployed Worker + reachable pod).
 
 The offline items above were **exercised live on Jun 18, 2026** (the avatar build,
-voice clone, the 1080p "Urwashi" render, and the Worker↔pod health round-trip all
+voice clone, the 1080p "demo-ref" render, and the Worker↔pod health round-trip all
 ran on a real H100). Realtime remains gated on Cloudflare Realtime secrets.
 
 ## Live validation (Jun 18, 2026)
@@ -89,7 +89,7 @@ ran on a real H100). Realtime remains gated on Cloudflare Realtime secrets.
 A live H100 pod run proved the offline pipeline end to end:
 
 - **Offline render:** `validate_offline.py` produced a **real 1920×1080 mp4** of
-  avatar **"Urwashi"** in R2 (full chain: build → voice clone → `voice/tts` →
+  avatar **"demo-ref"** in R2 (full chain: build → voice clone → `voice/tts` →
   `avatar-video/render` EchoMimicV3 → `finishing` GFPGAN + Real-ESRGAN + RIFE).
 - **Health round-trip:** both legs green — the **direct pod gateway** check and
   the **deployed-Worker → pod** round-trip (`health-roundtrip.sh`).
@@ -176,7 +176,7 @@ curl -sS -X DELETE -H "$AUTH" "${REST}/pods/${POD_ID}"
   pod is stopped. Delete it only if you are done with the project; re-seeding is slow.
 - Prefer the `fast` tier (EchoMimicV3-Flash) for iteration; reserve `premium` for
   final renders.
-- See also `OPERATIONS.md` → *Cost levers*.
+- See also `docs/history/OPERATIONS.md` → *Cost levers*.
 
 ## How to verify
 
@@ -216,7 +216,7 @@ npm run dev:avatar   # → http://localhost:5175; load a newscast, Generate, Exp
    Confirm `GPU_PROVIDER_BASE_URL` in `wrangler.toml` matches the live pod gateway.
 4. `./scripts/gpu/health-roundtrip.sh` → expect `PASS`.
 5. `python3 services/gpu/deploy/validate_offline.py --api <worker-url>` → expect
-   `PASS: real 1920x1080 offline render of 'Urwashi' produced`.
+   `PASS: real 1920x1080 offline render of '<avatar-name>' produced`.
 6. **3D engine path:** resume pod (`./scripts/gpu/resume-pod.sh`), confirm
    `engine-three/health` via `health-roundtrip.sh --direct`, then run
    `validate_engine_render.py` → expect `PASS` with ≥1280×720 mp4.

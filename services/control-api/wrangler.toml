@@ -17,7 +17,8 @@ crons = ["*/30 * * * *"]
 
 [vars]
 GPU_PROVIDER = "runpod"
-GPU_PROVIDER_BASE_URL = "https://s5jwghwjkwo96q-8080.proxy.runpod.net"
+# Your GPU pod's HTTP gateway (e.g. a RunPod proxy URL). Set per deployment.
+GPU_PROVIDER_BASE_URL = "https://<pod-id>-8080.proxy.runpod.net"
 DIRECTOR_LLM_PROVIDER = "openrouter"
 DIRECTOR_LLM_MODEL = "anthropic/claude-opus-4.8"
 

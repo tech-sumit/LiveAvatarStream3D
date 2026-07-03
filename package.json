@@ -1,6 +1,7 @@
 {
   "name": "liveavatarstream",
   "version": "0.0.0",
+  "license": "MIT",
   "private": true,
   "description": "Open-source HeyGen-style avatar video generation + realtime LLM-directed streaming. Cloudflare control plane + external H100 GPU plane.",
   "type": "module",

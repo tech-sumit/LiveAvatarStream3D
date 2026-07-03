@@ -1,6 +1,7 @@
 {
   "name": "@las/avatar-live",
   "version": "0.0.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "Realtime 3D talking avatar — stream a script, browser-rendered Three.js metahuman speaks it lip-synced in realtime.",

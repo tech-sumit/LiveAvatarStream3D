@@ -16,7 +16,7 @@ Two render paths share the same control plane:
 
 | Path | Engine | Status |
 |---|---|---|
-| **2D cinematic** | EchoMimicV3 + GFPGAN + RIFE | ✅ Validated Jun 18, 2026 ("Urwashi" 1920×1080 mp4) |
+| **2D cinematic** | EchoMimicV3 + GFPGAN + RIFE | ✅ Validated Jun 18, 2026 ("demo-ref" 1920×1080 mp4) |
 | **3D cinematic** | `engine-three` (Three.js headless WebGL) | ✅ Validated Jun 19, 2026 (`validate_engine_render.py` PASS) |
 | **Realtime** | MuseTalk + XTTS streaming + SFU | Code present; gated on Cloudflare Realtime secrets |
 
@@ -30,7 +30,7 @@ flowchart TB
   end
 
   subgraph cf["Cloudflare"]
-    API["control-api Worker\nlas-control-api.tech-sumit.workers.dev"]
+    API["control-api Worker\n<your-worker>.workers.dev"]
     D1[(D1 jobs/voices/avatars)]
     R2[(R2 assets/outputs/work)]
     Q["las-jobs queue"]
@@ -39,7 +39,7 @@ flowchart TB
     API --> Q
   end
 
-  subgraph pod["H100 RunPod pod s5jwghwjkwo96q"]
+  subgraph pod["H100 RunPod pod <pod-id>"]
     NGX["nginx :8080 gateway"]
     TTS["voice / TTS"]
     ECHO["avatar-video EchoMimicV3"]
@@ -119,10 +119,10 @@ Uncommitted on `main`: three.js editor tree, `js/las/*`, `Sidebar.LAS.js`, `DELE
 
 | Resource | Value |
 |---|---|
-| Control API | `https://las-control-api.tech-sumit.workers.dev` |
-| Pod ID | `s5jwghwjkwo96q` |
-| Pod gateway | `https://s5jwghwjkwo96q-8080.proxy.runpod.net` |
-| Pod SSH | `root@213.181.105.227:11422` (key: `~/.ssh/las_runpod`) |
+| Control API | `https://<your-worker>.workers.dev` |
+| Pod ID | `<pod-id>` |
+| Pod gateway | `https://<pod-id>-8080.proxy.runpod.net` |
+| Pod SSH | `root@<pod-ip>:<port>` (key: `~/.ssh/las_runpod`) |
 | Pod LAS root | `/workspace/las` |
 | engine-three on pod | `/workspace/las/services/engine-three` |
 
@@ -130,7 +130,7 @@ Uncommitted on `main`: three.js editor tree, `js/las/*`, `Sidebar.LAS.js`, `DELE
 
 See `progress.md` for full detail. Summary:
 
-- **Jun 18** — Offline 2D path: real 1920×1080 Urwashi mp4, health round-trip green
+- **Jun 18** — Offline 2D path: real 1920×1080 demo-ref mp4, health round-trip green
 - **Jun 19** — 3D `engine_render`: `validate_engine_render.py` PASS on live H100
 - **Jun 19–20** — Editor manifests verified correct (`scene` with camera rotation, `lee_perry_smith`); MP4 mismatch traced to **stale pod binary**, not bad editor data
 

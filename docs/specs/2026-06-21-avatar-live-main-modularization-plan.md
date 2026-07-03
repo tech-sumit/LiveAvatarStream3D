@@ -20,7 +20,7 @@
   - `npm run typecheck` → Expected: no errors.
   - `npm run lint` → Expected: no new errors.
 - **Commit after every task** (messages below).
-- Work from repo root: `/Users/sumitagrawal/CODE/sumit/n8n/projects/LiveAvatarStream3D`. Typecheck one workspace: `npm run typecheck` runs all; that's fine.
+- Work from the repo root. Typecheck one workspace: `npm run typecheck` runs all; that's fine.
 - Line ranges below refer to the **current** `main.ts`; they shift as you extract — locate by symbol name, not absolute line.
 
 ---

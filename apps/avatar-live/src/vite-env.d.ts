@@ -3,7 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_TTS_URL?: string;
   /** Deployed control-api base (includes the `/api` segment), e.g.
-   *  https://las-control-api.tech-sumit.workers.dev/api. Cloned voices live on the
+   *  https://<your-worker>.workers.dev/api. Cloned voices live on the
    *  deployed D1/R2, so the voice manager talks to this Worker, not local wrangler. */
   readonly VITE_API_URL?: string;
   /** Optional bearer for the control-api — must match the Worker's API_TOKEN

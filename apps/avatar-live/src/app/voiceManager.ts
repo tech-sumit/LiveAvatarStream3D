@@ -8,7 +8,7 @@ const USER_ID = 'demo-user';
  * Resolve the **deployed** control-api base. Cloned voices live on the deployed
  * D1/R2 (CLAUDE.md gotcha), so these calls MUST hit the same Worker base the rest
  * of the studio is configured against via `VITE_API_URL`
- * (e.g. https://las-control-api.tech-sumit.workers.dev/api). The base already
+ * (e.g. https://<your-worker>.workers.dev/api). The base already
  * includes the `/api` segment; we append `/voices…`. Trailing slashes trimmed so
  * `${base}/voices` never doubles up. Returns '' when unset → the manager renders a
  * loud "configure VITE_API_URL" state instead of fetching a wrong origin.

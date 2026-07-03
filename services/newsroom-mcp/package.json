@@ -1,6 +1,7 @@
 {
   "name": "@las/newsroom-mcp",
   "version": "0.0.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "Newsroom MCP server: a stdio MCP that generates newscast assets (graphics, montages, music, post production, external media). Studio control lives in the studio's in-browser WebMCP server.",

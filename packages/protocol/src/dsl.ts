@@ -6,7 +6,7 @@ import { CAMERA_SHOT_IDS } from '@las/performer-core';
  * web editor) and the GPU avatar pipeline. It is intentionally flat and
  * enumerated so a model can emit it reliably and stream it segment-by-segment.
  *
- * See ARCHITECTURE.md "DSL -> conditioning mapping".
+ * See docs/history/ARCHITECTURE.md "DSL -> conditioning mapping".
  */
 
 export const EMOTIONS = [
@@ -56,7 +56,7 @@ export type Posture = z.infer<typeof Posture>;
  * cue to a beat to drive a virtual Cine Camera in the engine (Sequencer / Movie
  * Render Queue). The 2D pipeline ignores it; it is purely additive. Like the
  * other vocabularies it is enumerated so the LLM emits it reliably and the
- * engine maps it deterministically. See ARCHITECTURE.md and the 3D-engine POC
+ * engine maps it deterministically. See docs/history/ARCHITECTURE.md and the 3D-engine POC
  * spec for the cue -> Sequencer mapping.
  */
 export const CAMERA_SHOTS = [

@@ -247,10 +247,10 @@ Verification status of the load-bearing claims (checked live, June 2026):
 - **Platform contract** (config.json schema, `shot` enum, ARKit/underscore/viseme binding, `boundCount`-zero → jaw-bone fallback) — verified from `src/avatar/morphRig.ts`, `face.ts`, `scene/stage.ts`, `main.ts`, and the existing `public/*-model/config.json` files.
 
 Relevant files on this platform:
-- `/Users/sumitagrawal/CODE/sumit/n8n/projects/LiveAvatarStream3D/apps/avatar-live/public/avatars.json` (runtime registry)
-- `/Users/sumitagrawal/CODE/sumit/n8n/projects/LiveAvatarStream3D/apps/avatar-live/public/<id>-model/{model.glb,config.json}` (per-avatar drop-in)
-- `/Users/sumitagrawal/CODE/sumit/n8n/projects/LiveAvatarStream3D/apps/avatar-live/src/avatar/morphRig.ts` (morph binding / compatibility logic)
-- `/Users/sumitagrawal/CODE/sumit/n8n/projects/LiveAvatarStream3D/apps/avatar-live/src/avatar/face.ts` (FaceChannels contract)
+- `apps/avatar-live/public/avatars.json` (runtime registry)
+- `apps/avatar-live/public/<id>-model/{model.glb,config.json}` (per-avatar drop-in)
+- `apps/avatar-live/src/avatar/morphRig.ts` (morph binding / compatibility logic)
+- `apps/avatar-live/src/avatar/face.ts` (FaceChannels contract)
 
 ---
 

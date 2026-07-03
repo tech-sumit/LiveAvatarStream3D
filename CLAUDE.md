@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Standalone project with its own git repository.** It lives at `projects/LiveAvatarStream3D/` inside the `n8n` working tree for convenience but is **independent of the parent n8n automation stack** — different product, its own `.git`. Ignore the parent `n8n/CLAUDE.md`, Docker Compose, Vault, Parallels VM, NemoClaw. Commit/push to **this** repo. Remote: `git@github.com:tech-sumit/LiveAvatarStream3D.git`. **Push to `main` is blocked — branch + PR + merge.**
+> **Standalone repository.** Remote: `git@github.com:tech-sumit/LiveAvatarStream3D.git`. **Push to `main` is blocked — branch + PR + merge.**
 
 > Authoritative design docs live in `docs/specs/`. The active redesign is **`docs/specs/2026-06-25-performance-score-dsl-design.md`** (a parameterized Score/Stage performance model) plus **`docs/specs/2026-06-25-webmcp-studio-control-design.md`** (in-browser WebMCP control). When older specs disagree, the newest wins.
 
@@ -16,7 +16,7 @@ project/asset persistence (R2/D1).
 
 > **History:** this repo used to host several render paths — a headless `engine-three` Node
 > renderer, a 2D EchoMimicV3 path, and a MuseTalk realtime path. `engine-three` was removed;
-> the 2D + MuseTalk paths were relocated to the sibling repo `../LiveAvatarStream`. This repo is
+> the 2D + MuseTalk paths were relocated to a separate private repository. This repo is
 > now **3D-browser-only**.
 
 ## Workspace layout (npm workspaces, Node ≥20)
@@ -47,7 +47,7 @@ Deploy control-api: `cd services/control-api && wrangler deploy`.
 - **Script → segments:** `src/avatar/gestures.ts` parses `[emotion][gesture]` tags (plus keyword inference) into per-sentence drives.
 - **Drive loop:** `src/app/performer.ts` runs both the live preview (rAF) and the frame-exact offline export (`src/capture/offlineExporter.ts`, WebCodecs) off one path. `src/scene/stage.ts` owns the camera; `src/avatar/avatarController.ts` owns body/face/gesture/locomotion.
 - **Export is client-side + synchronous** — it renders frame-by-frame in the browser (works even in a backgrounded tab). The live *preview* rAF loop pauses when the tab is hidden, so realtime motion can't be exercised in a hidden/automation tab; the export still can.
-- `.env.development` `VITE_API_URL` should point at the **deployed Worker** (cloned voices live on the deployed D1/R2, not a local wrangler dev).
+- `.env.development` `VITE_API_URL` should point at **your deployed Worker** (`https://<your-worker>.workers.dev`) — cloned voices live on the deployed D1/R2, not a local wrangler dev.
 
 ## Active redesign — read before extending the studio
 The studio's camera/motion/gesture systems are currently **imperative + enumerated**, so each
@@ -64,5 +64,5 @@ spatial, compositional Score/Stage model** run by one shared interpreter, so dir
 - Push to `main` is blocked — branch + PR + merge.
 
 ## Root reference docs
-`docs/specs/*` (design specs — start with the 2026-06-25 ones), `ARCHITECTURE.md`,
-`PRODUCT_SPEC.md`, `ROADMAP.md`, `OPERATIONS.md`, `progress.md`.
+`docs/specs/*` (design specs — start with the 2026-06-25 ones), `docs/history/ARCHITECTURE.md`,
+`docs/history/PRODUCT_SPEC.md`, `docs/history/ROADMAP.md`, `docs/history/OPERATIONS.md`, `progress.md`.
