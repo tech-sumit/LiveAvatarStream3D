@@ -11,6 +11,10 @@
 [![Three.js](https://img.shields.io/badge/Three.js-WebGL-000000?logo=three.js&logoColor=white)](apps/avatar-live)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
+### [▶ **Try it live** — las3d-studio.pages.dev](https://las3d-studio.pages.dev/)
+
+*No install, no keys: the hosted studio runs the full live preview with free browser voices (Chrome/Edge recommended).*
+
 ![LiveAvatarStream3D product demo](docs/media/product-demo.gif)
 
 *Every pixel above was rendered by a browser tab — no render farm, no GPU server, no upload.*
@@ -49,6 +53,8 @@ Full 1080p MP4s (with audio) are on the [**Releases page**](https://github.com/t
 One screen: script editor with emotion/gesture tag palette, voice picker (cloned voices included), live 3D viewport with the exact export framing overlaid, studio lighting rig, and one-click MP4 export.
 
 ## Quickstart
+
+**Zero-install:** open the [hosted demo](https://las3d-studio.pages.dev/) — script, direct, and preview entirely in your browser. Local setup unlocks MP4 export with your own ElevenLabs voices:
 
 ```bash
 git clone https://github.com/tech-sumit/LiveAvatarStream3D.git
