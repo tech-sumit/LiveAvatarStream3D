@@ -47,10 +47,20 @@
           <h2>Voice</h2>
           <label class="mini" for="ttsProvider">Provider</label>
           <select id="ttsProvider">
-            <option value="kokoro">Kokoro — free, in-browser</option>
             <option value="elevenlabs">ElevenLabs — cloned voices</option>
+            <option value="kokoro">Kokoro — free, in-browser</option>
           </select>
           <select id="voice"></select>
+          <!-- Consent gate: Kokoro needs a one-time in-browser model download. Shown when the
+               user picks Kokoro; on cancel we stay on ElevenLabs. -->
+          <div id="kokoroConsent" class="kokoro-consent" hidden>
+            <span class="mini">Kokoro runs entirely in your browser and needs a one-time model
+              download of <strong>~90 MB</strong> (cached afterwards). Download it and switch?</span>
+            <div class="grid2">
+              <button id="kokoroConsentYes" type="button">Download &amp; use Kokoro</button>
+              <button id="kokoroConsentNo" type="button">Cancel (keep ElevenLabs)</button>
+            </div>
+          </div>
           <!-- Kokoro model download progress (first use, ~90 MB, then cached). -->
           <div id="kokoroProgRow" class="kokoro-prog" hidden>
             <progress id="kokoroProg" max="100" value="0"></progress>

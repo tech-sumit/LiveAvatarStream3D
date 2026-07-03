@@ -6,10 +6,11 @@ import type { TtsSource } from '../tts/types.js';
 import type { StudioContext } from './context.js';
 
 /**
- * TTS source selection + the voice dropdown. Default is FREE in-browser Kokoro
- * (real PCM → MP4 export works, no key, no credits). ElevenLabs (cloned voices) is
- * OPT-IN — via VITE_TTS_PROVIDER=elevenlabs or a bring-your-own-key — so the dev
- * proxy never auto-drains credits. Override with VITE_TTS_PROVIDER (kokoro |
+ * TTS source selection + the voice dropdown. Default is ElevenLabs (cloned voices),
+ * with a key box to set an ElevenLabs key. Kokoro (free, in-browser, real PCM → MP4
+ * export) is available from the Provider dropdown but gated behind a consent box —
+ * picking it prompts before the one-time ~90 MB model download; on cancel we stay on
+ * ElevenLabs. Override the initial provider with VITE_TTS_PROVIDER (kokoro |
  * elevenlabs | webspeech) or VITE_TTS_URL (a self-hosted server model).
  */
 export class VoicePicker {
@@ -22,12 +23,14 @@ export class VoicePicker {
   private kokoroProgUnsub: (() => void) | null = null;
 
   constructor(private app: StudioContext) {
-    // Sensible synchronous default; init() may upgrade to ElevenLabs when opted in.
+    // Sensible synchronous default; init() resolves the real provider (default ElevenLabs).
     this._activeTts = this.serverTtsUrl
       ? new ServerTts(this.serverTtsUrl)
       : this.ttsPref === 'webspeech' && WebSpeechTts.supported()
         ? new WebSpeechTts()
-        : this.makeKokoro();
+        : this.ttsPref === 'kokoro'
+          ? this.makeKokoro()
+          : new ElevenLabsTts('/eleven', this.app.audio, () => this.app.recordDest);
   }
 
   /** Free in-browser Kokoro, wired to the shared audio ctx + recording tap + studio log. */
@@ -99,22 +102,52 @@ export class VoicePicker {
       await this.populateVoices();
       return;
     }
-    if (sel) sel.onchange = () => void this.selectProvider(sel.value === 'elevenlabs' ? 'elevenlabs' : 'kokoro');
+    // Picking Kokoro is gated by a consent box (one-time ~90 MB download); ElevenLabs
+    // switches immediately.
+    if (sel)
+      sel.onchange = () => {
+        if (sel.value === 'kokoro') this.askKokoroConsent();
+        else void this.selectProvider('elevenlabs');
+      };
     this.app.dom.elevenKeySaveBtn.onclick = () => void this.applyDirectKey(this.app.dom.elevenKeyEl.value.trim());
+    if (this.app.dom.kokoroConsentYes) this.app.dom.kokoroConsentYes.onclick = () => void this.confirmKokoro();
+    if (this.app.dom.kokoroConsentNo) this.app.dom.kokoroConsentNo.onclick = () => this.cancelKokoro();
 
-    // Initial provider: last explicit UI choice (localStorage) → env pref → Kokoro.
-    // ElevenLabs stays OPT-IN, so the dev proxy never auto-drains credits. Routing the
-    // default through selectProvider() also starts the Kokoro download + progress bar.
+    // Initial provider: last explicit UI choice (localStorage) → env pref → ElevenLabs.
+    // A previously-consented Kokoro choice loads directly (model already cached) — no
+    // re-consent. First-time visitors default to ElevenLabs with the key box.
     const saved = localStorage.getItem(VoicePicker.PROVIDER_LS);
-    const wantEleven = saved === 'elevenlabs' || (saved === null && this.ttsPref === 'elevenlabs');
-    await this.selectProvider(wantEleven ? 'elevenlabs' : 'kokoro');
+    const pref = saved ?? this.ttsPref ?? 'elevenlabs';
+    await this.selectProvider(pref === 'kokoro' ? 'kokoro' : 'elevenlabs');
+  }
+
+  /** Reveal the Kokoro download-consent box; the dropdown already shows 'kokoro'. */
+  private askKokoroConsent(): void {
+    const box = this.app.dom.kokoroConsent;
+    if (!box) {
+      void this.selectProvider('kokoro'); // no consent UI present → proceed
+      return;
+    }
+    box.hidden = false;
+  }
+
+  /** Consent "yes": hide the box and download + activate Kokoro. */
+  private async confirmKokoro(): Promise<void> {
+    if (this.app.dom.kokoroConsent) this.app.dom.kokoroConsent.hidden = true;
+    await this.selectProvider('kokoro');
+  }
+
+  /** Consent "cancel": hide the box and stay on ElevenLabs (reverts the dropdown). */
+  private cancelKokoro(): void {
+    if (this.app.dom.kokoroConsent) this.app.dom.kokoroConsent.hidden = true;
+    void this.selectProvider('elevenlabs');
   }
 
   /**
-   * Runtime provider switch driven by the UI dropdown (or the initial choice).
-   * Kokoro: free, in-browser, no key. ElevenLabs: prefer the dev `/eleven` proxy
-   * (no key in the browser); on static hosting fall back to a bring-your-own key,
-   * revealing the key row and staying on Kokoro until a valid key is entered.
+   * Runtime provider switch. ElevenLabs (the default) always shows the key box: it uses
+   * a saved BYO key if present, else the dev `/eleven` proxy, else prompts for a key.
+   * Kokoro downloads the in-browser model (progress bar) and needs no key — it's reached
+   * only after the consent box (see confirmKokoro), never auto-selected.
    */
   async selectProvider(kind: 'kokoro' | 'elevenlabs'): Promise<void> {
     if (kind === 'kokoro') {
@@ -134,27 +167,27 @@ export class VoicePicker {
       return;
     }
     this.stopKokoroProgress();
+    if (this.app.dom.kokoroConsent) this.app.dom.kokoroConsent.hidden = true;
     localStorage.setItem(VoicePicker.PROVIDER_LS, 'elevenlabs');
-    // Dev proxy present → use it (key stays server-side, no BYO key needed).
-    if (await ElevenLabsTts.available()) {
-      this._activeTts = new ElevenLabsTts('/eleven', this.app.audio, () => this.app.recordDest);
-      this.app.dom.elevenKeyRow.hidden = true;
-      this.app.log('voice: ElevenLabs (dev proxy) — cloned TTS, lip-sync from the actual waveform');
-      this.syncProviderSel();
-      await this.populateVoices();
-      return;
-    }
-    // Static hosting: reveal the key row. A previously-saved key applies immediately.
+    // Always show the key box so a key can be set/overridden (default-ElevenLabs UX).
     this.app.dom.elevenKeyRow.hidden = false;
+
+    // Prefer a saved BYO key → dev proxy → prompt for a key.
     const stored = localStorage.getItem(VoicePicker.KEY_LS) ?? '';
     if (stored && (await ElevenLabsTts.available(ElevenLabsTts.DIRECT_BASE, stored))) {
       this.useDirectKey(stored);
       await this.populateVoices();
       return;
     }
-    // No key yet: keep Kokoro active and prompt for one; sync the dropdown to reality.
-    this.app.log('voice: paste an ElevenLabs API key below to enable cloned voices (or switch back to Kokoro).');
+    if (await ElevenLabsTts.available()) {
+      this._activeTts = new ElevenLabsTts('/eleven', this.app.audio, () => this.app.recordDest);
+      this.app.log('voice: ElevenLabs (dev proxy) — cloned TTS. Paste a key to use your own account.');
+    } else {
+      this._activeTts = new ElevenLabsTts(ElevenLabsTts.DIRECT_BASE, this.app.audio, () => this.app.recordDest);
+      this.app.log('voice: ElevenLabs selected — paste your API key below to enable it, or pick Kokoro for free in-browser TTS.');
+    }
     this.syncProviderSel();
+    await this.populateVoices();
   }
 
   /** Reflect the active provider in the dropdown (so it never lies about what's running). */
@@ -205,13 +238,14 @@ export class VoicePicker {
     this.syncProviderSel();
   }
 
-  /** "Use key" click: validate + persist, or (blank) forget and drop back to Kokoro. */
+  /** "Use key" click: validate + persist, or (blank) forget the key (staying on ElevenLabs:
+   *  the dev proxy if present, else a prompt). Switching to free Kokoro is via the dropdown. */
   private async applyDirectKey(key: string): Promise<void> {
     if (!key) {
       localStorage.removeItem(VoicePicker.KEY_LS);
-      await this.selectProvider('kokoro');
       this.app.dom.elevenKeyEl.placeholder = 'ElevenLabs API key…';
-      this.app.log('voice: ElevenLabs key forgotten — back to free in-browser Kokoro');
+      this.app.log('voice: ElevenLabs key forgotten.');
+      await this.selectProvider('elevenlabs');
       return;
     }
     if (!(await ElevenLabsTts.available(ElevenLabsTts.DIRECT_BASE, key))) {
