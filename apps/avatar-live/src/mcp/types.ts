@@ -32,8 +32,18 @@ export interface ModelContextLike {
   unregisterTool?(name: string): void;
 }
 
-/** Read `navigator.modelContext` if the runtime exposes it, else null. */
-export function getModelContext(): ModelContextLike | null {
-  const nav = (globalThis as { navigator?: { modelContext?: ModelContextLike } }).navigator;
-  return nav?.modelContext ?? null;
+/**
+ * Read the page's WebMCP registry. The spec surface moved: `document.modelContext` is
+ * current (Chrome logs a deprecation warning for the original `navigator.modelContext`),
+ * so prefer it and fall back to navigator for older WebMCP builds. Null when the
+ * runtime ships neither (normal browsers — the studio then skips registration).
+ */
+export function getModelContext(): { mc: ModelContextLike; surface: 'document' | 'navigator' } | null {
+  const g = globalThis as {
+    document?: { modelContext?: ModelContextLike };
+    navigator?: { modelContext?: ModelContextLike };
+  };
+  if (g.document?.modelContext) return { mc: g.document.modelContext, surface: 'document' };
+  if (g.navigator?.modelContext) return { mc: g.navigator.modelContext, surface: 'navigator' };
+  return null;
 }
