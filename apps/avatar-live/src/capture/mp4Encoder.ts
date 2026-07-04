@@ -33,7 +33,14 @@ export class Mp4Encoder {
     this.fps = opts.fps;
     this.target = new BufferTarget();
     this.output = new Output({ format: new Mp4OutputFormat(), target: this.target });
-    this.video = new CanvasSource(opts.canvas, { codec: opts.codec, bitrate: QUALITY_HIGH });
+    // Explicit resolution-scaled bitrate. mediabunny's QUALITY_HIGH preset resolved to only
+    // ~1.6 Mbps at 1080p here, which looks soft/blocky on text (video-wall headline/ticker),
+    // gradients, and motion. Mirror recorder.ts's ~0.13 bits/pixel/frame heuristic:
+    // 1080p→~8 Mbps, 1440p→~15 Mbps, 4K→~32 Mbps.
+    const w = opts.canvas.width || 1920;
+    const h = opts.canvas.height || 1080;
+    const videoBitrate = Math.round(w * h * 30 * 0.13);
+    this.video = new CanvasSource(opts.canvas, { codec: opts.codec, bitrate: videoBitrate });
     this.output.addVideoTrack(this.video, { frameRate: opts.fps });
   }
 

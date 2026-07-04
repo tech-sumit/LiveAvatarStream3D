@@ -87,6 +87,12 @@ const SCREEN_MARK: Vec3 = [0.75, 0, 0.25];
 // smoothing time constant toward the count pose.
 const COUNT_TOTAL = 3.4; // seconds before releasing the fingers back to the clip
 const COUNT_SMOOTH_TAU = 0.12; // seconds; smoothing toward the counted finger pose
+// Rig flexion sign. On the Avaturn/Mixamo hand (all bundled avatars share this skeleton) the
+// finger bones point local +Y and spread along X, so a finger flexes (curls into the palm)
+// about its local X — but POSITIVE X folds toward the palm here. performer-core's shared curl
+// magnitudes are negative (fold amount), so negate them into positive local-X flexion. Without
+// this the fingers hyperextend to the BACK of the hand.
+const FINGER_FLEX_SIGN = -1;
 
 const EYE_LOOK = [
   'eyeLookInLeft',
@@ -164,13 +170,17 @@ export class AvatarController {
 
   // Procedural finger-counting: the 'count' gesture poses the right hand 1 → 2 → 3
   // fingers (index, then +middle, then +ring) while the clip raises the arm. We curl
-  // the unused fingers into the palm about each joint's local X axis (negative = fold,
-  // verified on the rig). `fingerExt[f]` (0 curled .. 1 extended) is lerped per finger
+  // the unused fingers into the palm about each joint's local X axis (FINGER_FLEX_SIGN
+  // sets the fold direction for this rig). `fingerExt[f]` (0 curled .. 1 extended) is lerped per finger
   // so the count reads as a stable, deliberate 1-2-3 instead of a snap.
   private counting = false;
   private countT = 0;
   private fingerExt = [0, 0, 0, 0]; // index, middle, ring, pinky (0 curled .. 1 extended)
   private fingerBones: THREE.Object3D[][] | null = null; // [finger][joint]
+  // True while the fingers are procedurally posed. Since we write bone.rotation.x DIRECTLY
+  // (bypassing the mixer, which doesn't keyframe finger bones), we must actively ramp them
+  // back to neutral when counting stops — else the hand stays frozen in the folded pose.
+  private fingersPosed = false;
   private fingerTarget = makeFingerCurls(); // reused fingerCount out-param (no per-frame alloc)
 
   constructor() {
@@ -605,38 +615,61 @@ export class AvatarController {
   /**
    * Procedurally pose the right hand to count 1 → 2 → 3 over the count gesture.
    * Runs after the mixer so it overrides whatever the count clip does to the fingers.
-   * Each non-counted finger curls into the palm (local X, negative); `fingerExt` is
-   * lerped so transitions between numbers are smooth and the held number is stable.
+   * Each non-counted finger curls into the palm (local X, FINGER_FLEX_SIGN-corrected);
+   * `fingerExt` is lerped so transitions between numbers are smooth and the held number is stable.
    */
   private applyCounting(dt: number): void {
-    if (!this.counting) return;
-    this.countT += dt;
-    if (this.countT > COUNT_TOTAL) {
-      this.counting = false; // hand back to the clip/idle
+    const k = 1 - Math.exp(-dt / COUNT_SMOOTH_TAU); // smoothing toward the target
+
+    if (this.counting) {
+      this.countT += dt;
+      if (this.countT > COUNT_TOTAL) this.counting = false; // fall through to the release below
+    }
+
+    if (this.counting) {
+      if (!this.fingerBones) this.cacheFingerBones();
+      if (!this.fingerBones) return;
+      // performer-core computes the 1→2→3 ramp + the per-joint target curl (curl[j]·(1-ext),
+      // ext∈{0,1}) — the same FINGER_CURL/COUNT_PHASE numbers, now in fingerCount. We recover
+      // the per-finger up/down binary + the curl constants from its output, then keep the
+      // controller's per-finger smoothing (fingerExt) + apply.
+      const curls = countFingers(3, this.countT, this.fingerTarget).curls;
+      // Pinky (finger 3) is always down → its row is the curl constants curl[j].
+      const curlConst = curls[3] ?? [];
+      for (let f = 0; f < 4; f++) {
+        const row = curls[f] ?? [];
+        // A finger is "up" iff its target curls are ~0 (extended); else it folds.
+        const up = (row[0] ?? 0) === 0 ? 1 : 0;
+        this.fingerExt[f] += (up - this.fingerExt[f]) * k;
+        const ext = this.fingerExt[f];
+        const joints = this.fingerBones[f];
+        if (!joints) continue;
+        for (let j = 0; j < joints.length; j++) {
+          const bone = joints[j];
+          // Curl about local X, FINGER_FLEX_SIGN-corrected so folded fingers go INTO the palm
+          // (not hyperextend to the back of the hand).
+          if (bone) bone.rotation.x = FINGER_FLEX_SIGN * (curlConst[j] ?? 0) * (1 - ext);
+        }
+      }
+      this.fingersPosed = true;
       return;
     }
-    if (!this.fingerBones) this.cacheFingerBones();
-    if (!this.fingerBones) return;
 
-    // performer-core computes the 1→2→3 ramp + the per-joint target curl (curl[j]·(1-ext),
-    // ext∈{0,1}) — the same FINGER_CURL/COUNT_PHASE numbers, now in fingerCount. We recover
-    // the per-finger up/down binary + the curl constants from its output, then keep the
-    // controller's per-finger smoothing (fingerExt) + apply, exactly as before.
-    const curls = countFingers(3, this.countT, this.fingerTarget).curls;
-    // Pinky (finger 3) is always down → its row is the curl constants curl[j].
-    const curlConst = curls[3] ?? [];
-    const k = 1 - Math.exp(-dt / COUNT_SMOOTH_TAU); // smoothing toward the target
-    for (let f = 0; f < 4; f++) {
-      const row = curls[f] ?? [];
-      // A finger is "up" iff its target curls are ~0 (extended); else it folds.
-      const up = (row[0] ?? 0) === 0 ? 1 : 0;
-      this.fingerExt[f] += (up - this.fingerExt[f]) * k;
-      const ext = this.fingerExt[f];
-      const joints = this.fingerBones[f];
-      if (!joints) continue;
-      for (let j = 0; j < joints.length; j++) {
-        const bone = joints[j];
-        if (bone) bone.rotation.x = (curlConst[j] ?? 0) * (1 - ext);
+    // Not counting: if the fingers are still procedurally posed, ramp them back to neutral
+    // (rotation.x → 0) and then STOP touching them, so the hand returns to a natural open pose
+    // instead of freezing folded. Without this the count pose sticks for the rest of the take.
+    if (this.fingersPosed && this.fingerBones) {
+      let settled = true;
+      for (const joints of this.fingerBones) {
+        for (const bone of joints) {
+          if (!bone) continue;
+          bone.rotation.x += (0 - bone.rotation.x) * k;
+          if (Math.abs(bone.rotation.x) > 0.01) settled = false;
+        }
+      }
+      if (settled) {
+        for (const joints of this.fingerBones) for (const bone of joints) if (bone) bone.rotation.x = 0;
+        this.fingersPosed = false;
       }
     }
   }
