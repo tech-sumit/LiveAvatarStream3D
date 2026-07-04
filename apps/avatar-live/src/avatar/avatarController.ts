@@ -85,8 +85,12 @@ const SCREEN_MARK: Vec3 = [0.75, 0, 0.25];
 // fingerCount (FINGER_CURL = [-1.0,-1.45,-1.2], COUNT_PHASE = 0.75, pinned by its Phase-2
 // fixture). The controller keeps the release time (apply-layer lifecycle) + the per-frame
 // smoothing time constant toward the count pose.
-const COUNT_TOTAL = 3.4; // seconds before releasing the fingers back to the clip
+const COUNT_TOTAL = 4.0; // seconds before releasing the fingers back to the clip
 const COUNT_SMOOTH_TAU = 0.12; // seconds; smoothing toward the counted finger pose
+// Hold the fingers EXTENDED for the first part of the gesture while the count clip raises the
+// arm. Curling before the hand is up (palm turned away from camera) reads as a backward fold —
+// this delays the 1→2→3 curl until the hand is presented.
+const COUNT_RAISE_DELAY = 0.6;
 // Rig flexion sign. On the Avaturn/Mixamo hand (all bundled avatars share this skeleton) the
 // finger bones point local +Y and spread along X, so a finger flexes (curls into the palm)
 // about its local X — but POSITIVE X folds toward the palm here. performer-core's shared curl
@@ -629,17 +633,19 @@ export class AvatarController {
     if (this.counting) {
       if (!this.fingerBones) this.cacheFingerBones();
       if (!this.fingerBones) return;
-      // performer-core computes the 1→2→3 ramp + the per-joint target curl (curl[j]·(1-ext),
-      // ext∈{0,1}) — the same FINGER_CURL/COUNT_PHASE numbers, now in fingerCount. We recover
-      // the per-finger up/down binary + the curl constants from its output, then keep the
-      // controller's per-finger smoothing (fingerExt) + apply.
-      const curls = countFingers(3, this.countT, this.fingerTarget).curls;
+      // While the arm is still raising, hold every finger EXTENDED (up=1) so nothing curls with
+      // the palm turned away. After the delay, run the normal 1→2→3 ramp on shifted time.
+      const raising = this.countT < COUNT_RAISE_DELAY;
+      // performer-core computes the 1→2→3 ramp + the per-joint target curl (curl[j]·(1-ext));
+      // we recover the per-finger up/down binary + the curl constants, keep the per-finger
+      // smoothing (fingerExt), and apply.
+      const curls = raising ? null : countFingers(3, this.countT - COUNT_RAISE_DELAY, this.fingerTarget).curls;
       // Pinky (finger 3) is always down → its row is the curl constants curl[j].
-      const curlConst = curls[3] ?? [];
+      const curlConst = curls?.[3] ?? [];
       for (let f = 0; f < 4; f++) {
-        const row = curls[f] ?? [];
-        // A finger is "up" iff its target curls are ~0 (extended); else it folds.
-        const up = (row[0] ?? 0) === 0 ? 1 : 0;
+        // A finger is "up" iff its target curls are ~0 (extended); else it folds. During the
+        // raise, all fingers are up (extended).
+        const up = raising ? 1 : ((curls?.[f]?.[0] ?? 0) === 0 ? 1 : 0);
         this.fingerExt[f] += (up - this.fingerExt[f]) * k;
         const ext = this.fingerExt[f];
         const joints = this.fingerBones[f];
